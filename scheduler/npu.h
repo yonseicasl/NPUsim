@@ -93,9 +93,6 @@ public:
     void update_tile_size();
 
 protected:
-    /* TODO */
-    unsigned num_threads;                           // The number of threads 
-    /* TODO */
     unsigned num_processors;                        // The number of on-chip processors.
     unsigned num_pes;                               // The number of processing elements for each processors.
     data_format_t data_format;                      // Data format : Convolution or GEMM (General Matrix Multiplication).

@@ -55,7 +55,7 @@ PRINT=0
 # Debug.
 DEBUG=0
 # Functional simulation
-FUNCTIONAL=1
+FUNCTIONAL=0
 # DRAMsim
 DRAMSIM3=0
 # PyTorch
@@ -113,6 +113,11 @@ function build_model {
     #echo -e "NPUsim build $1"
     case "$1" in 
         all)
+            # Make extension directory
+            if [[ ! -d $extdir ]]; then
+                mkdir $extdir
+            fi
+
             # Build Nebula library
             # Install Nebula software framework from Github
             if [[ ! -d $nebuladir ]]; then
@@ -149,6 +154,11 @@ function build_model {
             cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
             ;;
         dramsim3)
+            # Make extension directory
+            if [[ ! -d $extdir ]]; then
+                mkdir $extdir
+            fi
+
             # Build DRAMSim3
             # Install DRAMSim3 from Github
             if [[ ! -d $dramsim3dir ]]; then
@@ -160,6 +170,11 @@ function build_model {
             cd $dramsim3dir; make libdramsim3.so
             ;;
         ext)
+            # Make extension directory
+            if [[ ! -d $extdir ]]; then
+                mkdir $extdir
+            fi
+
             # Build Nebula library
             # Install Nebula software framework from Github
             if [[ ! -d $nebuladir ]]; then
@@ -192,7 +207,17 @@ function build_model {
             echo -e "\n# Build NPUsim library"
             cd $libdir; eval $mflag $ccflag $std make
             ;;
+        model)
+            # Build NPUsim executable file
+            echo -e "\n# Build NPUsim model"
+            cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
+            ;;
         nebula)
+            # Make extension directory
+            if [[ ! -d $extdir ]]; then
+                mkdir $extdir
+            fi
+
             # Build Nebula library
             # Install Nebula software framework from Github
             if [[ ! -d $nebuladir ]]; then
@@ -214,10 +239,16 @@ function build_model {
             echo -e "\n# Build NPUsim model"
             cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
             ;;
-        model)
-            # Build NPUsim executable file
-            echo -e "\n# Build NPUsim model"
-            cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
+        pytorch)
+            # Make extension directory
+            if [[ ! -d $extdir ]]; then
+                mkdir $extdir
+            fi
+            # Install PyTorch framework from Github
+            if [[ ! -d $pytorchdir ]]; then
+                echo -e "\n# Install PyTorch software framework"
+                cd $extdir; git clone https://github.com/pytorch/pytorch.git
+            fi
             ;;
         *)
             # Print out error message
