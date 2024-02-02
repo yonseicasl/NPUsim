@@ -265,7 +265,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 update_tile_size();
 
                 while(!is_idle()) {
-                    // Computation
+                    // Process simulation in backward path.
                     execute();
                     // Transfer data from PE array to PE
                     transfer_data_to_pe();
@@ -286,7 +286,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     request_to_pe_array();
                 }
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
-                dram->disconnect_layer();
+                //dram->disconnect_layer();
 			}
 #ifdef FUNCTIONAL
             network->layers[index]->forward();
@@ -322,16 +322,6 @@ bool npu_t::is_idle() {
 
 // DNN execution (e.g., MAC and pooling) at PEs
 void npu_t::execute() {
-#ifdef PRINT
-    for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
-        for(unsigned j = 0; j < pe_arrays[i]->get_number_of_active_pes(); j++) {
-            if(pe_arrays[i]->pes[j]->is_exist_data()) {
-                std::cout << "Execute MAC operation" << std::endl;
-                break;
-            }
-        }
-    }
-#endif
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         for(unsigned j = 0; j < pe_arrays[i]->get_number_of_active_pes(); j++) {
             if(pe_arrays[i]->pes[j]->is_exist_data()) {
@@ -343,14 +333,6 @@ void npu_t::execute() {
 
 // Transfer data from temporal buffer in PE array to PE (NoC)
 void npu_t::transfer_data_to_pe() {
-#ifdef PRINT
-    for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
-        if(pe_arrays[i]->is_exist_request_at_pe() && pe_arrays[i]->is_exist_data()) {
-            std::cout << "Transfer data to PE" << std::endl;
-            break; 
-        }
-    }
-#endif
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         if(pe_arrays[i]->is_exist_request_at_pe() && pe_arrays[i]->is_exist_data()) {
             pe_arrays[i]->data_transfer(scheduler);
@@ -361,14 +343,6 @@ void npu_t::transfer_data_to_pe() {
 
 // Transfer data from global buffer to temporal buffer in PE array
 void npu_t::transfer_data_to_pe_array() {
-#ifdef PRINT
-    for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
-        if(global_buffers[i]->is_exist_data() && pe_arrays[i]->is_exist_request_at_buffer()) {
-            std::cout << "Transfer data to PE array" << std::endl;
-            break;
-        }
-    }
-#endif
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         if(global_buffers[i]->is_exist_data() && pe_arrays[i]->is_exist_request_at_buffer()) {
             global_buffers[i]->data_transfer(scheduler);
@@ -378,44 +352,27 @@ void npu_t::transfer_data_to_pe_array() {
 
 // Transfer data from temporal buffer in the chip-level processors to the global buffer
 void npu_t::transfer_data_to_global_buffer() {
-    if(multi_chip->is_exist_request_at_global_buffer()) {
-#ifdef PRINT
-        std::cout << "Data transfer to Global buffer" << std::endl;
-#endif
+    if(multi_chip->is_exist_request_at_global_buffer() && multi_chip->is_exist_data()) {
         multi_chip->data_transfer(scheduler);
     }
 }
 
 // Transfer data from the off-chip memory to temporal buffer in the chip-level processors
 void npu_t::transfer_data_to_multi_chip() {
-    if(multi_chip->is_exist_request_at_global_buffer()) {
-#ifdef PRINT
-        std::cout << "Data transfer to on-chip processors" << std::endl;
-#endif
+    if(multi_chip->is_exist_request_at_buffer()) {
         dram->data_transfer(scheduler);
     }
 }
 
 // Send a request signal from the chip-level processors to the off-chip memory
 void npu_t::request_to_dram() {
-    if(!multi_chip->is_exist_request_at_buffer() && multi_chip->is_exist_request_at_global_buffer()) {
-#ifdef PRINT
-        std::cout << "Send request to DRAM" << std::endl;
-#endif
+    if(!multi_chip->is_exist_request_at_buffer() && multi_chip->is_exist_request_at_global_buffer() && !multi_chip->wait_data()) {
         multi_chip->request_data();
     }
 }
 
 // Send a request signal from the global buffer to chip-level processors
 void npu_t::request_to_multi_chip() {
-#ifdef PRINT
-    for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
-        if(!global_buffers[i]->is_exist_data() && !global_buffers[i]->is_exist_request() && pe_arrays[i]->is_exist_request_at_buffer()) {
-            std::cout << "Send request to on-chip processor" << std::endl;
-            break;
-        }
-    }
-#endif
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         if(!global_buffers[i]->is_exist_data() && !global_buffers[i]->is_exist_request() && pe_arrays[i]->is_exist_request_at_buffer()) {
             global_buffers[i]->request_data();
@@ -425,15 +382,8 @@ void npu_t::request_to_multi_chip() {
 
 // Send a request signal from PE array to the global buffer
 void npu_t::request_to_global_buffer() {
-#ifdef PRINT
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
-        if(!pe_arrays[i]->is_exist_request_at_buffer() && pe_arrays[i]->is_exist_request_at_pe()) {
-            std::cout << "Send request to global buffer" << std::endl; 
-        }
-    }
-#endif
-    for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
-        if(!pe_arrays[i]->is_exist_request_at_buffer() && pe_arrays[i]->is_exist_request_at_pe()) {
+        if(!pe_arrays[i]->is_exist_request_at_buffer() && pe_arrays[i]->is_exist_request_at_pe() && !pe_arrays[i]->wait_data()) {
             pe_arrays[i]->request_data();
         }
     }
@@ -441,15 +391,6 @@ void npu_t::request_to_global_buffer() {
 
 // Send a request signal from PEs to PE array
 void npu_t::request_to_pe_array() {
-#ifdef PRINT
-    for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
-        for(unsigned j = 0; j < pe_arrays[i]->get_number_of_active_pes(); j++) {
-            if(!pe_arrays[i]->pes[j]->is_exist_data() && ! pe_arrays[i]->pes[j]->is_exist_request()) {
-                std::cout << "Send request to PE array" << std::endl;; 
-            }
-        }
-    }
-#endif
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         for(unsigned j = 0; j < pe_arrays[i]->get_number_of_active_pes(); j++) {
             if(!pe_arrays[i]->pes[j]->is_exist_data() && ! pe_arrays[i]->pes[j]->is_exist_request()) {
