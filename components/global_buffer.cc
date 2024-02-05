@@ -109,12 +109,7 @@ void global_buffer_t::request_data() {
     }
     // Case 3. Output data
     if(!exist_data[data_type_t::OUTPUT]) {
-        if(!initial) {
-#ifdef PRINT
-            std::cout << "Write back output data from Global buffer to Multi chip" << std::endl;
-#endif
-        }
-        else {
+        if(initial) {
             initial = false;
         }
         request_to_multi_chip[data_type_t::OUTPUT] = true;
@@ -1243,11 +1238,6 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     }
     pe_array->fill_data();
 
-#ifdef PRINT
-    std::cout << "Transfer " << input_index - 1 << "th input data, " << weight_index - 1 
-              << "th weight, and " << output_index - 1 << "th output data from Global buffer to PE array." << std::endl;
-              
-#endif
     // Check iterations of data
     // Case 1. Input stationary
     if(pe_array->get_stationary_type() == stationary_type_t::INPUT_STATIONARY) {
@@ -1420,9 +1410,7 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
         else {
             // Input data, weight, and output data do not exist in Global buffer.
             exist_data[data_type_t::INPUT] = false, exist_data[data_type_t::WEIGHT] = false, exist_data[data_type_t::OUTPUT] = false;
-#ifdef PRINT
-            std::cout << "Write back output data from Global buffer to DRAM" << std::endl;
-#endif
+
 #ifdef FUNCTIONAL
             // Write back Output data 
             m_scheduler->transfer_data(multi_chip->data, data, m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()], offsets[data_type_t::OUTPUT],

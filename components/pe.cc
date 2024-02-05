@@ -1542,12 +1542,6 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
         exist_data_mac[data_type_t::OUTPUT]  = true, request_to_lb[data_type_t::OUTPUT] = false;
     }
 
-
-#ifdef PRINT
-    std::cout << index << "th PE : Transfer " << input_index - 1 << "th input data, " << weight_index - 1 
-              << "th weight, " << " and " << output_index - 1 << "th output data" << "  from Local buffer to MAC unit" << std::endl;
-#endif
-               
     // Execute MAC operation.
     computation(m_scheduler);
    
@@ -1570,9 +1564,6 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             // Weight and output data do not exist in local buffer.
             exist_data_lb[data_type_t::WEIGHT] = false, exist_data_lb[data_type_t::OUTPUT] = false;
 
-#ifdef PRINT
-            std::cout << "Write back output data from Local buffer to temporal buffer of PE array" << std::endl;
-#endif
 #ifdef FUNCTIONAL
             // Output data transfer 
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
@@ -1667,9 +1658,6 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             // Input data, weight, and output data do not exist in local buffer.
             exist_data_lb[data_type_t::INPUT] = false; exist_data_lb[data_type_t::WEIGHT] = false; exist_data_lb[data_type_t::OUTPUT] = false;
 
-#ifdef PRINT
-            std::cout << "Write back output data from Local buffer to temporal buffer of PE array" << std::endl;
-#endif
 #ifdef FUNCTIONAL
             // Write back output data
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
@@ -1976,9 +1964,6 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
         else {
             // Input data, weight, and output data are not in local buffer.
             exist_data_lb[data_type_t::INPUT] = false, exist_data_lb[data_type_t::WEIGHT] = false, exist_data_lb[data_type_t::OUTPUT] = false;
-#ifdef PRINT
-            std::cout << "Write back output data from Local buffer to temporal buffer of PE array" << std::endl;
-#endif
 #ifdef FUNCTIONAL
             // Write back output data
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
@@ -2263,10 +2248,6 @@ undefined_stationary_t::~undefined_stationary_t() {
 
 void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
 
-#ifdef PRINT
-    std::cout << "Execute MAC operation" << std::endl;
-#endif
-
     if(exist_data_mac[data_type_t::INPUT] && exist_data_mac[data_type_t::WEIGHT] && exist_data_mac[data_type_t::OUTPUT]) {
 #ifdef FUNCTIONAL
 
@@ -2287,9 +2268,6 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
         num_request_to_lb[data_type_t::OUTPUT]++;
         /* Stats */
 
-#ifdef PRINT
-        std::cout << "Write back output data from MAC unit to Local buffer" << std::endl;
-#endif
 #ifdef FUNCTIONAL
         // Write back output data
         m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
@@ -2335,10 +2313,6 @@ input_stationary_t::~input_stationary_t() {
 // Execute MAC operation 
 void input_stationary_t::computation(scheduler_t *m_scheduler) {
 
-#ifdef PRINT
-    std::cout << "Execute MAC operation" << std::endl;
-#endif
-
     // When all the data exist, execute the MAC operation
     if(exist_data_mac[data_type_t::INPUT] && exist_data_mac[data_type_t::WEIGHT] && exist_data_mac[data_type_t::OUTPUT]) {
         if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER ||
@@ -2381,10 +2355,6 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
         } else if(m_scheduler->layer_name == layer_name_t::AVGPOOL_LAYER) {
             avg_pooling();
         }
-
-#ifdef PRINT
-        std::cout << "Write back output data from MAC unit to Local buffer" << std::endl;
-#endif
 #ifdef FUNCTIONAL
         // Write back output data
         m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
@@ -2777,9 +2747,6 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
 
             num_request_to_lb[data_type_t::OUTPUT]++;
 
-#ifdef PRINT
-            std::cout << "Write back output data from MAC unit to Local buffer" << std::endl;
-#endif
 
 #ifdef FUNCTIONAL
             // Write back output data

@@ -1274,10 +1274,6 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         multi_chip->exist_data[data_type_t::OUTPUT] = true, multi_chip->request_to_dram[data_type_t::OUTPUT] = false;
     }
     multi_chip->fill_data();
-#ifdef PRINT
-    std::cout << "Transfer " << input_index - 1 << "th input data, " << weight_index - 1 << "th weight, and " << output_index - 1 << "th output data from DRAM to Muitl_chip." << std::endl;
-#endif
-
 
     if(multi_chip->get_stationary_type() == stationary_type_t::INPUT_STATIONARY) {
         if(weight_index == m_scheduler->offset_size_dram[data_type_t::WEIGHT].front() &&
