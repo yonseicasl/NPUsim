@@ -282,7 +282,7 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
             if(!skip_transfer[data_type_t::INPUT]) {
                 unsigned row_bit = 1;
                 std::vector<unsigned> parameters = m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
-                unsigned row = parameters[parameter_type_t::INPUT_WIDTH];
+                unsigned row = parameters[parameter_type_t::INPUT_HEIGHT];
                 while(row > 1) {
                     row /= 2;
                     row_bit++;
@@ -752,7 +752,7 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
                 // Row bit calculation
                 unsigned row_bit = 1;
                 std::vector<unsigned> parameters = m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
-                unsigned row = parameters[parameter_type_t::FILTER_WIDTH];
+                unsigned row = parameters[parameter_type_t::FILTER_HEIGHT];
                 while(row > 1) {
                     row /= 2;
                     row_bit++;
