@@ -185,11 +185,6 @@ void pe_array_t::request_data() {
                 global_buffer->write_back_cycle += tile_size[data_type_t::OUTPUT]*global_buffer->u_write_cycle[data_type_t::OUTPUT]/(global_buffer->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
                 global_buffer->access_energy[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*global_buffer->u_write_energy[data_type_t::OUTPUT]/(global_buffer->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
 
-
-                transfer_cycle[data_type_t::OUTPUT] += gather_cycle;
-                overlapped_transfer_cycle += gather_cycle;
-                transfer_energy[data_type_t::OUTPUT] += gather_energy;
-
                 global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*ceil((double)tile_size[data_type_t::OUTPUT]*8*sizeof(data_t)/(double)global_buffer->get_bitwidth());
                 global_buffer->overlapped_transfer_cycle += global_buffer->u_transfer_cycle*ceil((double)tile_size[data_type_t::OUTPUT]*8*sizeof(data_t)/(double)global_buffer->get_bitwidth());
                 global_buffer->transfer_energy[data_type_t::OUTPUT] += global_buffer->u_transfer_energy*ceil((double)tile_size[data_type_t::OUTPUT]*8*sizeof(data_t)/(double)global_buffer->get_bitwidth());
