@@ -979,7 +979,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                         /(sizeof(data_t)*8/row_bit); // Column pointer
 
                         // Update transfer energy between PE array and local buffer
-                        transfer_cycle[data_type_t::WEIGHT] += noc_energy
+                        transfer_energy[data_type_t::WEIGHT] += noc_energy
                                                              *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                              *8*sizeof(data_t)
                                                              /(double)bitwidth) + // Non-zero data
@@ -1090,7 +1090,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                         /(sizeof(data_t)*8/column_bit); // Row pointer
 
                         // Update transfer energy between PE array and local buffer
-                        transfer_cycle[data_type_t::WEIGHT] += noc_energy
+                        transfer_energy[data_type_t::WEIGHT] += noc_energy
                                                              *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                              *8*sizeof(data_t)
                                                              /(double)bitwidth) + // Non-zero data
@@ -1172,7 +1172,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                 noc_energy
                                                                *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT])/(double)bitwidth); // Metadata
 
-                        unsigned data_size = (pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])/8 + // Non-zero data
+                        unsigned data_size = (pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*sizeof(data_t) + // Non-zero data
                                              pes[i]->tile_size_lb[data_type_t::WEIGHT]/8; // Metadata
 
                         pes[i]->utilization_local_buffer[data_type_t::WEIGHT] = (double)data_size/(double)pes[i]->weight_size;
