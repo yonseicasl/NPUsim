@@ -1,3 +1,4 @@
+#ifdef DRAMSIM3
 #include <iostream>
 #include "memory_controller.h"
 
@@ -156,3 +157,4 @@ void memory_controller_t::add_transaction(request_t m_request) {
 void memory_controller_t::print_stats() const {
     dramsim->PrintStats();
 }
+#endif

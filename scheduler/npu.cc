@@ -4,7 +4,6 @@
 #include "config.h"
 
 npu_t::npu_t() :
- num_threads(1),
  num_processors(1),
  num_pes(1),
  data_format(data_format_t::CONVOLUTION),
@@ -58,7 +57,6 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         section_config_t section_config = accelerator_config.sections[i];
 
         if(section_config.name == "accelerator") {
-            section_config.get_setting("num_threads", &num_threads);
             section_config.get_setting("num_processors", &num_processors);
             section_config.get_setting("num_pes", &num_pes);
     

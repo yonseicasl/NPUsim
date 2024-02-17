@@ -1,3 +1,4 @@
+#ifdef DRAMSIM3
 #ifndef __MEMORY_CONTROLLER_H__
 #define __MEMORY_CONTROLLER_H__
 
@@ -63,5 +64,7 @@ private:
     unsigned callback_counter;
     unsigned request_counter;
 };
+
+#endif
 
 #endif
