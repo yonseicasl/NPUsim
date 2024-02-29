@@ -52,7 +52,7 @@ For example, the following command simulates the execution of AlexNet on Eyeriss
     $./npusim.sh run eyeriss alexnet energy
 
 ## Reference and Contact
-To reference NPUsim, please use our ModSim paper.
+To reference NPUsim, please use our ModSim workshop whitepaper.
 
     @misc{kim_modsim2021,
         author      = {B. Kim and C. park and T. Lim and W. Song},
