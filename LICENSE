@@ -1,12 +1,12 @@
 ##########################################################
 # NPUsim: Full-System, Cycle-Accurate, Value-Aware       #
 #         Functional Simulations of DNN Accelerators     #
-# Developed by the Computer Architecture and Systems Lab #
+# Developed by Computer Architecture and Systems Lab     #
 # School of Electrical Engineering, Yonsei University    #
 # Version: 1.0                                           #
 ##########################################################
 
-Copyright (c) 2024, Intelligent Computing System Lab
+Copyright (c) 2024, Computer Architecture and Systems Lab
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
