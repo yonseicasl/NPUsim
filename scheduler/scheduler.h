@@ -156,25 +156,25 @@ private:
 
     std::vector<std::list<unsigned>> calculate_offset_undefined_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type,
                                                                                              std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
-                                                                                             std::string m_parameter_order);
+                                                                                             std::string m_parameter_order, bool m_last_component);
     // Case 2. Input stationary
     std::vector<std::list<unsigned>> calculate_counter_input_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset);
 
     std::vector<std::list<unsigned>> calculate_offset_input_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type,
                                                                                          std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
-                                                                                         std::string m_parameter_order);
+                                                                                         std::string m_parameter_order, bool m_last_component);
     // Case 3. Weight stationary
     std::vector<std::list<unsigned>> calculate_counter_weight_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset);
 
     std::vector<std::list<unsigned>> calculate_offset_weight_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type, 
-                                                                                          std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
-                                                                                          std::string m_parameter_order);
+                                                                                          std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, std::vector<unsigned> m_counter,
+                                                                                          std::string m_parameter_order, bool m_last_component);
     // Case 4. Output stationary
     std::vector<std::list<unsigned>> calculate_counter_output_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset);
 
     std::vector<std::list<unsigned>> calculate_offset_output_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type, 
                                                                                           std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
-                                                                                          std::string m_parameter_order);
+                                                                                          std::string m_parameter_order, bool m_last_component);
     
 #ifdef FUNCTIONAL
 
