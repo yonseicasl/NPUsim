@@ -292,6 +292,70 @@ void scheduler_t::transfer_data(data_t *m_dest, data_t *m_source,
     }
 }
 
+void scheduler_t::transfer_data_ver2(data_t *m_dest, data_t *m_source, 
+                                     component_type_t m_destination_type, component_type_t m_source_type, 
+                                     data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type, bool last_component) {
+    // Calculate data offsets.
+    std::string parameter_order = "BCPQKRS";
+
+    std::vector<unsigned> *t_offsets;
+    std::vector<unsigned> *t_params;
+    std::vector<unsigned> *t_iterations;
+    std::vector<unsigned> t_counters(data_type_t::NUM_DATA_TYPES);
+    if(m_destination_type == component_type_t::MAC) {
+        t_offsets = &offset_pe;
+        t_params = &parameters_pe;
+        t_iterations = &iterations_pe;
+        t_counters[data_type_t::INPUT] = offset_size_pe[data_type_t::INPUT].front();
+        t_counters[data_type_t::WEIGHT] = offset_size_pe[data_type_t::WEIGHT].front();
+        t_counters[data_type_t::OUTPUT] = offset_size_pe[data_type_t::OUTPUT].front();
+    } else if(m_destination_type == component_type_t::PE_Y) {
+        t_offsets = &offset_global_buffer;
+        t_params = &parameters_global_buffer;
+        t_iterations = &iterations_global_buffer;
+        t_counters[data_type_t::INPUT] = offset_size_global_buffer[data_type_t::INPUT].front();
+        t_counters[data_type_t::WEIGHT] = offset_size_global_buffer[data_type_t::WEIGHT].front();
+        t_counters[data_type_t::OUTPUT] = offset_size_global_buffer[data_type_t::OUTPUT].front();
+    } else if(m_destination_type == component_type_t::CHIPS_Y) {
+        t_offsets = &offset_dram;
+        t_params = &parameters_dram;
+        t_iterations = &iterations_dram;
+        t_counters[data_type_t::INPUT] = offset_size_dram[data_type_t::INPUT].front();
+        t_counters[data_type_t::WEIGHT] = offset_size_dram[data_type_t::WEIGHT].front();
+        t_counters[data_type_t::OUTPUT] = offset_size_dram[data_type_t::OUTPUT].front();
+    } else {
+        std::cerr << "No matching accelerator components" << std::endl;
+        exit(1);
+    }
+
+
+    if(m_stationary_type == stationary_type_t::INPUT_STATIONARY) {
+        calculate_offset_input_stationary(m_data_type, m_destination_type, m_source_type, t_offsets, t_params, t_iterations, parameter_order, last_component);
+    } else if(m_stationary_type == stationary_type_t::WEIGHT_STATIONARY) {
+        calculate_offset_weight_stationary(m_data_type, m_destination_type, m_source_type, t_offsets, t_params, t_iterations, t_counters, parameter_order, last_component);
+    } else if(m_stationary_type == stationary_type_t::OUTPUT_STATIONARY) {
+        calculate_offset_output_stationary(m_data_type, m_destination_type, m_source_type, t_offsets, t_params, t_iterations, parameter_order, last_component);
+    } 
+   
+    // Transfer input data.
+    if(m_data_type == data_type_t::INPUT) {
+        input_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::INPUT), m_destination_type, m_source_type);
+    }
+    // Transfer weight
+    else if(m_data_type == data_type_t::WEIGHT) {
+        weight_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::WEIGHT), m_destination_type, m_source_type);
+    }
+    // Transfer output data.
+    else if(m_data_type == data_type_t::OUTPUT) {
+        if(m_action_type == action_type_t::LOAD) {
+            output_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::OUTPUT), m_destination_type, m_source_type);
+        }
+        else if(m_action_type == action_type_t::STORE) {
+            output_data_store(m_dest, m_source, t_offsets->at(data_type_t::OUTPUT), 0, m_destination_type, m_source_type);
+        }
+    }
+}
+
 #endif
 
 std::vector<unsigned> scheduler_t::calculate_parameter_size(component_type_t m_component_type) {
@@ -695,6 +759,46 @@ void scheduler_t::calculate_offset_network_on_chip(std::vector<unsigned> *m_inpu
             }
         }
     }
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_counter_undefined_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset) {
+// TODO for version 2.
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_offset_undefined_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type,
+                                                                                         std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
+                                                                                         std::string m_parameter_order) {
+// TODO for version 2.
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_counter_input_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset) {
+// TODO for version 2.
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type, 
+                                                                                     std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
+                                                                                     std::string m_parameter_order) {
+// TODO for version 2.
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_counter_weight_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset) {
+// TODO for version 2.
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_offset_weight_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type, 
+                                                                                      std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
+                                                                                      std::string m_parameter_order) {
+// TODO for version 2.
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_counter_output_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset) {
+// TODO for version 2.
+}
+
+std::vector<std::list<unsigned>> scheduler_t::calculate_offset_output_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type, 
+                                                                                      std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
+                                                                                      std::string m_parameter_order) {
+// TODO for version 2.
 }
 
 #ifdef FUNCTIONAL
