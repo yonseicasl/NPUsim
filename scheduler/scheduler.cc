@@ -783,6 +783,68 @@ std::vector<std::list<unsigned>> scheduler_t::calculate_offset_input_stationary_
 
 std::vector<std::list<unsigned>> scheduler_t::calculate_counter_weight_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset) {
 // TODO for version 2.
+
+    std::vector<unsigned> dest_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
+    std::vector<unsigned> source_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
+
+    // Calculate the parameter size of destination and source.
+    // The parameter sizes are used to calculate tile offset.
+    dest_param = mapping_table->calculate_parameter_size(m_destination_type);
+    source_param = mapping_table->calculate_parameter_size(m_source_type);
+
+    std::vector<std::list<unsigned>> offset_size;
+    offset_size.reserve(data_type_t::NUM_DATA_TYPES);
+
+    std::vector<unsigned> param(parameter_type_t::NUM_PARAMETER_TYPES, 0);
+
+    unsigned weight_offset_size = 0;
+    std::list<unsigned> input_offset_sizes, weight_offset_sizes, output_offset_sizes;
+    for(unsigned g = 0; g < source_param[parameter_type_t::GROUP]; g += dest_param[parameter_type_t::GROUP]) {
+        for(unsigned k = 0; k < source_param[parameter_type_t::OUTPUT_CHANNEL]/source_param[parameter_type_t::GROUP]; 
+                            k += dest_param[parameter_type_t::OUTPUT_CHANNEL]/dest_param[parameter_type_t::GROUP]) {
+            for(unsigned c = 0; c < source_param[parameter_type_t::INPUT_CHANNEL]/source_param[parameter_type_t::GROUP]; 
+                                c += dest_param[parameter_type_t::INPUT_CHANNEL]/dest_param[parameter_type_t::GROUP]) {
+                for(unsigned r = 0; r < source_param[parameter_type_t::FILTER_HEIGHT]; 
+                                    r += dest_param[parameter_type_t::FILTER_HEIGHT]) {
+                    for(unsigned s = 0; s < source_param[parameter_type_t::FILTER_WIDTH]; 
+                                        s += dest_param[parameter_type_t::FILTER_WIDTH]) {
+                        weight_offset_size++;
+
+                        unsigned input_offset_size = 0, output_offset_size = 0;
+                        for(unsigned b = 0; b < source_param[parameter_type_t::BATCH_SIZE]; b += dest_param[parameter_type_t::BATCH_SIZE]) {
+                            for(unsigned p = 0; p < source_param[parameter_type_t::OUTPUT_HEIGHT]; p += dest_param[parameter_type_t::OUTPUT_HEIGHT]) {
+                                for(unsigned q = 0; q < source_param[parameter_type_t::OUTPUT_WIDTH]; q += dest_param[parameter_type_t::OUTPUT_WIDTH]) {
+                                    input_offset_size++;
+
+                                    // Calculate the offsets of output data.
+                                    // The sequence of output data : K->B->P->Q
+                                    unsigned output_offset = b*source_param[parameter_type_t::GROUP]*source_param[parameter_type_t::OUTPUT_CHANNEL]/source_param[parameter_type_t::GROUP]
+                                                              *source_param[parameter_type_t::OUTPUT_HEIGHT]*source_param[parameter_type_t::OUTPUT_WIDTH]
+                                                           + g*source_param[parameter_type_t::OUTPUT_CHANNEL]/source_param[parameter_type_t::GROUP]
+                                                              *source_param[parameter_type_t::OUTPUT_HEIGHT]*source_param[parameter_type_t::OUTPUT_WIDTH]
+                                                           + k*source_param[parameter_type_t::OUTPUT_HEIGHT]*source_param[parameter_type_t::OUTPUT_WIDTH]
+                                                           + p*source_param[parameter_type_t::OUTPUT_WIDTH] + q;
+                                    m_output_offset->emplace_back(output_offset);
+                                    output_offset_size++;
+                                }
+                            }
+                        }
+                        // Store the number of input and output data tiles.
+                        // To indicate the number of reuse of weight.
+                        input_offset_sizes.emplace_back(input_offset_size);
+                        output_offset_sizes.emplace_back(output_offset_size);
+                    }
+                }
+            }
+        }
+    }
+    weight_offset_sizes.emplace_back(weight_offset_size);
+
+    offset_size.emplace_back(input_offset_sizes);
+    offset_size.emplace_back(weight_offset_sizes);
+    offset_size.emplace_back(output_offset_sizes);
+
+    return offset_size;
 }
 
 std::vector<std::list<unsigned>> scheduler_t::calculate_offset_weight_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type, 
