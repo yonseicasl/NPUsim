@@ -849,6 +849,82 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
                                                          std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, 
                                                          std::vector<unsigned> *m_iteration, std::vector<unsigned> m_counter,
                                                          std::string m_parameter_order, bool m_last_component) {
+    std::vector<unsigned> dest_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
+    std::vector<unsigned> source_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
+
+    dest_param = mapping_table->calculate_parameter_size(m_destination_type);
+    source_param = mapping_table->calculate_parameter_size(m_source_type);
+
+    std::vector<bool> update_param(data_type_t::NUM_DATA_TYPES, false);
+
+
+    // Calculate input data offset
+    if(m_data_type == data_type_t::INPUT) {
+        unsigned input_offset = m_params->at(parameter_type_t::BATCH_SIZE)
+                               *source_param[parameter_type_t::GROUP]
+                               *source_param[parameter_type_t::INPUT_CHANNEL]
+                               /source_param[parameter_type_t::GROUP]
+                               *source_param[parameter_type_t::INPUT_HEIGHT]
+                               *source_param[parameter_type_t::INPUT_WIDTH] + 
+                                m_params->at(parameter_type_t::GROUP)
+                               *source_param[parameter_type_t::INPUT_CHANNEL]
+                               /source_param[parameter_type_t::GROUP]
+                               *source_param[parameter_type_t::INPUT_HEIGHT]
+                               *source_param[parameter_type_t::INPUT_WIDTH] +
+                                m_params->at(parameter_type_t::INPUT_CHANNEL)
+                               *source_param[parameter_type_t::INPUT_HEIGHT]
+                               *source_param[parameter_type_t::INPUT_WIDTH] + 
+                                m_params->at(parameter_type_t::INPUT_HEIGHT)
+                               *source_param[parameter_type_t::INPUT_WIDTH] +
+                                m_params->at(parameter_type_t::INPUT_WIDTH);
+
+        m_offsets->at(data_type_t::INPUT) = input_offset;
+        if(m_last_component) {m_iteration->at(data_type_t::INPUT) += 1;}
+    }
+    if(m_data_type == data_type_t::WEIGHT) {
+        unsigned weight_offset = m_params->at(parameter_type_t::GROUP)
+                                *source_param[parameter_type_t::OUTPUT_CHANNEL]
+                                /source_param[parameter_type_t::GROUP]
+                                *source_param[parameter_type_t::INPUT_CHANNEL]
+                                /source_param[parameter_type_t::GROUP]
+                                *source_param[parameter_type_t::FILTER_HEIGHT]
+                                *source_param[parameter_type_t::FILTER_WIDTH] + 
+                                 m_params->at(parameter_type_t::OUTPUT_CHANNEL)
+                                *source_param[parameter_type_t::INPUT_CHANNEL]
+                                /source_param[parameter_type_t::GROUP]
+                                *source_param[parameter_type_t::FILTER_HEIGHT]
+                                *source_param[parameter_type_t::FILTER_WIDTH] + 
+                                 m_params->at(parameter_type_t::INPUT_CHANNEL)
+                                *source_param[parameter_type_t::FILTER_HEIGHT]
+                                *source_param[parameter_type_t::FILTER_WIDTH] + 
+                                 m_params->at(parameter_type_t::FILTER_HEIGHT)
+                                *source_param[parameter_type_t::FILTER_WIDTH] + 
+                                 m_params->at(parameter_type_t::FILTER_WIDTH);
+        m_offsets->at(data_type_t::WEIGHT) = weight_offset;
+        if(m_last_component) {m_iteration->at(data_type_t::WEIGHT) += 1;}
+    }
+    if(m_data_type == data_type_t::OUTPUT) {
+        unsigned output_offset = m_params->at(parameter_type_t::BATCH_SIZE)
+                                *source_param[parameter_type_t::GROUP]
+                                *source_param[parameter_type_t::OUTPUT_CHANNEL]
+                                /source_param[parameter_type_t::GROUP]
+                                *source_param[parameter_type_t::OUTPUT_HEIGHT]
+                                *source_param[parameter_type_t::OUTPUT_WIDTH] + 
+                                 m_params->at(parameter_type_t::GROUP)
+                                *source_param[parameter_type_t::OUTPUT_CHANNEL]
+                                /source_param[parameter_type_t::GROUP]
+                                *source_param[parameter_type_t::OUTPUT_HEIGHT]
+                                *source_param[parameter_type_t::OUTPUT_WIDTH] + 
+                                 m_params->at(parameter_type_t::OUTPUT_CHANNEL)
+                                *source_param[parameter_type_t::OUTPUT_HEIGHT]
+                                *source_param[parameter_type_t::OUTPUT_WIDTH] + 
+                                 m_params->at(parameter_type_t::OUTPUT_HEIGHT)
+                                *source_param[parameter_type_t::OUTPUT_WIDTH] + 
+                                 m_params->at(parameter_type_t::OUTPUT_WIDTH);
+
+        m_offsets->at(data_type_t::OUTPUT) = output_offset;
+        if(m_last_component) {m_iteration->at(data_type_t::OUTPUT) += 1;}
+    }
 }
 
 std::vector<std::list<unsigned>> scheduler_t::calculate_counter_weight_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset) {
