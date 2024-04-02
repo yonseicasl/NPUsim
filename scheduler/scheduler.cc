@@ -849,6 +849,7 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
                                                          std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, 
                                                          std::vector<unsigned> *m_iteration, std::vector<unsigned> m_counter,
                                                          std::string m_parameter_order, bool m_last_component) {
+    // Initialize parameter size at source and destination components
     std::vector<unsigned> dest_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
     std::vector<unsigned> source_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
 
@@ -857,8 +858,7 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
 
     std::vector<bool> update_param(data_type_t::NUM_DATA_TYPES, false);
 
-
-    // Calculate input data offset
+    // Offset calculation of input data
     if(m_data_type == data_type_t::INPUT) {
         unsigned input_offset = m_params->at(parameter_type_t::BATCH_SIZE)
                                *source_param[parameter_type_t::GROUP]
@@ -881,6 +881,7 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
         m_offsets->at(data_type_t::INPUT) = input_offset;
         if(m_last_component) {m_iteration->at(data_type_t::INPUT) += 1;}
     }
+    // Offset calculation of weight
     if(m_data_type == data_type_t::WEIGHT) {
         unsigned weight_offset = m_params->at(parameter_type_t::GROUP)
                                 *source_param[parameter_type_t::OUTPUT_CHANNEL]
@@ -903,6 +904,7 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
         m_offsets->at(data_type_t::WEIGHT) = weight_offset;
         if(m_last_component) {m_iteration->at(data_type_t::WEIGHT) += 1;}
     }
+    // Offset calculation of output data
     if(m_data_type == data_type_t::OUTPUT) {
         unsigned output_offset = m_params->at(parameter_type_t::BATCH_SIZE)
                                 *source_param[parameter_type_t::GROUP]
@@ -924,6 +926,28 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
 
         m_offsets->at(data_type_t::OUTPUT) = output_offset;
         if(m_last_component) {m_iteration->at(data_type_t::OUTPUT) += 1;}
+    }
+
+    // Reset iterations 
+    if(m_iteration->at(data_type_t::WEIGHT) == m_counter[data_type_t::WEIGHT] &&
+       m_iteration->at(data_type_t::OUTPUT) == m_counter[data_type_t::OUTPUT]) {
+
+        // Reset input-related parameters
+        if(m_iteration->at(data_type_t::INPUT) == m_counter[data_type_t::INPUT]) {
+            m_iteration->at(data_type_t::INPUT) = 0;
+            m_params->at(parameter_type_t::BATCH_SIZE) = 0;
+            m_params->at(parameter_type_t::GROUP) = 0;
+            m_params->at(parameter_type_t::INPUT_CHANNEL) = 0;
+            m_params->at(parameter_type_t::INPUT_HEIGHT) = 0;
+            m_params->at(parameter_type_t::INPUT_WIDTH) = 0;
+        }
+        // Reset input-irrelevant parameters
+        m_iteration->at(data_type_t::WEIGHT) = 0, m_iteration->at(data_type_t::OUTPUT) = 0;
+        m_params->at(parameter_type_t::OUTPUT_CHANNEL) = 0;
+        m_params->at(parameter_type_t::FILTER_HEIGHT) = 0;
+        m_params->at(parameter_type_t::FILTER_WIDTH) = 0;
+        m_params->at(parameter_type_t::OUTPUT_HEIGHT) = 0;
+        m_params->at(parameter_type_t::OUTPUT_WIDTH) = 0;
     }
 }
 
@@ -1073,8 +1097,8 @@ void scheduler_t::calculate_offset_weight_stationary_ver2(data_type_t m_data_typ
     }
 
     // Reset iterations of DNN parameters.
-    if(m_iteration->at(data_type_t::INPUT) == m_counter[data_type_t::INPUT] 
-    && m_iteration->at(data_type_t::OUTPUT) == m_counter[data_type_t::OUTPUT]) {
+    if(m_iteration->at(data_type_t::INPUT) == m_counter[data_type_t::INPUT] &&
+       m_iteration->at(data_type_t::OUTPUT) == m_counter[data_type_t::OUTPUT]) {
         // Reset iterations of weight-related parameters.
         if(m_iteration->at(data_type_t::WEIGHT) == m_counter[data_type_t::WEIGHT]) {
             m_iteration->at(data_type_t::WEIGHT) = 0;
@@ -1088,8 +1112,8 @@ void scheduler_t::calculate_offset_weight_stationary_ver2(data_type_t m_data_typ
         m_iteration->at(data_type_t::INPUT) = 0, m_iteration->at(data_type_t::OUTPUT) = 0;
         update_params[data_type_t::WEIGHT] = true;
         m_params->at(parameter_type_t::BATCH_SIZE) = 0;
-        //m_params->at(parameter_type_t::INPUT_HEIGHT) = 0;
-        //m_params->at(parameter_type_t::INPUT_WIDTH) = 0;
+        m_params->at(parameter_type_t::INPUT_HEIGHT) = 0;
+        m_params->at(parameter_type_t::INPUT_WIDTH) = 0;
         m_params->at(parameter_type_t::OUTPUT_HEIGHT) = 0;
         m_params->at(parameter_type_t::OUTPUT_WIDTH) = 0;
     }
@@ -1289,8 +1313,8 @@ void scheduler_t::calculate_offset_output_stationary_ver2(data_type_t m_data_typ
     }
 
     // Reset iteration value
-    if(m_iteration->at(data_type_t::INPUT) == m_counter[data_type_t::INPUT]
-    && m_iteration->at(data_type_t::WEIGHT) == m_counter[data_type_t::WEIGHT]) {
+    if(m_iteration->at(data_type_t::INPUT) == m_counter[data_type_t::INPUT] &&
+       m_iteration->at(data_type_t::WEIGHT) == m_counter[data_type_t::WEIGHT]) {
 
         // Reset output-related parameters
         if(m_iteration->at(data_type_t::OUTPUT) == m_counter[data_type_t::OUTPUT]) {
@@ -1305,8 +1329,8 @@ void scheduler_t::calculate_offset_output_stationary_ver2(data_type_t m_data_typ
         m_iteration->at(data_type_t::INPUT) = 0, m_iteration->at(data_type_t::WEIGHT) = 0;
         update_params[data_type_t::OUTPUT] = true;
         m_params->at(parameter_type_t::INPUT_CHANNEL) = 0;
-        //m_params->at(parameter_type_t::INPUT_HEIGHT) = 0;
-        //m_params->at(parameter_type_t::INPUT_WIDTH) = 0;
+        m_params->at(parameter_type_t::INPUT_HEIGHT) = 0;
+        m_params->at(parameter_type_t::INPUT_WIDTH) = 0;
         m_params->at(parameter_type_t::FILTER_HEIGHT) = 0;
         m_params->at(parameter_type_t::FILTER_WIDTH) = 0;
     }
