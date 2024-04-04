@@ -2,6 +2,8 @@ result/
 
 raw-mapping/
 
+library/libnpusim.so
+
 mappings/
 
 models/model
