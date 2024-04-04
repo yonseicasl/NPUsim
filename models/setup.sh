@@ -1,7 +1,8 @@
 #!/bin/bash
 
 if [[ "$#" -lt 1 ]]; then 
-    echo -e "Error"
+    echo -e "Usage: $0 [network]"
+    echo -e "[network] option : alexnet, resnet50"
     exit 0
 fi
 
@@ -26,5 +27,6 @@ if [[ ! -d datasets/imagenet ]]; then
     echo -e "Dataset imagenet not exist"
     ../ext/nebula/dataset_dropbox.sh imagenet large
     mv datasets/imagenet_large datasets/imagenet
+    cd datasets/imagenet && sh list.sh && cd ../../
 fi
 
