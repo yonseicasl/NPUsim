@@ -239,9 +239,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
             // Run on accelerator if the layer type is
             // Convolutional, Fully-connected, Max pooling, or Average pooling.
 			if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
-			   network->layers[index]->layer_type == nebula::CONNECTED_LAYER ||
-               network->layers[index]->layer_type == nebula::AVGPOOL_LAYER ||
-               network->layers[index]->layer_type == nebula::MAXPOOL_LAYER) {
+			   network->layers[index]->layer_type == nebula::CONNECTED_LAYER) {
+               //network->layers[index]->layer_type == nebula::AVGPOOL_LAYER ||
+               //network->layers[index]->layer_type == nebula::MAXPOOL_LAYER) {
 
                 if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER) {
                     schedulers[index]->layer_name = layer_name_t::CONVOLUTIONAL_LAYER;

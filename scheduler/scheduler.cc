@@ -856,7 +856,9 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
     dest_param = mapping_table->calculate_parameter_size(m_destination_type);
     source_param = mapping_table->calculate_parameter_size(m_source_type);
 
-    std::vector<bool> update_param(data_type_t::NUM_DATA_TYPES, false);
+    std::vector<bool> update_params(data_type_t::NUM_DATA_TYPES, false);
+
+    //unsigned height_hop = (dest_param[parameter_type_t::FILTER_HEIGHT] == 
 
     // Offset calculation of input data
     if(m_data_type == data_type_t::INPUT) {
@@ -949,6 +951,47 @@ void scheduler_t::calculate_offset_input_stationary_ver2(data_type_t m_data_type
         m_params->at(parameter_type_t::OUTPUT_HEIGHT) = 0;
         m_params->at(parameter_type_t::OUTPUT_WIDTH) = 0;
     }
+
+    // Update input-irrelevant parameters
+    if(m_data_type == data_type_t::WEIGHT) {
+        m_params->at(parameter_type_t::FILTER_WIDTH) += dest_param[parameter_type_t::FILTER_WIDTH];
+    }
+
+    //if(update_params[data_type_t::INPUT]) {
+        //update_params[data_type_t::INPUT] = false;
+        // N<-C<-H<-W
+        //m_params->at(parameter_type_t::INPUT_WIDTH]
+
+
+    /*
+    for(unsigned b = 0; b < source_param[parameter_type_t::BATCH_SIZE]; b += dest_param[parameter_type_t::BATCH_SIZE]) {
+        for(unsigned g = 0; g < source_param[parameter_type_t::GROUP]; g += dest_param[parameter_type_t::GROUP]) {
+            for(unsigned c = 0; c < source_param[parameter_type_t::INPUT_CHANNEL]/source_param[parameter_type_t::GROUP]; 
+                         c += dest_param[parameter_type_t::INPUT_CHANNEL]/dest_param[parameter_type_t::GROUP]) {
+                for(unsigned h = 0; h <= source_param[parameter_type_t::INPUT_HEIGHT] - dest_param[parameter_type_t::INPUT_HEIGHT];) {
+                    for(unsigned w = 0; w <= source_param[parameter_type_t::INPUT_WIDTH] - dest_param[parameter_type_t::INPUT_WIDTH];) {
+                        input_offset_size++;
+                        unsigned weight_offset_size = 0, output_offset_size = 0;
+                        // The sequence of weight : C->K->R->S
+                        for(unsigned k = 0; k < source_param[parameter_type_t::OUTPUT_CHANNEL]/source_param[parameter_type_t::GROUP]; 
+                                     k += dest_param[parameter_type_t::OUTPUT_CHANNEL]/dest_param[parameter_type_t::GROUP]) {
+                            for(unsigned r = h%stride; r < source_param[parameter_type_t::FILTER_HEIGHT]; 
+                                         r += dest_param[parameter_type_t::FILTER_HEIGHT]*dest_param[parameter_type_t::STRIDE]) {
+                                if(h >= r && source_param[parameter_type_t::INPUT_HEIGHT] - h >= source_param[parameter_type_t::FILTER_HEIGHT] - r
+                                          && (h-r)/height_hop*dest_param[parameter_type_t::OUTPUT_HEIGHT] < source_param[parameter_type_t::OUTPUT_HEIGHT]) {
+                                    for(unsigned s = w%stride; s < source_param[parameter_type_t::FILTER_WIDTH]; 
+                                                 s += dest_param[parameter_type_t::FILTER_WIDTH]*dest_param[parameter_type_t::STRIDE]) {
+                                        if(w >= s && source_param[parameter_type_t::INPUT_WIDTH] - w >= source_param[parameter_type_t::FILTER_WIDTH] - s 
+                                                  && (w-s)/width_hop*dest_param[parameter_type_t::OUTPUT_WIDTH] < source_param[parameter_type_t::OUTPUT_WIDTH]) {
+                                            weight_offset_size++;
+                                            output_offset_size++;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+*/
+
 }
 
 std::vector<std::list<unsigned>> scheduler_t::calculate_counter_weight_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset) {
