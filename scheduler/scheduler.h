@@ -43,6 +43,10 @@ public:
                                        component_type_t m_destination_type, component_type_t m_source_type, 
                                        data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type);
 #endif
+    /* TODO : update for the next version */
+    void transfer_data_ver2(data_t *m_dest, data_t *m_source, 
+                            component_type_t m_destination_type, component_type_t m_source_type, 
+                            data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type, bool last_component);
 
     std::vector<unsigned> calculate_parameter_size(component_type_t m_component_type);
 
@@ -58,7 +62,7 @@ public:
 
     /* PE instantiates for ver2 */
     std::vector<unsigned> parameters_pe;                                                // DNN parameters 
-    std::vector<std::list<unsigned>> offset_pe;
+    std::vector<unsigned> offset_pe;
     std::vector<unsigned> iterations_pe;                                                // The number of iterations at PE
 
     /* PE scheduler */

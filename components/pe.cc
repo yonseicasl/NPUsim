@@ -1633,17 +1633,6 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                     }
                 }
             }
-            /*
-            // Update local buffer read cycle and energy.
-            access_cycle_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            write_back_cycle_lb += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            access_energy_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_energy_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-
-            // Update PE array write cycle and energy.
-            pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->write_back_cycle += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->access_energy[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_energy[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            */
             
             // Increase flush counter of weight and output data.
             weight_flush_counter++;

@@ -121,7 +121,7 @@ void adder_tree_t::init(section_config_t m_section_config) {
     // Define stationary of each PE (between MAC and Local buffer inside the PE).
 	pe_t* pe;
     std::string pe_stationary_type_str;
-    m_section_config.get_setting("pe_stationary", &pe_stationary_type_str);
+    m_section_config.get_setting("mac_stationary", &pe_stationary_type_str);
     if(pe_stationary_type_str == "input_stationary") {
         for(unsigned i = 0; i < num_pes; i++) {
             pe = new input_stationary_t(m_section_config);

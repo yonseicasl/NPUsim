@@ -124,6 +124,9 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
 
     // Transfer input data from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::INPUT]) {
+        m_scheduler->transfer_data_ver2(pe_array->input_data, data, 
+                                        component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, 
+                                        data_type_t::INPUT, pe_array->get_stationary_type(), action_type_t::LOAD, true);
 #ifdef FUNCTIONAL
         // Input data transfer
         m_scheduler->transfer_data(pe_array->input_data, data, 0, offsets[data_type_t::INPUT] + m_scheduler->input_offset_global_buffer.front(), 
@@ -611,6 +614,9 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     }
     // Transfer weight from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::WEIGHT]) {
+        m_scheduler->transfer_data_ver2(pe_array->weight, data, 
+                                        component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, 
+                                        data_type_t::WEIGHT, pe_array->get_stationary_type(), action_type_t::LOAD, true);
 #ifdef FUNCTIONAL
         // Weight transfer
         m_scheduler->transfer_data(pe_array->weight, data, 0, offsets[data_type_t::WEIGHT] + m_scheduler->weight_offset_global_buffer.front(),
@@ -1103,6 +1109,9 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     }
     // Transfer output data from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::OUTPUT]) {
+            m_scheduler->transfer_data_ver2(pe_array->output_data, data, 
+                                            component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, 
+                                            data_type_t::OUTPUT, pe_array->get_stationary_type(), action_type_t::LOAD, true);
         if(m_scheduler->output_read_global_buffer[m_scheduler->output_offset_global_buffer.front()]) {
 #ifdef FUNCTIONAL
             // Output data transfer
