@@ -161,6 +161,11 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         m_scheduler->transfer_data(multi_chip->data, (data_t*)layer->input_data, multi_chip->offsets[data_type_t::INPUT], m_scheduler->input_offset_dram.front(), 
                                    component_type_t::CHIPS_Y, component_type_t::DRAM, 
                                    data_type_t::INPUT, multi_chip->get_stationary_type(), action_type_t::LOAD);
+        // Update for NPUsim ver2
+        //m_scheduler->transfer_data_ver2(multi_chip->data, (data_t*)layer->input_data, 
+        //                                component_type_t::CHIPS_Y, component_type_t::DRAM,
+        //                                data_type_t::INPUT, multi_chip->get_stationary_type(), 
+        //                                action_type_t::LOAD, true);
 
         // Case 1. Dense data format
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
@@ -631,6 +636,11 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         m_scheduler->transfer_data(multi_chip->data, (data_t*)layer->weight, multi_chip->offsets[data_type_t::WEIGHT], m_scheduler->weight_offset_dram.front(), 
                                    component_type_t::CHIPS_Y, component_type_t::DRAM, 
                                    data_type_t::WEIGHT, multi_chip->get_stationary_type(), action_type_t::LOAD);
+        // Update for NPUsim ver2
+        //m_scheduler->transfer_data_ver2(multi_chip->data, (data_t*)layer->weight,
+        //                                component_type_t::CHIPS_Y, component_type_t::DRAM,
+        //                                data_type_t::WEIGHT, multi_chip->get_stationary_type(), 
+        //                                action_type_t::LOAD, true);
         // Case 1. Dense data format
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
             if(!skip_transfer[data_type_t::WEIGHT]) {
@@ -1149,6 +1159,11 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
                 m_scheduler->transfer_data(multi_chip->data, (data_t*)layer->output_data, multi_chip->offsets[data_type_t::OUTPUT], m_scheduler->output_offset_dram.front(), 
                                            component_type_t::CHIPS_Y, component_type_t::DRAM, 
                                            data_type_t::OUTPUT, multi_chip->get_stationary_type(), action_type_t::LOAD);
+                // Update for NPUsim ver2
+                //m_scheduler->transfer_data_ver2(multi_chip->data, (data_t*)layer->output_data,
+                //                                component_type_t::CHIPS_Y, component_type_t::DRAM,
+                //                                data_type_t::OUTPUT, multi_chip->get_stationary_type(), 
+                //                                action_type_t::LOAD, true);
 
 #endif
                 /* Stats */

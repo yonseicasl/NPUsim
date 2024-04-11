@@ -33,20 +33,16 @@ public:
                        unsigned m_dest_offset, unsigned m_source_offset, 
                        component_type_t m_dest_type, component_type_t m_source_type, 
                        data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type);
-    /* TODO : update for the next version */
+    /* Update for NPUsim ver2 */
     void transfer_data_ver2(data_t *m_dest, data_t *m_source, 
                             component_type_t m_destination_type, component_type_t m_source_type, 
                             data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type, bool last_component);
 
-    /* TODO: update for the next version */
+    /* update for NPUsim ver2 */
     void transfer_data_network_on_chip(data_t *m_dest, data_t *m_source, unsigned m_dest_offset, unsigned m_source_offset,
                                        component_type_t m_destination_type, component_type_t m_source_type, 
                                        data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type);
 #endif
-    /* TODO : update for the next version */
-    void transfer_data_ver2(data_t *m_dest, data_t *m_source, 
-                            component_type_t m_destination_type, component_type_t m_source_type, 
-                            data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type, bool last_component);
 
     std::vector<unsigned> calculate_parameter_size(component_type_t m_component_type);
 

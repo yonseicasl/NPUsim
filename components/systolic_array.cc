@@ -291,6 +291,12 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                         m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
                                                    component_type_t::PE, component_type_t::PE_Y, 
                                                    data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                        // Update for NPUsim ver2
+                        //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                        //                                           component_type_t::PE, component_type_t::PE_Y,
+                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           action_type_t::LOAD, last_component);
 #endif
 
                         for(unsigned b = 0; b < parameters_pe[parameter_type_t::BATCH_SIZE]; b++) {
@@ -406,6 +412,12 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                         m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
                                                    component_type_t::PE, component_type_t::PE_Y, 
                                                    data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                        // Update for NPUsim ver2
+                        //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                        //                                           component_type_t::PE, component_type_t::PE_Y,
+                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           action_type_t::LOAD, last_component);
 #endif
 
                         if(i%num_active_pe_x == 0) {
@@ -467,6 +479,12 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                         m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
                                                                    component_type_t::PE, component_type_t::PE_Y, 
                                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                        // Update for NPUsim ver2
+                        //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                        //                                           component_type_t::PE, component_type_t::PE_Y,
+                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           action_type_t::LOAD, last_component);
 #endif
 
                         if(i/num_active_pe_x == 0) {
@@ -509,6 +527,12 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                         m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
                                                                    component_type_t::PE, component_type_t::PE_Y, 
                                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                        // Update for NPUsim ver2
+                        //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                        //                                           component_type_t::PE, component_type_t::PE_Y,
+                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           action_type_t::LOAD, last_component);
 #endif
 
                         uint64_t address_pe = 0, address_pe_array = 0;
@@ -621,6 +645,12 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                         m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
                                                                    component_type_t::PE, component_type_t::PE_Y, 
                                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                        // Update for NPUsim ver2
+                        //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                        //                                           component_type_t::PE, component_type_t::PE_Y,
+                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           action_type_t::LOAD, last_component);
 #endif
                         if(i%num_active_pe_x == 0) {
                             pes[i]->access_cycle_lb[data_type_t::WEIGHT] += pes[i]->u_write_cycle_lb[data_type_t::WEIGHT];
@@ -680,6 +710,12 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                             m_scheduler->transfer_data(pes[i]->output_data_lb, output_data, 0, m_scheduler->output_offset_pe_array[0], 
                                                                        component_type_t::PE, component_type_t::PE_Y, 
                                                                        data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                            // Update for NPUsim ver2
+                            //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                            //m_scheduler->transfer_data_network_on_chip(pes[i]->output_data_lb, output_data, 
+                            //                                           component_type_t::PE, component_type_t::PE_Y,
+                            //                                           data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), 
+                            //                                           action_type_t::LOAD, last_component);
 #endif
                             if(i/num_active_pe_x == 0) {
                                 pes[i]->access_cycle_lb[data_type_t::OUTPUT] += pes[i]->u_write_cycle_lb[data_type_t::OUTPUT];
@@ -722,6 +758,12 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                             m_scheduler->transfer_data(pes[i]->output_data_lb, output_data, 0, m_scheduler->output_offset_pe_array[0], 
                                                                        component_type_t::PE, component_type_t::PE_Y, 
                                                                        data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                            // Update for NPUsim ver2
+                            //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                            //m_scheduler->transfer_data_network_on_chip(pes[i]->output_data_lb, output_data, 
+                            //                                           component_type_t::PE, component_type_t::PE_Y,
+                            //                                           data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), 
+                            //                                           action_type_t::LOAD, last_component);
 #endif
 
                             uint64_t address_pe = 0, address_pe_array = 0;

@@ -141,24 +141,10 @@ void scheduler_t::init(mapping_table_t *m_mapping_table, stationary_type_t pe_st
         offset_size_global_buffer = calculate_offset_output_stationary(&input_offset_global_buffer, &weight_offset_global_buffer, &output_offset_global_buffer, 
                                                                         component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER);
         /* Counter calculator : Version 2 */
-        offset_size_global_buffer = calculate_counter_output_stationary_ver2(component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, &output_offset_global_buffer);   
+        //offset_size_global_buffer = calculate_counter_output_stationary_ver2(component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, &output_offset_global_buffer);   
     } else if(pe_array_stationary == stationary_type_t::UNDEFINED_STATIONARY) {
         std::cerr << "No Local Reuse is not available on the current version" << std::endl;
         exit(1);
-    }
-
-    //for(int i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
-    //    for(auto j : offset_size_global_buffer[i]) {
-    //        std::cout << j << " ";
-    //    }
-    //    std::cout << std::endl;
-    //}
-    for(auto i : input_offset_global_buffer) {
-        std::cout << i << " ";
-    }
-    std::cout << std::endl;
-    for(auto i : weight_offset_global_buffer) {
-        std::cout << i << " ";
     }
 
     output_read_global_buffer = update_output_read(output_offset_global_buffer);
@@ -393,73 +379,6 @@ void scheduler_t::transfer_data_ver2(data_t *m_dest, data_t *m_source,
         exit(1);
     }
 
-
-    if(m_stationary_type == stationary_type_t::INPUT_STATIONARY) {
-        calculate_offset_input_stationary_ver2(m_data_type, m_destination_type, m_source_type, t_offsets, t_params, t_iterations, parameter_order, last_component);
-    } else if(m_stationary_type == stationary_type_t::WEIGHT_STATIONARY) {
-        calculate_offset_weight_stationary_ver2(m_data_type, m_destination_type, m_source_type, t_offsets, t_params, t_iterations, t_counters, parameter_order, last_component);
-    } else if(m_stationary_type == stationary_type_t::OUTPUT_STATIONARY) {
-        calculate_offset_output_stationary_ver2(m_data_type, m_destination_type, m_source_type, t_offsets, t_params, t_iterations, parameter_order, last_component);
-    } 
-
-   
-    //// Transfer input data.
-    //if(m_data_type == data_type_t::INPUT) {
-    //    input_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::INPUT), m_destination_type, m_source_type);
-    //}
-    //// Transfer weight
-    //else if(m_data_type == data_type_t::WEIGHT) {
-    //    weight_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::WEIGHT), m_destination_type, m_source_type);
-    //}
-    //// Transfer output data.
-    //else if(m_data_type == data_type_t::OUTPUT) {
-    //    if(m_action_type == action_type_t::LOAD) {
-    //        output_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::OUTPUT), m_destination_type, m_source_type);
-    //    }
-    //    else if(m_action_type == action_type_t::STORE) {
-    //        output_data_store(m_dest, m_source, t_offsets->at(data_type_t::OUTPUT), 0, m_destination_type, m_source_type);
-    //    }
-    //}
-}
-
-#endif
-
-void scheduler_t::transfer_data_ver2(data_t *m_dest, data_t *m_source, 
-                                     component_type_t m_destination_type, component_type_t m_source_type, 
-                                     data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type, bool last_component) {
-    // Calculate data offsets.
-    std::string parameter_order = "BCPQKRS";
-
-    std::vector<unsigned> *t_offsets;
-    std::vector<unsigned> *t_params;
-    std::vector<unsigned> *t_iterations;
-    std::vector<unsigned> t_counters(data_type_t::NUM_DATA_TYPES);
-    if(m_destination_type == component_type_t::MAC) {
-        t_offsets = &offset_pe;
-        t_params = &parameters_pe;
-        t_iterations = &iterations_pe;
-        t_counters[data_type_t::INPUT] = offset_size_pe[data_type_t::INPUT].front();
-        t_counters[data_type_t::WEIGHT] = offset_size_pe[data_type_t::WEIGHT].front();
-        t_counters[data_type_t::OUTPUT] = offset_size_pe[data_type_t::OUTPUT].front();
-    } else if(m_destination_type == component_type_t::PE_Y) {
-        t_offsets = &offset_global_buffer;
-        t_params = &parameters_global_buffer;
-        t_iterations = &iterations_global_buffer;
-        t_counters[data_type_t::INPUT] = offset_size_global_buffer[data_type_t::INPUT].front();
-        t_counters[data_type_t::WEIGHT] = offset_size_global_buffer[data_type_t::WEIGHT].front();
-        t_counters[data_type_t::OUTPUT] = offset_size_global_buffer[data_type_t::OUTPUT].front();
-    } else if(m_destination_type == component_type_t::CHIPS_Y) {
-        t_offsets = &offset_dram;
-        t_params = &parameters_dram;
-        t_iterations = &iterations_dram;
-        t_counters[data_type_t::INPUT] = offset_size_dram[data_type_t::INPUT].front();
-        t_counters[data_type_t::WEIGHT] = offset_size_dram[data_type_t::WEIGHT].front();
-        t_counters[data_type_t::OUTPUT] = offset_size_dram[data_type_t::OUTPUT].front();
-    } else {
-        std::cerr << "No matching accelerator components" << std::endl;
-        exit(1);
-    }
-
     if(m_stationary_type == stationary_type_t::INPUT_STATIONARY) {
         calculate_offset_input_stationary_ver2(m_data_type, m_destination_type, m_source_type, 
                                                t_offsets, t_params, 
@@ -477,26 +396,26 @@ void scheduler_t::transfer_data_ver2(data_t *m_dest, data_t *m_source,
                                                 parameter_order, last_component);
     } 
 
-    //// Transfer input data.
+    // Transfer input data.
     if(m_data_type == data_type_t::INPUT) {
-        //input_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::INPUT), m_destination_type, m_source_type);
-        std::cout << t_offsets->at(data_type_t::INPUT) << " ";
+        input_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::INPUT), m_destination_type, m_source_type);
     }
     // Transfer weight
     else if(m_data_type == data_type_t::WEIGHT) {
-        //weight_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::WEIGHT), m_destination_type, m_source_type);
-        //std::cout << t_offsets->at(data_type_t::WEIGHT) << " ";
+        weight_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::WEIGHT), m_destination_type, m_source_type);
     }
     // Transfer output data.
     else if(m_data_type == data_type_t::OUTPUT) {
-        //if(m_action_type == action_type_t::LOAD) {
-        //    output_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::OUTPUT), m_destination_type, m_source_type);
-        //}
-        //else if(m_action_type == action_type_t::STORE) {
-        //    output_data_store(m_dest, m_source, t_offsets->at(data_type_t::OUTPUT), 0, m_destination_type, m_source_type);
-        //}
+        if(m_action_type == action_type_t::LOAD) {
+            output_data_load(m_dest, m_source, 0, t_offsets->at(data_type_t::OUTPUT), m_destination_type, m_source_type);
+        }
+        else if(m_action_type == action_type_t::STORE) {
+            output_data_store(m_dest, m_source, t_offsets->at(data_type_t::OUTPUT), 0, m_destination_type, m_source_type);
+        }
     }
 }
+
+#endif
 
 std::vector<unsigned> scheduler_t::calculate_parameter_size(component_type_t m_component_type) {
 

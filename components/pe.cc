@@ -464,7 +464,13 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
         m_scheduler->transfer_data(input_data_mac, input_data_lb, 0, m_scheduler->input_offset_pe.front(),
                                    component_type_t::MAC, component_type_t::PE, 
                                    data_type_t::INPUT, get_mac_stationary_type(), action_type_t::LOAD);
-        
+        // Update for NPUsim ver2
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+        //m_scheduler->transfer_data_ver2(input_data_mac, input_data_lb, 
+        //                                component_type_t::MAC, component_type_t::PE, 
+        //                                data_type_t::INPUT, get_mac_stationary_type(), action_type_t::LOAD, last_component);
+
         // Case 1. Dense format
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
             if(!skip_transfer[data_type_t::INPUT]) {
@@ -934,7 +940,12 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
         m_scheduler->transfer_data(weight_mac, weight_lb, 0, m_scheduler->weight_offset_pe.front(),
                                    component_type_t::MAC, component_type_t::PE, 
                                    data_type_t::WEIGHT, get_mac_stationary_type(), action_type_t::LOAD);
-        
+        // Update for NPUsim ver2
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+        //m_scheduler->transfer_data_ver2(weight_mac, weight_lb, 
+        //                                component_type_t::MAC, component_type_t::PE, 
+        //                                data_type_t::WEIGHT, get_mac_stationary_type(), action_type_t::LOAD, last_component);
 
         // Case 1. Dense data format
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
@@ -1428,6 +1439,12 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                 m_scheduler->transfer_data(output_data_mac, output_data_lb, 0, m_scheduler->output_offset_pe.front(),
                                            component_type_t::MAC, component_type_t::PE, 
                                            data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::LOAD);
+                // Update for NPUsim ver2
+                //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+                //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+                //m_scheduler->transfer_data_ver2(output_data_mac, output_data_lb, 
+                //                                component_type_t::MAC, component_type_t::PE, 
+                //                                data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::LOAD, last_component);
 #endif
 
                 // Update the number of output data transfer from local buffer to MAC unit
@@ -1569,6 +1586,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE, 
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
+            // Update for NPUsim ver2
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //                                component_type_t::PE_Y, component_type_t::PE,
+            //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
             std::vector<unsigned> parameters_pe(parameter_type_t::NUM_PARAMETER_TYPES, 1);
             std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1652,6 +1675,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE, 
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
+            // Update for NPUsim ver2
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //                                component_type_t::PE_Y, component_type_t::PE,
+            //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
             std::vector<unsigned> parameters_pe(parameter_type_t::NUM_PARAMETER_TYPES, 1);
             std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1751,6 +1780,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE, 
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
+            // Update for NPUsim ver2
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //                                component_type_t::PE_Y, component_type_t::PE,
+            //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
             std::vector<unsigned> parameters_pe(parameter_type_t::NUM_PARAMETER_TYPES, 1);
             std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1846,6 +1881,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE, 
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
+            // Update for NPUsim ver2
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //                                component_type_t::PE_Y, component_type_t::PE,
+            //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
             std::vector<unsigned> parameters_pe(parameter_type_t::NUM_PARAMETER_TYPES, 1);
             std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1958,6 +1999,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE, 
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
+            // Update for NPUsim ver2
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //                                component_type_t::PE_Y, component_type_t::PE,
+            //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
             std::vector<unsigned> parameters_pe(parameter_type_t::NUM_PARAMETER_TYPES, 1);
             std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -2262,6 +2309,12 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
         m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
                                    component_type_t::PE, component_type_t::MAC, 
                                    data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
+        // Update for NPUsim ver2
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+        //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
+        //                                component_type_t::PE, component_type_t::MAC,
+        //                                data_type_t::OUTPUT, get_mac_stationary_type()), action_type_t::STORE);
 #endif
         /* Stats */
         // Update MAC read cycle and energy.
@@ -2349,6 +2402,12 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
         m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
                                    component_type_t::PE, component_type_t::MAC, 
                                    data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
+        // Update for NPUsim ver2
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+        //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
+        //                                component_type_t::PE, component_type_t::MAC,
+        //                                data_type_t::OUTPUT, get_mac_stationary_type()), action_type_t::STORE);
 #endif
 
         std::vector<unsigned> parameters_mac(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -2533,6 +2592,12 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
         m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
                                    component_type_t::PE, component_type_t::MAC, 
                                    data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
+        // Update for NPUsim ver2
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+        //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
+        //                                component_type_t::PE, component_type_t::MAC,
+        //                                data_type_t::OUTPUT, get_mac_stationary_type()), action_type_t::STORE);
 #endif
         std::vector<unsigned> parameters_mac(parameter_type_t::NUM_PARAMETER_TYPES, 1);
         std::vector<unsigned> parameters_lb(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -2742,6 +2807,12 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
             m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
                                        component_type_t::PE, component_type_t::MAC, 
                                        data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
+        // Update for NPUsim ver2
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
+        //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
+        //                                component_type_t::PE, component_type_t::MAC,
+        //                                data_type_t::OUTPUT, get_mac_stationary_type()), action_type_t::STORE);
 #endif
             std::vector<unsigned> parameters_mac(parameter_type_t::NUM_PARAMETER_TYPES, 1);
             std::vector<unsigned> parameters_lb(parameter_type_t::NUM_PARAMETER_TYPES, 1);

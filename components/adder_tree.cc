@@ -256,6 +256,13 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
+
                     for(unsigned b = 0; b < parameters_pe[parameter_type_t::BATCH_SIZE]; b++) {
                         for(unsigned c = 0; c < parameters_pe[parameter_type_t::INPUT_CHANNEL]; c++) {
                             for(unsigned h = 0; h < parameters_pe[parameter_type_t::INPUT_HEIGHT]; h++) {
@@ -371,6 +378,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
 
                     if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()]) {
                         // Update access cost to PE array
@@ -481,6 +494,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
 
                     if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()]) {
                         // Update access cost to PE array
@@ -582,6 +601,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
 
                     if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()]) {
                         // Update access cost of PE array 
@@ -778,6 +803,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
                     for(unsigned k = 0; k < parameters_pe[parameter_type_t::OUTPUT_CHANNEL]; k++) {
                         for(unsigned c = 0; c < parameters_pe[parameter_type_t::INPUT_CHANNEL]; c++) {
                             for(unsigned r = 0; r < parameters_pe[parameter_type_t::FILTER_HEIGHT]; r++) {
@@ -889,6 +920,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
 
                     if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()]) {
                         // Update access cost of PE array
@@ -1001,6 +1038,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
 
                     if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()]) {
                         // Update access cost of PE array
@@ -1108,6 +1151,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
                     
                     if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()]) { 
                         // Update access cost of PE array
@@ -1310,6 +1359,12 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
                     m_scheduler->transfer_data(pes[i]->output_data_lb, output_data, 0, m_scheduler->output_offset_pe_array[i%m_scheduler->output_offset_pe_array.size()], 
                                                component_type_t::PE, component_type_t::PE_Y, 
                                                data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
+                    // Update for NPUsim ver2
+                    //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
+                    //m_scheduler->transfer_data_network_on_chip(pes[i]->output_data_lb, output_data, 
+                    //                                           component_type_t::PE, component_type_t::PE_Y,
+                    //                                           data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), 
+                    //                                           action_type_t::LOAD, last_component);
 #endif
                     for(unsigned b = 0; b < parameters_pe[parameter_type_t::BATCH_SIZE]; b++) {
                         for(unsigned k = 0; k < parameters_pe[parameter_type_t::OUTPUT_CHANNEL]; k++) {
