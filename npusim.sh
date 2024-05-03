@@ -56,6 +56,10 @@ PRINT=0
 DEBUG=0
 # Functional simulation
 FUNCTIONAL=0
+# Using integer
+USER_INTEGER=0
+# Using float 
+USER_FLOAT=0
 # DRAMsim
 DRAMSIM3=0
 # PyTorch
@@ -76,6 +80,16 @@ fi
 # Functional simulation
 if [[ $FUNCTIONAL -eq 1 ]]; then
     ccopt+=" -DFUNCTIONAL"
+fi
+
+# Using integer
+if [[ $USE_INTEGER -eq 1 ]]; then
+    ccopt+=" -DUSER_INTEGER"
+fi
+
+#Using float
+if [[ $USE_FLOAT -eq 1 ]]; then
+    ccopt +=" -DUSER_FLOAT"
 fi
 
 # DRAMsim3 Connection

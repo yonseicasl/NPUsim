@@ -6,7 +6,7 @@
 #include "dramsim3.h"
 #include "mapping_table.h"
 #include "def.h"
-#include "data-def.h"
+#include "user-def.h"
 
 class request_t {
 public:

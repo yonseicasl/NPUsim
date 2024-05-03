@@ -122,6 +122,19 @@ void global_buffer_t::request_data() {
 // Transfer the data to temporal buffer of PE array.
 void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
 
+    if(!bypass[data_type_t::INPUT]) {
+        utilization[data_type_t::INPUT] = (float)(tile_size[data_type_t::INPUT]*sizeof(data_t))/(float)(size);
+    }
+    if(bypass[data_type_t::WEIGHT]) {
+        utilization[data_type_t::WEIGHT] = (float)(tile_size[data_type_t::WEIGHT]*sizeof(data_t))/(float)(size);
+    }
+    if(bypass[data_type_t::OUTPUT]) {
+        utilization[data_type_t::OUTPUT] = (float)(tile_size[data_type_t::OUTPUT]*sizeof(data_t))/(float)(size);
+    }
+    //std::cout << tile_size[data_type_t::INPUT] << " " << tile_size[data_type_t::WEIGHT] << " " << tile_size[data_type_t::OUTPUT] << " " << size << std::endl;
+    //std::cout << utilization[data_type_t::INPUT] << utilization[data_type_t::WEIGHT] << utilization[data_type_t::OUTPUT] << std::endl;
+
+
     // Transfer input data from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::INPUT]) {
 #ifdef FUNCTIONAL
@@ -2024,6 +2037,7 @@ void separate_buffer_t::update_offset() {
     offsets[data_type_t::INPUT] = 0;
     offsets[data_type_t::WEIGHT] = input_size/sizeof(data_t);
     offsets[data_type_t::OUTPUT] = input_size/sizeof(data_t) + weight_size/sizeof(data_t);
+
 }
 
 void separate_buffer_t::check_tile_size() {

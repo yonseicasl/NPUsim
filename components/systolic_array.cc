@@ -908,11 +908,19 @@ void systolic_array_t::flatten(unsigned m_channel, unsigned m_height, unsigned m
 				im_row -= m_padding_height;
 				im_col -= m_padding_width;
 
+#if defined(USER_INTEGER) || defined(USER_FLOAT)
+				if (im_row < 0 || im_col < 0 || im_row >= m_height || im_col >= m_width) {m_workspace[column_index].value = 0.0;}
+				else {
+					m_workspace[column_index].value = 
+						m_data[im_col + m_width * (im_row + m_height * im_c)].value;
+				}
+#else 
 				if (im_row < 0 || im_col < 0 || im_row >= m_height || im_col >= m_width) {m_workspace[column_index] = 0.0;}
 				else {
 					m_workspace[column_index] = 
 						m_data[im_col + m_width * (im_row + m_height * im_c)];
 				}
+#endif
 			}
 		}
 	}

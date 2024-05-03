@@ -4,7 +4,7 @@
 //#include <vector>
 #include <list>
 #include <string>
-#include "data-def.h"
+#include "user-def.h"
 
 // Convert string to lowercase.
 std::string& lowercase(std::string &m_str);
@@ -12,7 +12,7 @@ std::string& lowercase(std::string &m_str);
 // Convert string to uppercase.
 std::string& uppercase(std::string &m_str);
 
-void quantization(data_t *m_dest, const float* m_source, unsigned m_size);
+//void quantization(data_t *m_dest, const float* m_source, unsigned m_size);
 
 template <typename T>
 void move_front(std::list<T> *m_queue) {

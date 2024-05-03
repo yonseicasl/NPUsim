@@ -7,6 +7,7 @@
 #include "connected_layer.h"
 
 #include "mapping_table.h"
+#include "user-def.h"
 #include "def.h"
 
 class scheduler_t {

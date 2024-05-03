@@ -458,6 +458,16 @@ void pe_t::request_data() {
 // And execute MAC operation.
 void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
+
+    if(!bypass[data_type_t::INPUT]) {
+        utilization_local_buffer[data_type_t::INPUT] = (float)(tile_size_lb[data_type_t::INPUT])/(float)(input_size);
+    }
+    if(bypass[data_type_t::WEIGHT]) {
+        utilization_local_buffer[data_type_t::WEIGHT] = (float)(tile_size_lb[data_type_t::WEIGHT])/(float)(weight_size);
+    }
+    if(bypass[data_type_t::OUTPUT]) {
+        utilization_local_buffer[data_type_t::OUTPUT] = (float)(tile_size_lb[data_type_t::OUTPUT])/(float)(output_size);
+    }
     if(request_to_lb[data_type_t::INPUT]) {
 #ifdef FUNCTIONAL       
         // Input data transfer 
@@ -2099,15 +2109,28 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 }
 
 void pe_t::mac_operation() {
+#if defined(USER_INTEGER) || defined(USER_FLOAT)
+    for(unsigned i = 0; i < num_active_macs; i++) {
+        output_data_mac[i].value += input_data_mac[i].value*weight_mac[i].value;
+    }
+#else
     for(unsigned i = 0; i < num_active_macs; i++) {
         output_data_mac[i] += input_data_mac[i]*weight_mac[i];
     }
+#endif
 }
 
 void pe_t::activation() {
+#if defined(USER_INTEGER) || defined(USER_FLOAT)
+    for(unsigned i = 0; i < num_active_macs; i++) {
+        output_data_mac[i].value = output_data_mac[i].value > 0.0 ? output_data_mac[i].value : 0.0;
+        //output_data_mac[i] = output_data_mac[i] > 0.0 ? output_data_mac[i] : 0.0;
+    }
+#else
     for(unsigned i = 0; i < num_active_macs; i++) {
         output_data_mac[i] = output_data_mac[i] > 0.0 ? output_data_mac[i] : 0.0;
     }
+#endif
 }
 
 /* TODO */

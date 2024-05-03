@@ -3,7 +3,7 @@
 
 #include "def.h"
 #include "utils.h"
-#include "data-def.h"
+#include "data.h"
 
 #include "scheduler.h"
 #include "pe_array.h"

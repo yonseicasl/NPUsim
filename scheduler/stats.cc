@@ -535,11 +535,14 @@ void stats_t::update_network_stats(stats_t *m_source) {
 
     // Update computation cost
     computation_cycle += m_source->computation_cycle;
-    computation_energy += m_source->computation_energy;
 
     max_computation_cycle += m_source->max_computation_cycle;
     min_computation_cycle += m_source->min_computation_cycle;
     avg_computation_cycle += m_source->avg_computation_cycle;
+
+    computation_energy += m_source->computation_energy;
+
+    utilization_mac += m_source->utilization_mac;
 
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
         // Update the number of request to the local buffer
@@ -933,6 +936,8 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                    << total_utilization_global_buffer*100 << std::endl;
     }
     else if(global_buffer_type == memory_type_t::SHARED) {
+        total_utilization_global_buffer = utilization_global_buffer[data_type_t::INPUT] + utilization_global_buffer[data_type_t::WEIGHT] + utilization_global_buffer[data_type_t::OUTPUT];
+        total_utilization_global_buffer *= 100;
         m_output_file << "Buffer utilization    :" << std::setw(16) << std::setprecision(1) 
                                                    << total_utilization_global_buffer << " %" << std::endl;
     }
