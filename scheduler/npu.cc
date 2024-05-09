@@ -5,7 +5,6 @@
 
 npu_t::npu_t() :
  num_processors(1),
- num_pes(1),
  data_format(data_format_t::CONVOLUTION),
  compression_type(compression_type_t::DENSE),
  multi_chip(NULL),
@@ -58,7 +57,6 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
         if(section_config.name == "accelerator") {
             section_config.get_setting("num_processors", &num_processors);
-            section_config.get_setting("num_pes", &num_pes);
     
             // Initialize data format : Convolution or GEMM.
             std::string format_str;
@@ -137,28 +135,26 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     std::cout << "# Initialize neural network model ..." << std::endl;
 	network = new nebula::convolutional_t();
 	network->init(m_network_config);
+
 #ifdef Pytorch
-    PyObject *pName, *pModule;
+    PyObject *pModule;
 	Py_Initialize();
     PyRun_SimpleString("import sys");
     PyRun_SimpleString("sys.path.append(\".\")");
 
-    
-    pName = PyUnicode_FromString("main");
-    pModule = PyImport_Import(pName);
+    pModule = PyImport_ImportModule("main");
 
     if(pModule) {
-
-        PyObject *pFunc, *pArgs, *pValue;
-        pFunc = PyObject_GetAttrString(pModule, "build_network");
-        
-        char *t_network_config = const_cast<char*>(m_network_config.c_str());
-       
-        // Produce arguments pass to PyThon.
-        pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
-        if(pFunc) { 
-            pValue = PyObject_CallObject(pFunc, pArgs);
-        }
+      PyObject *pFunc, *pArgs, *pValue;
+      pFunc = PyObject_GetAttrString(pModule, "build_network");
+      
+      char *t_network_config = const_cast<char*>(m_network_config.c_str());
+     
+      // Produce arguments pass to PyTorch.
+      pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
+      if(pFunc) { 
+          pValue = PyObject_CallObject(pFunc, pArgs);
+      }
     }
 
 	PyRun_SimpleString("print('Done')");
@@ -198,7 +194,6 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     for(unsigned i = 0; i < mapping_tables.size(); i++) {
         stats_ = new stats_t();
         layer_stats.emplace_back(stats_);
-        layer_stats[i]->update_tile_size(schedulers[i]);
     }
     network_stats = new stats_t();
     std::cout << "  Done!" << std::endl;
@@ -409,14 +404,14 @@ void npu_t::print_accelerator_specification() {
 // Print out the network stats (e.g., tile size)
 void npu_t::print_network_configuration(unsigned m_index) {
     std::cout << "The network configuration of #" << m_index << " layer" << std::endl;
-    layer_stats[m_index]->print_stats();
+    schedulers[m_index]->print_stats();
 }
 
 // Print out the simulation result
 void npu_t::print_layerwise_results(const std::string m_accelerator_config, const std::string m_network_config, unsigned m_index) {
     std::cout << "The simulation result of #" << m_index << " layer" << std::endl;
     std::cout << std::endl;
-
+    
     // Concatenate the name of output file.
     std::string output_file_name = m_accelerator_config + "_" + m_network_config + "_layer_" + std::to_string(m_index) + ".txt";
     std::cout << output_file_name << std::endl;
@@ -424,8 +419,10 @@ void npu_t::print_layerwise_results(const std::string m_accelerator_config, cons
     std::ofstream output_file;
     output_file.open(output_file_name, std::ios::out);
 
-    layer_stats[m_index]->print_stats(output_file);
+    //layer_stats[m_index]->print_stats(output_file);
+    schedulers[m_index]->print_stats(output_file);
 
+    //schedulers
     layer_stats[m_index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
     layer_stats[m_index]->print_results(output_file);
 

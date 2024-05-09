@@ -94,7 +94,6 @@ public:
 
 protected:
     unsigned num_processors;                        // The number of on-chip processors.
-    unsigned num_pes;                               // The number of processing elements for each processors.
     data_format_t data_format;                      // Data format : Convolution or GEMM (General Matrix Multiplication).
     compression_type_t compression_type;            // Compression type : Dense, CSR, CSC, SparseMap
 

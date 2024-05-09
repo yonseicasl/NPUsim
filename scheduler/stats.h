@@ -31,9 +31,6 @@ public:
     // Print out the result of simulation.
     void print_results(std::ofstream &m_output_file);
 	
-    /* Tile size */
-    std::vector<std::vector<unsigned>> tile_size;
-
     /* PE */
     memory_type_t local_buffer_type;
     size_t num_computation;                                             // Number of computations.

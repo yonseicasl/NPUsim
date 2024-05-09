@@ -7,6 +7,7 @@ dram_t::dram_t(section_config_t m_section_config) :
     u_transfer_cycle(0.0),
     u_transfer_energy(0.0),
     transfer_output(false),
+    size(0),
     frequency(0.0),
     bandwidth(0.0),
     bitwidth(0.0),
@@ -32,6 +33,11 @@ dram_t::~dram_t() {
 
 
 void dram_t::init(section_config_t m_section_config) {
+
+    // Initialize the size of off-chip memory in GB.
+    m_section_config.get_setting("size", &size);
+
+    size *= 1024*1024*1024; 
 
     // Initialize frequency, bandwidth, and bitwidth of the off-chip memory
     m_section_config.get_setting("frequency", &frequency);

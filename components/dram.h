@@ -92,6 +92,7 @@ public:
     nebula::layer_t *layer;
 
 private:
+    size_t size;
     /* DRAM specification */
     float frequency;                                // Frequency of DRAM.
     float bandwidth;                                // Bandwidth between chip-level processor and the off-chip memory

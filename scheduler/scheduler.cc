@@ -223,87 +223,159 @@ void scheduler_t::init(mapping_table_t *m_mapping_table, stationary_type_t pe_st
 void scheduler_t::print_stats() {
     std::cout << "* Tile size" << std::endl;
     std::cout << "========== MAC =========" << std::endl;
-    std::cout << "# Input data  : " << tile_size[component_type_t::MAC][data_type_t::INPUT]  << std::endl;
-    std::cout << "# Weight      : " << tile_size[component_type_t::MAC][data_type_t::WEIGHT] << std::endl;
-    std::cout << "# Output data : " << tile_size[component_type_t::MAC][data_type_t::OUTPUT] << std::endl;
+    std::cout << "Input data  : " << std::setw(10) 
+                                  << tile_size[component_type_t::MAC][data_type_t::INPUT]  
+                                  << std::endl;
+    std::cout << "Weight      : " << std::setw(10)
+                                  << tile_size[component_type_t::MAC][data_type_t::WEIGHT] 
+                                  << std::endl;
+    std::cout << "Output data : " << std::setw(10)
+                                  << tile_size[component_type_t::MAC][data_type_t::OUTPUT] 
+                                  << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "===== Local buffer =====" << std::endl;
-    std::cout << "# Input data  : " << tile_size[component_type_t::PE][data_type_t::INPUT]  << std::endl;
-    std::cout << "# Weight      : " << tile_size[component_type_t::PE][data_type_t::WEIGHT] << std::endl;
-    std::cout << "# Output data : " << tile_size[component_type_t::PE][data_type_t::OUTPUT] << std::endl;
+    std::cout << "Input data  : " << std::setw(10) 
+                                  << tile_size[component_type_t::PE][data_type_t::INPUT]  
+                                  << std::endl;
+    std::cout << "Weight      : " << std::setw(10)
+                                  << tile_size[component_type_t::PE][data_type_t::WEIGHT] 
+                                  << std::endl;
+    std::cout << "Output data : " << std::setw(10) 
+                                  << tile_size[component_type_t::PE][data_type_t::OUTPUT] 
+                                  << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "======= PE array =======" << std::endl;
-    std::cout << "# Input data  : " << tile_size[component_type_t::PE_Y][data_type_t::INPUT]  << std::endl;
-    std::cout << "# Weight      : " << tile_size[component_type_t::PE_Y][data_type_t::WEIGHT] << std::endl;
-    std::cout << "# Output data : " << tile_size[component_type_t::PE_Y][data_type_t::OUTPUT] << std::endl;
+    std::cout << "Input data  : " << std::setw(10) 
+                                  << tile_size[component_type_t::PE_Y][data_type_t::INPUT]  
+                                  << std::endl;
+    std::cout << "Weight      : " << std::setw(10)
+                                  << tile_size[component_type_t::PE_Y][data_type_t::WEIGHT] 
+                                  << std::endl;
+    std::cout << "Output data : " << std::setw(10) 
+                                  << tile_size[component_type_t::PE_Y][data_type_t::OUTPUT] 
+                                  << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "===== Global buffer ====" << std::endl;
-    std::cout << "# Input data  : " << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::INPUT]  << std::endl;
-    std::cout << "# Weight      : " << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::WEIGHT] << std::endl;
-    std::cout << "# Output data : " << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::OUTPUT] << std::endl;
+    std::cout << "Input data  : " << std::setw(10) 
+                                  << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::INPUT]
+                                  << std::endl;
+    std::cout << "Weight      : " << std::setw(10) 
+                                  << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::WEIGHT]
+                                  << std::endl;
+    std::cout << "Output data : " << std::setw(10)
+                                  << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::OUTPUT]
+                                  << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "===== Multi Chip =======" << std::endl;
-    std::cout << "# Input data  : " << tile_size[component_type_t::CHIPS_Y][data_type_t::INPUT]  << std::endl;
-    std::cout << "# Weight      : " << tile_size[component_type_t::CHIPS_Y][data_type_t::WEIGHT] << std::endl;
-    std::cout << "# Output data : " << tile_size[component_type_t::CHIPS_Y][data_type_t::OUTPUT] << std::endl;
+    std::cout << "Input data  : " << std::setw(10) 
+                                  << tile_size[component_type_t::CHIPS_Y][data_type_t::INPUT]  
+                                  << std::endl;
+    std::cout << "Weight      : " << std::setw(10)
+                                  << tile_size[component_type_t::CHIPS_Y][data_type_t::WEIGHT] 
+                                  << std::endl;
+    std::cout << "Output data : " << std::setw(10) 
+                                  << tile_size[component_type_t::CHIPS_Y][data_type_t::OUTPUT] 
+                                  << std::endl;
     std::cout << std::endl;
 
     std::cout << "========= DRAM =========" << std::endl;
-    std::cout << "# Input data  : " << tile_size[component_type_t::DRAM][data_type_t::INPUT]  << std::endl;
-    std::cout << "# Weight      : " << tile_size[component_type_t::DRAM][data_type_t::WEIGHT] << std::endl;
-    std::cout << "# Output data : " << tile_size[component_type_t::DRAM][data_type_t::OUTPUT] << std::endl;
+    std::cout << "Input data  : " << std::setw(10) 
+                                  << tile_size[component_type_t::DRAM][data_type_t::INPUT]  
+                                  << std::endl;
+    std::cout << "Weight      : " << std::setw(10) 
+                                  << tile_size[component_type_t::DRAM][data_type_t::WEIGHT] 
+                                  << std::endl;
+    std::cout << "Output data : " << std::setw(10) 
+                                  << tile_size[component_type_t::DRAM][data_type_t::OUTPUT] 
+                                  << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 }
 
 void scheduler_t::print_stats(std::ofstream &m_output_file) {
      m_output_file << "* Tile size" << std::endl;
-     m_output_file << "========== MAC =========" << std::endl;
-     m_output_file << "# Input data  : " << tile_size[component_type_t::MAC][data_type_t::INPUT]  << std::endl;
-     m_output_file << "# Weight      : " << tile_size[component_type_t::MAC][data_type_t::WEIGHT] << std::endl;
-     m_output_file << "# Output data : " << tile_size[component_type_t::MAC][data_type_t::OUTPUT] << std::endl;
+     m_output_file << "========= MAC ==========" << std::endl;
+     m_output_file << "Input data  : " << std::setw(10) 
+                                       << tile_size[component_type_t::MAC][data_type_t::INPUT]  
+                                       << std::endl;
+     m_output_file << "Weight      : " << std::setw(10) 
+                                       << tile_size[component_type_t::MAC][data_type_t::WEIGHT] 
+                                       << std::endl;
+     m_output_file << "Output data : " << std::setw(10) 
+                                       << tile_size[component_type_t::MAC][data_type_t::OUTPUT] 
+                                       << std::endl;
      m_output_file << "========================" << std::endl;
      m_output_file << std::endl;
 
      m_output_file << "===== Local buffer =====" << std::endl;
-     m_output_file << "# Input data  : " << tile_size[component_type_t::PE][data_type_t::INPUT]  << std::endl;
-     m_output_file << "# Weight      : " << tile_size[component_type_t::PE][data_type_t::WEIGHT] << std::endl;
-     m_output_file << "# Output data : " << tile_size[component_type_t::PE][data_type_t::OUTPUT] << std::endl;
+     m_output_file << "Input data  : " << std::setw(10)
+                                       << tile_size[component_type_t::PE][data_type_t::INPUT]  
+                                       << std::endl;
+     m_output_file << "Weight      : " << std::setw(10)
+                                       << tile_size[component_type_t::PE][data_type_t::WEIGHT] 
+                                       << std::endl;
+     m_output_file << "Output data : " << std::setw(10)
+                                       << tile_size[component_type_t::PE][data_type_t::OUTPUT] 
+                                       << std::endl;
      m_output_file << "========================" << std::endl;
      m_output_file << std::endl;
 
      m_output_file << "======= PE array =======" << std::endl;
-     m_output_file << "# Input data  : " << tile_size[component_type_t::PE_Y][data_type_t::INPUT]  << std::endl;
-     m_output_file << "# Weight      : " << tile_size[component_type_t::PE_Y][data_type_t::WEIGHT] << std::endl;
-     m_output_file << "# Output data : " << tile_size[component_type_t::PE_Y][data_type_t::OUTPUT] << std::endl;
+     m_output_file << "Input data  : " << std::setw(10)
+                                       << tile_size[component_type_t::PE_Y][data_type_t::INPUT]  
+                                       << std::endl;
+     m_output_file << "Weight      : " << std::setw(10)
+                                       << tile_size[component_type_t::PE_Y][data_type_t::WEIGHT] 
+                                       << std::endl;
+     m_output_file << "Output data : " << std::setw(10)
+                                       << tile_size[component_type_t::PE_Y][data_type_t::OUTPUT] 
+                                       << std::endl;
      m_output_file << "========================" << std::endl;
      m_output_file << std::endl;
 
      m_output_file << "===== Global buffer ====" << std::endl;
-     m_output_file << "# Input data  : " << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::INPUT]  << std::endl;
-     m_output_file << "# Weight      : " << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::WEIGHT] << std::endl;
-     m_output_file << "# Output data : " << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::OUTPUT] << std::endl;
+     m_output_file << "Input data  : " << std::setw(10)
+                                       << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::INPUT]  
+                                       << std::endl;
+     m_output_file << "Weight      : " << std::setw(10)
+                                       << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::WEIGHT] 
+                                       << std::endl;
+     m_output_file << "Output data : " << std::setw(10)
+                                       << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::OUTPUT] 
+                                       << std::endl;
      m_output_file << "========================" << std::endl;
      m_output_file << std::endl;
 
-     m_output_file << "===== Multi Chip =======" << std::endl;
-     m_output_file << "# Input data  : " << tile_size[component_type_t::CHIPS_Y][data_type_t::INPUT]  << std::endl;
-     m_output_file << "# Weight      : " << tile_size[component_type_t::CHIPS_Y][data_type_t::WEIGHT] << std::endl;
-     m_output_file << "# Output data : " << tile_size[component_type_t::CHIPS_Y][data_type_t::OUTPUT] << std::endl;
+     m_output_file << "====== Processor =======" << std::endl;
+     m_output_file << "Input data  : " << std::setw(10)
+                                       << tile_size[component_type_t::CHIPS_Y][data_type_t::INPUT]  
+                                       << std::endl;
+     m_output_file << "Weight      : " << std::setw(10)
+                                       << tile_size[component_type_t::CHIPS_Y][data_type_t::WEIGHT] 
+                                       << std::endl;
+     m_output_file << "Output data : " << std::setw(10) 
+                                       << tile_size[component_type_t::CHIPS_Y][data_type_t::OUTPUT] 
+                                       << std::endl;
      m_output_file << std::endl;
 
      m_output_file << "========= DRAM =========" << std::endl;
-     m_output_file << "# Input data  : " << tile_size[component_type_t::DRAM][data_type_t::INPUT]  << std::endl;
-     m_output_file << "# Weight      : " << tile_size[component_type_t::DRAM][data_type_t::WEIGHT] << std::endl;
-     m_output_file << "# Output data : " << tile_size[component_type_t::DRAM][data_type_t::OUTPUT] << std::endl;
+     m_output_file << "Input data  : " << std::setw(10)
+                                       << tile_size[component_type_t::DRAM][data_type_t::INPUT]  
+                                       << std::endl;
+     m_output_file << "Weight      : " << std::setw(10)
+                                       << tile_size[component_type_t::DRAM][data_type_t::WEIGHT] 
+                                       << std::endl;
+     m_output_file << "Output data : " << std::setw(10)
+                                       << tile_size[component_type_t::DRAM][data_type_t::OUTPUT] 
+                                       << std::endl;
      m_output_file << "========================" << std::endl;
      m_output_file << std::endl;
 }

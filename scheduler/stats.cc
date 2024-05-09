@@ -20,20 +20,11 @@ stats_t::stats_t() :
 }
 
 stats_t::~stats_t() {
-    for(unsigned i = 0; i < component_type_t::NUM_COMPONENT_TYPES; i++) {
-        tile_size[i].clear();
-    }
 }
 
 // Initialize the stats.
 void stats_t::init() {
     
-    // Reserve the memory for calculating tile size.
-    tile_size.reserve(component_type_t::NUM_COMPONENT_TYPES);
-    for(unsigned i = 0; i < component_type_t::NUM_COMPONENT_TYPES; i++) {
-        tile_size[i].reserve(data_type_t::NUM_DATA_TYPES);
-    }
-
     /* Initialize PE stats */
     // Initialize the number of request to the local buffer
     num_request_pe.reserve(data_type_t::NUM_DATA_TYPES);
@@ -220,89 +211,92 @@ void stats_t::init() {
 
 // Print out the stats of accelerator and neural network.
 void stats_t::print_stats() {
+    /*
     std::cout << "* Tile size" << std::endl;
     std::cout << "========= MAC =========="<< std::endl;
     std::cout << "Input data  : " << std::setw(10) 
-                                  << tile_size[component_type_t::MAC][data_type_t::INPUT]  << std::endl;
+                                  << tile_size_mac[data_type_t::INPUT]  << std::endl;
     std::cout << "Weight      : " << std::setw(10) 
-                                  << tile_size[component_type_t::MAC][data_type_t::WEIGHT] << std::endl;
+                                  << tile_size_mac[data_type_t::WEIGHT] << std::endl;
     std::cout << "Output data : " << std::setw(10) 
-                                  << tile_size[component_type_t::MAC][data_type_t::OUTPUT] << std::endl;
+                                  << tile_size_mac[data_type_t::OUTPUT] << std::endl;
     std::cout << "========================"<< std::endl;
     std::cout << std::endl;
 
     std::cout << "===== Local buffer =====" << std::endl;
     std::cout << "Input data  : " << std::setw(10) 
-                                  << tile_size[component_type_t::PE][data_type_t::INPUT]  << std::endl;
+                                  << tile_size_local_buffer[data_type_t::INPUT]  << std::endl;
     std::cout << "Weight      : " << std::setw(10) 
-                                  << tile_size[component_type_t::PE][data_type_t::WEIGHT] << std::endl;
+                                  << tile_size_local_buffer[data_type_t::WEIGHT] << std::endl;
     std::cout << "Output data : " << std::setw(10) 
-                                  << tile_size[component_type_t::PE][data_type_t::OUTPUT] << std::endl;
+                                  << tile_size_local_buffer[data_type_t::OUTPUT] << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "======= PE array =======" << std::endl;
     std::cout << "Input data  : " << std::setw(10) 
-                                  << tile_size[component_type_t::PE_Y][data_type_t::INPUT]  << std::endl;
+                                  << tile_size_pe[data_type_t::INPUT]  << std::endl;
     std::cout << "Weight      : " << std::setw(10) 
-                                  << tile_size[component_type_t::PE_Y][data_type_t::WEIGHT] << std::endl;
+                                  << tile_size_pe[data_type_t::WEIGHT] << std::endl;
     std::cout << "Output data : " << std::setw(10) 
-                                  << tile_size[component_type_t::PE_Y][data_type_t::OUTPUT] << std::endl;
+                                  << tile_size_pe[data_type_t::OUTPUT] << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "===== Global buffer ====" << std::endl;
     std::cout << "Input data  : " << std::setw(10) 
-                                  << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::INPUT]  << std::endl;
+                                  << tile_size_global_buffer[data_type_t::INPUT]  << std::endl;
     std::cout << "Weight      : " << std::setw(10) 
-                                  << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::WEIGHT] << std::endl;
+                                  << tile_size_global_buffer[data_type_t::WEIGHT] << std::endl;
     std::cout << "Output data : " << std::setw(10) 
-                                  << tile_size[component_type_t::GLOBAL_BUFFER][data_type_t::OUTPUT] << std::endl;
+                                  << tile_size_global_buffer[data_type_t::OUTPUT] << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "======= Processor ======" << std::endl;
     std::cout << "Input data  : " << std::setw(10) 
-                                  << tile_size[component_type_t::CHIPS_Y][data_type_t::INPUT]  << std::endl;
+                                  << tile_size_processor[data_type_t::INPUT]  << std::endl;
     std::cout << "Weight      : " << std::setw(10) 
-                                  << tile_size[component_type_t::CHIPS_Y][data_type_t::WEIGHT] << std::endl;
+                                  << tile_size_processor[data_type_t::WEIGHT] << std::endl;
     std::cout << "Output data : " << std::setw(10) 
-                                  << tile_size[component_type_t::CHIPS_Y][data_type_t::OUTPUT] << std::endl;
+                                  << tile_size_processor[data_type_t::OUTPUT] << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
 
     std::cout << "========= DRAM =========" << std::endl;
     std::cout << "Input data  : " << std::setw(10) 
-                                  << tile_size[component_type_t::DRAM][data_type_t::INPUT]  << std::endl;
+                                  << tile_size_dram[data_type_t::INPUT]  << std::endl;
     std::cout << "Weight      : " << std::setw(10) 
-                                  << tile_size[component_type_t::DRAM][data_type_t::WEIGHT] << std::endl;
+                                  << tile_size_dram[data_type_t::WEIGHT] << std::endl;
     std::cout << "Output data : " << std::setw(10) 
-                                  << tile_size[component_type_t::DRAM][data_type_t::OUTPUT] << std::endl;
+                                  << tile_size_dram[data_type_t::OUTPUT] << std::endl;
     std::cout << "========================" << std::endl;
     std::cout << std::endl;
+    */
 
 }
 
 // Print out the stats of accelerator and neural network.
 void stats_t::print_stats(std::ofstream &m_output_file) {
+    /*
     m_output_file << "* Tile size" << std::endl;
     m_output_file << "========= MAC =========="<< std::endl;
     m_output_file << "Input data  : " << std::setw(10) 
-                                      << tile_size[component_type_t::MAC][data_type_t::INPUT]  << std::endl;
-    m_output_file << "Weight      : " << std::setw(10) 
-                                      << tile_size[component_type_t::MAC][data_type_t::WEIGHT] << std::endl;
-    m_output_file << "Output data : " << std::setw(10) 
-                                      << tile_size[component_type_t::MAC][data_type_t::OUTPUT] << std::endl;
+                                      << tile_size_mac[data_type_t::INPUT]  << std::endl;
+    m_output_file << "Weight      : " << std::setw(10)
+                                      << tile_size_mac[data_type_t::WEIGHT] << std::endl;
+    m_output_file << "Output data : " << std::setw(10)
+                                      << tile_size_mac[data_type_t::OUTPUT] << std::endl;
     m_output_file << "========================"<< std::endl;
     m_output_file << std::endl;
 
     m_output_file << "===== Local buffer =====" << std::endl;
     m_output_file << "Input data  : " << std::setw(10) 
-                                      << tile_size[component_type_t::PE][data_type_t::INPUT]  << std::endl;
+                                      << tile_size_local_buffer[data_type_t::INPUT]  << std::endl;
     m_output_file << "Weight      : " << std::setw(10) 
-                                      << tile_size[component_type_t::PE][data_type_t::WEIGHT] << std::endl;
+                                      << tile_size_local_buffer[data_type_t::WEIGHT] << std::endl;
     m_output_file << "Output data : " << std::setw(10) 
-                                      << tile_size[component_type_t::PE][data_type_t::OUTPUT] << std::endl;
+                                      << tile_size_local_buffer[data_type_t::OUTPUT] << std::endl;
     m_output_file << "========================" << std::endl;
     m_output_file << std::endl;
 
@@ -345,10 +339,13 @@ void stats_t::print_stats(std::ofstream &m_output_file) {
                                       << tile_size[component_type_t::DRAM][data_type_t::OUTPUT] << std::endl;
     m_output_file << "========================" << std::endl;
     m_output_file << std::endl;
+    */
 }
 
 void stats_t::update_tile_size(scheduler_t *m_scheduler) {
-    tile_size = m_scheduler->tile_size;
+    //tile_size = m_scheduler->tile_size;
+
+    //tile_size_mac = m_scheduler->tile_size[component_type_t::MAC];
 }
 
 void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<global_buffer_t*> m_global_buffer, multi_chip_t *m_multi_chip, dram_t *m_dram) {
