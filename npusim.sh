@@ -63,7 +63,7 @@ USER_FLOAT=0
 # DRAMsim
 DRAMSIM3=0
 # PyTorch
-Pytorch=1
+Pytorch=0
 
 ##### Append Makefile options #####
 

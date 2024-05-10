@@ -12,8 +12,6 @@ models/datasets
 
 models/weights
 
-configs/
-
 ext/
 
 __pycache__/

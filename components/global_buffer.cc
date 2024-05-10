@@ -2330,7 +2330,7 @@ void shared_buffer_t::print_specification() {
                                         << u_read_energy[data_type_t::INPUT] << "/" << u_write_energy[data_type_t::INPUT] << " pJ" << std::endl;
     
     std::cout << "Access cycle (read/write) " << std::endl;
-    std::cout << " * Global buffer    :" << std::setw(13) << std::setprecision(1)
+    std::cout << " * Global buffer    :" << std::setw(12) << std::setprecision(1)
                                         << u_read_cycle[data_type_t::INPUT] << "/" << u_write_cycle[data_type_t::INPUT] << " cycles" << std::endl;
     std::cout << std::endl;
 }

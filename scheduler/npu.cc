@@ -145,16 +145,19 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     pModule = PyImport_ImportModule("main");
 
     if(pModule) {
-      PyObject *pFunc, *pArgs, *pValue;
-      pFunc = PyObject_GetAttrString(pModule, "build_network");
+        PyObject *pFunc, *pArgs, *pValue;
+        pFunc = PyObject_GetAttrString(pModule, "build_network");
       
-      char *t_network_config = const_cast<char*>(m_network_config.c_str());
-     
-      // Produce arguments pass to PyTorch.
-      pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
-      if(pFunc) { 
-          pValue = PyObject_CallObject(pFunc, pArgs);
-      }
+        char *t_network_config = const_cast<char*>(m_network_config.c_str());
+
+        // Produce arguments and pass to PyTorch.
+        pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
+        if(pFunc) { 
+            pValue = PyObject_CallObject(pFunc, pArgs);
+            if(pValue) {
+                //std::cout << pValue << std::endl;
+            }
+        }
     }
 
 	PyRun_SimpleString("print('Done')");
