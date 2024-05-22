@@ -146,7 +146,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
-        pFunc = PyObject_GetAttrString(pModule, "build_network");
+        pFunc = PyObject_GetAttrString(pModule, "init");
       
         char *t_network_config = const_cast<char*>(m_network_config.c_str());
 

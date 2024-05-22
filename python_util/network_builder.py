@@ -1,7 +1,10 @@
 # Package for neural network model
+from torchvision import models
 import torch
 import torch.nn as nn
 import torch.nn.functional as function
+
+#from torchvision import models
 
 # Package for dataset and transformation
 
@@ -221,8 +224,28 @@ class shortcut_layer_configuration(layer_configuration):
         return self.output
         
 
+def build_network(m_network):
+    if m_network.lower() == "inceptionv3":
+        DNN_model = models.inceptionv3(pretrained=False)
+    elif m_network.lower() == "resnet50":
+        DNN_model = models.resnet50(pretrained=False)
+    elif m_network.lower() == "alexnet":
+        DNN_model = models.alexnet(pretrained=False)
+    #elif m_network.lower() == "gpt":
+    #    continue
+    #elif m_network.lower() == "gpt-2":
+    #    continue
+    else:
+        DNN_model = build_network_from_scratch(m_network.lower())
 
-def network_builder(network):
+    DNN_layers = get_layers(DNN_model)
+    DNN_layers_list = []
+    for i in DNN_layers:
+        DNN_layers_list.append(extract_layer_name(i))
+    return DNN_model, DNN_layers_list
+
+
+def build_network_from_scratch(network):
     sections = parsing.parsing_config(network)
     network
     layers = []
@@ -248,3 +271,21 @@ def network_builder(network):
             continue
     return layers
 
+def get_layers(m_network):
+    layers = list(m_network.children())
+    layer_list = []
+
+    if layers == []:
+        return m_network
+    else:
+        for layer in layers:
+            try:
+                layer_list.extend(get_layers(layer))
+            except TypeError:
+                layer_list.append(get_layers(layer))
+    return layer_list
+
+def extract_layer_name(m_layer):
+    layer_str = str(m_layer)
+    index = layer_str.find('(')
+    return layer_str[:index]

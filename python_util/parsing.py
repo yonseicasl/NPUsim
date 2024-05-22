@@ -21,10 +21,19 @@ class layer_section:
         for key in self.settings.keys():
             print(key + " : " + self.settings[key])
 
+
+def parsing_dataset(m_network):
+    sections = parsing_config(m_network)
+    for section in sections:
+        if section.name == 'data':
+            dataset = section.get_configuration_value("dataset") if section.get_configuration_value("dataset") != None else "imagenet"
+        else :
+            continue
+    return dataset
+
 def parsing_config(network):
     root_dir = '../'
-    network_path = root_dir + 'configs/networks/' + network 
-    #network_path = root_dir + 'configs/networks/' + network + '.cfg'
+    network_path = root_dir + 'configs/networks/' + network + '.cfg'
     
     # List for to store layers setting.
     sections = []

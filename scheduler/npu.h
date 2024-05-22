@@ -107,6 +107,10 @@ protected:
 	std::vector<mapping_table_t*> mapping_tables;	// Mapping tables.
 
     nebula::layer_t *layer;                         // Neural layers obtained from the software framework (PyTorch and Nebula)
+
+#ifdef Pytorch
+
+#endif
     std::vector<scheduler_t*> schedulers;           // A set of schedulers.
     scheduler_t *scheduler;
     std::vector<stats_t*> layer_stats;
