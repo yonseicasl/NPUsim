@@ -38,12 +38,22 @@ def init(m_network):
         t_network = t_network.replace(sub,'')    
 
     # Initialize DNN data
-    m_dataset = parsing.parsing_dataset(t_network)
-    data_loader.load_data(m_dataset)
+    dataset_str = parsing.parsing_dataset(t_network)
+    dataset = data_loader.load_data(dataset_str)
 
-    print(t_network)
-    DNN_model, DNN_layers_list = network_builder.build_network(t_network)
-    return DNN_model
+    DNN_model, DNN_layers_name = network_builder.build_network(t_network)
+    #DNN_model.eval()
+
+    #correct = 0
+    #total = 0
+    #for data in dataset:
+    #    images, labels = data[0], data[1]
+    #    output = DNN_model(images)
+    #    _, predicted = torch.max(output.data, 1)
+    #    total += labels.size(0)
+    #    correct += (predicted == labels).sum().item()
+    #print(correct)
+    return DNN_layers_name
 
 def forward(m_layer, x):
     

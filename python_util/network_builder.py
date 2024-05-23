@@ -230,19 +230,15 @@ def build_network(m_network):
     elif m_network.lower() == "resnet50":
         DNN_model = models.resnet50(pretrained=False)
     elif m_network.lower() == "alexnet":
-        DNN_model = models.alexnet(pretrained=False)
-    #elif m_network.lower() == "gpt":
-    #    continue
-    #elif m_network.lower() == "gpt-2":
-    #    continue
+        DNN_model = models.alexnet(pretrained=True)
     else:
         DNN_model = build_network_from_scratch(m_network.lower())
 
     DNN_layers = get_layers(DNN_model)
-    DNN_layers_list = []
+    DNN_layers_name = []
     for i in DNN_layers:
-        DNN_layers_list.append(extract_layer_name(i))
-    return DNN_model, DNN_layers_list
+        DNN_layers_name.append(extract_layer_name(i))
+    return DNN_model, DNN_layers_name
 
 
 def build_network_from_scratch(network):

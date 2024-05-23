@@ -22,36 +22,31 @@ def load_data(m_dataset_str):
 
     transform = transforms.Compose([
         transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.CenterCrop(227),
         transforms.ToTensor(),
         transforms.Normalize(mean, std)
     ])
 
     if m_dataset_str.lower() == "imagenet":
-        m_dataset = datasets.ImageNet(root='./datasets', train=False,
-                                      download=True, transform=transform)
+        print("ImageNet")
+        test_set = datasets.ImageNet(root='./datasets', split='val',
+                                     transform=transform)
+
     elif m_dataset_str.lower() == "cifar10":
-        m_dataset = datasets.CIFAR10(root='./datasets', train=False,
+        print("CIFAR10")
+        test_set = datasets.CIFAR10(root='./datasets', train=False,
                                      download=True, transform=transform)
     elif m_dataset_str.lower() == "mnist":
-        m_dataset = datasets.MNIST(root='./datasets', train=False,
+        test_set = datasets.MNIST(root='./datasets', train=False,
                                    download=True, transform=transform)
     else :
         print('Not available ' + m_dataset_str)
-    data_loader = DataLoader(m_dataset)
+
+    data_loader = DataLoader(test_set)
     #dataiter = iter(data_loader)
     #images, labels = next(dataiter)
-    #print(images)
-    #img = torchvision.utils.make_grid(images)
-    #img = img/2 + 0.5
-    #npimg = img.numpy()
-    #plt.imshow(np.transpose(npimg, (1,2,0)))
-    #plt.show()
 
-    #m_dataset = datasets.ImageNet('datasets/imagenet/test')
-    #data_loader = DataLoader(m_dataset)
-    #return data_loader
-
+    return data_loader
 
 def load_data_from_scratch(m_dataset):
     return m_dataset

@@ -2,6 +2,7 @@
 
 #include "npu.h"
 #include "config.h"
+#include "python_interface.h"
 
 npu_t::npu_t() :
  num_processors(1),
@@ -138,6 +139,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
 #ifdef Pytorch
     PyObject *pModule;
+    std::vector<std::string> DNN_layers_name;
 	Py_Initialize();
     PyRun_SimpleString("import sys");
     PyRun_SimpleString("sys.path.append(\".\")");
@@ -155,14 +157,17 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         if(pFunc) { 
             pValue = PyObject_CallObject(pFunc, pArgs);
             if(pValue) {
-                //std::cout << pValue << std::endl;
+                DNN_layers_name = python_list_to_vector(pValue);
+                for(unsigned i = 0; i < DNN_layers_name.size(); i++) {
+                    std::cout << DNN_layers_name[i] << std::endl;
+                }
             }
         }
     }
 
 	PyRun_SimpleString("print('Done')");
 
-	Py_Finalize();
+    Py_Finalize();
 #endif
     std::cout << "  Done!" << std::endl;
 
