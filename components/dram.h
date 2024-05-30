@@ -2,12 +2,14 @@
 #define __DRAM_H__
 
 #include "def.h"
+#include "dnn_model.h"
 #include "scheduler.h"
 #include "multi_chip.h"
 #include "memory_controller.h"
 
 #include "convolutional.h"
 
+class layer_t;
 class multi_chip_t;
 
 class dram_t {
@@ -22,7 +24,8 @@ public:
     // Connect DRAM to chip-level processor
     void connect(multi_chip_t *m_multi_chip);
     // Connect DRAM to DNN model
-    void connect_layer(nebula::layer_t *m_layer);
+    //void connect_layer(nebula::layer_t *m_layer);
+    void connect_layer(layer_t *m_layer);
     // Connect DRAM to DNN model
     void disconnect_layer();
 
@@ -89,7 +92,8 @@ public:
     std::vector<unsigned> mask_bits;                // Mast bits
     bool transfer_output;
 
-    nebula::layer_t *layer;
+    //nebula::layer_t *layer;
+    layer_t *layer;
 
 private:
     size_t size;

@@ -137,7 +137,7 @@ void dram_t::connect(multi_chip_t *m_multi_chip) {
     multi_chip = m_multi_chip;
 }
 
-void dram_t::connect_layer(nebula::layer_t *m_layer) {
+void dram_t::connect_layer(layer_t *m_layer) {
     layer = m_layer;
 }
 

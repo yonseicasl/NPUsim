@@ -11,9 +11,10 @@
     #include <Python.h>
 #endif
 
-#include "convolutional.h"
-#include "fully_connected.h"
-#include "recurrent.h"
+//#include "convolutional.h"
+//#include "fully_connected.h"
+//#include "recurrent.h"
+#include "dnn_model.h"
 
 #include "adder_tree.h"
 #include "spatial_arch.h"
@@ -103,13 +104,15 @@ protected:
     multi_chip_t *multi_chip;                       // On-chip processors
     dram_t *dram;                                   // DRAM
 
-	nebula::network_t *network;                     // DNN model obtained from the software framework (PyTorch and Nebula)
+	//nebula::network_t *network;                     // DNN model obtained from the software framework (PyTorch and Nebula)
+    network_t *network;
 	std::vector<mapping_table_t*> mapping_tables;	// Mapping tables.
 
-    nebula::layer_t *layer;                         // Neural layers obtained from the software framework (PyTorch and Nebula)
+    //nebula::layer_t *layer;                         // Neural layers obtained from the software framework (PyTorch and Nebula)
+    layer_t *layer;
 
 #ifdef Pytorch
-
+    PyObject *pModule;
 #endif
     std::vector<scheduler_t*> schedulers;           // A set of schedulers.
     scheduler_t *scheduler;

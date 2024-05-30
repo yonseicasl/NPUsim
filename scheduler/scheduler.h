@@ -2,9 +2,13 @@
 #define __SCHEDULER_H__
 
 #include <list>
-#include "layer.h"
-#include "convolutional_layer.h"
-#include "connected_layer.h"
+#include <iomanip>
+#include <iostream>
+#include <fstream>
+#include "dnn_model.h"
+//#include "layer.h"
+//#include "convolutional_layer.h"
+//#include "connected_layer.h"
 
 #include "mapping_table.h"
 #include "user-def.h"

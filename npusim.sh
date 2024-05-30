@@ -63,7 +63,7 @@ USER_FLOAT=0
 # DRAMsim
 DRAMSIM3=0
 # PyTorch
-Pytorch=0
+Pytorch=1
 
 ##### Append Makefile options #####
 
@@ -99,10 +99,7 @@ fi
 
 # PyTorch connection
 if [[ $Pytorch -eq 1 ]]; then
-    #ccopt+=" -DPytorch `python-config --includes`"
-    #libopt+=" -lm -ldl -lutil `python-config --libs`"
     ccopt+=" -I/usr/include/python3.8 -DPytorch"
-    #libopt+=" -lpython3.8 -lm -ldl -lutil `pkg-config --cflags --libs python3`"
     libopt+=" -lpython3.8 -lm -ldl -lutil"
 fi
 

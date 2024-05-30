@@ -2,7 +2,9 @@
 #define __PARAMETER_H__
 
 #include <cstring>
-#include "convolutional_layer.h"
+#include "config.h"
+#include "def.h"
+//#include "convolutional_layer.h"
 
 class mapping_table_t {
 

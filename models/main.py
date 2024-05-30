@@ -41,33 +41,25 @@ def init(m_network):
     dataset_str = parsing.parsing_dataset(t_network)
     dataset = data_loader.load_data(dataset_str)
 
-    DNN_model, DNN_layers_name = network_builder.build_network(t_network)
-    #DNN_model.eval()
+    DNN_layers, DNN_layers_name = network_builder.build_network(t_network)
 
-    #correct = 0
-    #total = 0
-    #for data in dataset:
-    #    images, labels = data[0], data[1]
-    #    output = DNN_model(images)
-    #    _, predicted = torch.max(output.data, 1)
-    #    total += labels.size(0)
-    #    correct += (predicted == labels).sum().item()
-    #print(correct)
-    return DNN_layers_name
+    #for i in DNN_layers_name:
+    #    print(i)
 
-def forward(m_layer, x):
-    
-    execution.forward(m_layer, x) 
+    return DNN_layers, DNN_layers_name
 
-    return m_layer
+def forward(layer, x):
+    layer_name = network_builder.extract_layer_name(layer) 
+    print(layer_name)
 
 if __name__ == '__main__':
 
-    print('run Python main function')
     parser = network_parser()
     args = parser.parse_args()
     network = args.n
     dataset = args.d
 
-    DNN_model = init(network)
+    DNN_layers, DNN_layers_name = init(network)
 
+    for i in DNN_layers:
+        forward(i, 0)

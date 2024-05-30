@@ -134,41 +134,18 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
     /* Initialize the Neural network */
     std::cout << "# Initialize neural network model ..." << std::endl;
-	network = new nebula::convolutional_t();
-	network->init(m_network_config);
 
 #ifdef Pytorch
-    PyObject *pModule;
-    std::vector<std::string> DNN_layers_name;
-	Py_Initialize();
+    Py_Initialize();
     PyRun_SimpleString("import sys");
     PyRun_SimpleString("sys.path.append(\".\")");
 
     pModule = PyImport_ImportModule("main");
 
-    if(pModule) {
-        PyObject *pFunc, *pArgs, *pValue;
-        pFunc = PyObject_GetAttrString(pModule, "init");
-      
-        char *t_network_config = const_cast<char*>(m_network_config.c_str());
-
-        // Produce arguments and pass to PyTorch.
-        pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
-        if(pFunc) { 
-            pValue = PyObject_CallObject(pFunc, pArgs);
-            if(pValue) {
-                DNN_layers_name = python_list_to_vector(pValue);
-                for(unsigned i = 0; i < DNN_layers_name.size(); i++) {
-                    std::cout << DNN_layers_name[i] << std::endl;
-                }
-            }
-        }
-    }
-
-	PyRun_SimpleString("print('Done')");
-
-    Py_Finalize();
+    network = new network_t();
+    network->init(pModule, m_network_config);
 #endif
+
     std::cout << "  Done!" << std::endl;
 
 	/* Initialize the mapping table. */
@@ -241,20 +218,10 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
             network->layers[index]->input_data = index > 0 ? network->layers[index-1]->output_data : network->input_data;
             // Run on accelerator if the layer type is
             // Convolutional, Fully-connected, Max pooling, or Average pooling.
-			if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
-			   network->layers[index]->layer_type == nebula::CONNECTED_LAYER) {
-               //network->layers[index]->layer_type == nebula::AVGPOOL_LAYER ||
-               //network->layers[index]->layer_type == nebula::MAXPOOL_LAYER) {
-
-                if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::CONVOLUTIONAL_LAYER;
-                } else if(network->layers[index]->layer_type == nebula::CONNECTED_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::CONNECTED_LAYER;
-                } else if(network->layers[index]->layer_type == nebula::AVGPOOL_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::AVGPOOL_LAYER;
-                } else if(network->layers[index]->layer_type == nebula::MAXPOOL_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::MAXPOOL_LAYER;
-                }
+			if(network->layers[index]->layer_type == layer_name_t::CONVOLUTIONAL_LAYER ||
+			   network->layers[index]->layer_type == layer_name_t::CONNECTED_LAYER) {
+               //network->layers[index]->layer_type == layer_name_t::AVGPOOL_LAYER ||
+               //network->layers[index]->layer_type == layer_name_t::MAXPOOL_LAYER) {
 
                 layer = network->layers[index];
                 dram->connect_layer(layer);
@@ -289,12 +256,18 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
                 //dram->disconnect_layer();
 			}
+#ifdef Pytorch
+            //network->forward(pModule, index);
+#endif
 #ifdef FUNCTIONAL
             network->layers[index]->forward();
 #endif
 		}
         print_total_result(m_accelerator_config, m_network_config);
 	}
+#ifdef Pytorch
+    Py_Finalize();
+#endif
 }
 
 bool npu_t::is_idle() {
