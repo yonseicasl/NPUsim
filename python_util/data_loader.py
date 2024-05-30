@@ -28,12 +28,10 @@ def load_data(m_dataset_str):
     ])
 
     if m_dataset_str.lower() == "imagenet":
-        print("ImageNet")
         test_set = datasets.ImageNet(root='./datasets', split='val',
                                      transform=transform)
 
     elif m_dataset_str.lower() == "cifar10":
-        print("CIFAR10")
         test_set = datasets.CIFAR10(root='./datasets', train=False,
                                      download=True, transform=transform)
     elif m_dataset_str.lower() == "mnist":
@@ -43,8 +41,15 @@ def load_data(m_dataset_str):
         print('Not available ' + m_dataset_str)
 
     data_loader = DataLoader(test_set)
-    #dataiter = iter(data_loader)
-    #images, labels = next(dataiter)
+    
+    dataiter = iter(data_loader)
+    images, labels = next(dataiter)
+
+    img = torchvision.utils.make_grid(images[0])
+    img = img / 2 + 0.5
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg, (1, 2, 0)))
+    plt.show()
 
     return data_loader
 

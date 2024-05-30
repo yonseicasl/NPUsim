@@ -38,28 +38,46 @@ def init(m_network):
         t_network = t_network.replace(sub,'')    
 
     # Initialize DNN data
-    dataset_str = parsing.parsing_dataset(t_network)
-    dataset = data_loader.load_data(dataset_str)
+    #dataset_str = parsing.parsing_dataset(t_network)
+    #dataset = data_loader.load_data(dataset_str)
 
+    #DNN_Model, DNN_layers, DNN_layers_name = network_builder.build_network(t_network)
     DNN_layers, DNN_layers_name = network_builder.build_network(t_network)
 
-    #for i in DNN_layers_name:
-    #    print(i)
-
+    #return DNN_Model, DNN_layers, DNN_layers_name
     return DNN_layers, DNN_layers_name
 
-def forward(layer, x):
-    layer_name = network_builder.extract_layer_name(layer) 
-    print(layer_name)
+
+def load_data(m_network, m_iteration):
+    t_network = m_network
+    sub_list = ['networks/', '.cfg']
+    for sub in sub_list:
+        t_network = t_network.replace(sub,'')    
+
+    # Initialize DNN data
+    dataset_str = parsing.parsing_dataset(t_network)
+    dataset = data_loader.load_data(dataset_str)
+    
+    return dataset
+
+def forward(m_network, m_dataset, m_index):
+    print("forward")
+    #for data in m_dataset:
+    #    images, labels = data[0].to(), data[1].to()
+    #    outputs = m_newtork(images)
+    #    _, predicted = torch.max(outputs, 1)
+    #    correc
+
 
 if __name__ == '__main__':
 
     parser = network_parser()
     args = parser.parse_args()
     network = args.n
-    dataset = args.d
 
+    #DNN_model, DNN_layers, DNN_layers_name = init(network)
     DNN_layers, DNN_layers_name = init(network)
+    dataset = load_data(network, 0)
 
-    for i in DNN_layers:
-        forward(i, 0)
+    forward(DNN_model, dataset, 0)
+
