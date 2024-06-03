@@ -15,9 +15,9 @@ public:
 
     layer_name_t layer_type;
 
-    data_t *input_data;
-    data_t *weight;
-    data_t *output_data;
+    PyObject *input_data;
+    PyObject *weight;
+    PyObject *output_data;
 
 };
 
@@ -28,16 +28,18 @@ public:
 
     void init(PyObject *pModule, const std::string m_network_config);
 
-    void load_data(PyObject *pModule, const std::string m_network_config, unsigned m_iteration);
+    //void load_data(PyObject *pModule, PyObject *pData, PyObject *pLabel, const std::string m_network_config, unsigned m_iteration);
+    void load_data(PyObject *pModule, const std::string m_network_config);
 
-    void forward(PyObject *pModule, unsigned m_index);
+    void forward(PyObject *pModule, unsigned m_iteration, unsigned m_index);
 
 
     std::vector<layer_t*> layers; 
     PyObject *Pynetwork;
+    PyObject *Pydataset;
     unsigned num_layers;
 
-    data_t *input_data;
+    PyObject *input_data;
 
 };
 

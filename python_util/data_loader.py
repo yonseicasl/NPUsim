@@ -45,11 +45,11 @@ def load_data(m_dataset_str):
     dataiter = iter(data_loader)
     images, labels = next(dataiter)
 
-    img = torchvision.utils.make_grid(images[0])
-    img = img / 2 + 0.5
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
+    #img = torchvision.utils.make_grid(images[0])
+    #img = img / 2 + 0.5
+    #npimg = img.numpy()
+    #plt.imshow(np.transpose(npimg, (1, 2, 0)))
+    #plt.show()
 
     return data_loader
 

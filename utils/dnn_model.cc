@@ -18,6 +18,7 @@ layer_t::~layer_t() {
 
 network_t::network_t() :
     Pynetwork(NULL),
+    Pydataset(NULL),
     num_layers(0),
     input_data(NULL) {
 }
@@ -30,7 +31,8 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
 #ifdef Pytorch
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
-        PyObject *pItem1, *pItem2;
+        //PyObject *pItem1, *pItem2;
+        PyObject *pLayer_name;
         pFunc = PyObject_GetAttrString(pModule, "init");
       
         char *t_network_config = const_cast<char*>(m_network_config.c_str());
@@ -42,8 +44,9 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
             pValue = PyObject_CallObject(pFunc, pArgs);
             if(pValue) {
                 Pynetwork = PyTuple_GetItem(pValue, 0);
-                pItem2 = PyTuple_GetItem(pValue, 1);
-                DNN_layers_name = python_list_to_vector(pItem2);
+                //pItem1 = PyTuple_GetItem(pValue, 1);
+                pLayer_name = PyTuple_GetItem(pValue, 2);
+                DNN_layers_name = python_list_to_vector(pLayer_name);
             }
         }
         layers.reserve(DNN_layers_name.size());
@@ -67,7 +70,7 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
 #endif
 }
 
-void network_t::load_data(PyObject *pModule, const std::string m_network_config, unsigned m_iteration) {
+void network_t::load_data(PyObject *pModule, const std::string m_network_config) {
 
 #ifdef Pytorch
     if(pModule) {
@@ -77,38 +80,37 @@ void network_t::load_data(PyObject *pModule, const std::string m_network_config,
         char *t_network_config = const_cast<char*>(m_network_config.c_str());
 
         // Produce arguments and pass to PyTorch.
-        pArgs = PyTuple_Pack(2, PyUnicode_FromString(t_network_config), PyLong_FromLong(m_iteration));
+        pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
         if(pFunc) { 
             pValue = PyObject_CallObject(pFunc, pArgs);
             if(pValue) {
-
+                Pydataset = pValue;
             }
         }
     }
 #endif
 }
 
-void network_t::forward(PyObject *pModule, unsigned m_index) {
+void network_t::forward(PyObject *pModule, unsigned m_iteration, unsigned m_index) {
 
 #ifdef Pytorch
-    if(pModule) {
-        PyObject *pFunc, *pArgs, *pValue;
-        pFunc = PyObject_GetAttrString(pModule, "forward");
-      
-        // Produce arguments and pass to PyTorch.
-        pArgs = PyTuple_Pack(2, Pynetwork, PyLong_FromLong(m_index));
-        if(pFunc) { 
-            pValue = PyObject_CallObject(pFunc, pArgs);
-            if(pValue) {
+    if(m_index == num_layers-1) {
+        if(pModule) {
+            PyObject *pFunc, *pArgs, *pValue;
+            pFunc = PyObject_GetAttrString(pModule, "forward");
 
+            // Produce arguments and pass to PyTorch.
+            pArgs = PyTuple_Pack(4, Pynetwork, Pydataset, PyLong_FromLong(m_iteration), PyLong_FromLong(m_index));
 
+            if(pFunc) { 
+                pValue = PyObject_CallObject(pFunc, pArgs);
+                if(pValue) {
+                    layers[m_index]->output_data = pValue;
+                }
             }
         }
     }
 #endif
 
 }
-
-
-
 
