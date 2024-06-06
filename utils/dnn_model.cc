@@ -2,6 +2,7 @@
 
 layer_t::layer_t(layer_name_t m_layer_type) :
     layer_type(m_layer_type),
+    Pylayer(NULL),
     input_data(NULL),
     weight(NULL), 
     output_data(NULL) {
@@ -18,7 +19,10 @@ layer_t::~layer_t() {
 
 network_t::network_t() :
     Pynetwork(NULL),
+    Pylayers(NULL),
     Pydataset(NULL),
+    Pyimage(NULL),
+    Pylabel(NULL),
     num_layers(0),
     input_data(NULL) {
 }
@@ -31,8 +35,6 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
 #ifdef Pytorch
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
-        //PyObject *pItem1, *pItem2;
-        PyObject *pLayer_name;
         pFunc = PyObject_GetAttrString(pModule, "init");
       
         char *t_network_config = const_cast<char*>(m_network_config.c_str());
@@ -44,9 +46,9 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
             pValue = PyObject_CallObject(pFunc, pArgs);
             if(pValue) {
                 Pynetwork = PyTuple_GetItem(pValue, 0);
-                //pItem1 = PyTuple_GetItem(pValue, 1);
-                pLayer_name = PyTuple_GetItem(pValue, 2);
-                DNN_layers_name = python_list_to_vector(pLayer_name);
+                Pylayers  = PyTuple_GetItem(pValue, 1);
+                Pylayers_name = PyTuple_GetItem(pValue, 2);
+                DNN_layers_name = python_list_to_vector(Pylayers_name);
             }
         }
         layers.reserve(DNN_layers_name.size());
@@ -70,7 +72,7 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
 #endif
 }
 
-void network_t::load_data(PyObject *pModule, const std::string m_network_config) {
+void network_t::load_data(PyObject *pModule, const std::string m_network_config, unsigned m_iteration) {
 
 #ifdef Pytorch
     if(pModule) {
@@ -80,11 +82,12 @@ void network_t::load_data(PyObject *pModule, const std::string m_network_config)
         char *t_network_config = const_cast<char*>(m_network_config.c_str());
 
         // Produce arguments and pass to PyTorch.
-        pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
+        pArgs = PyTuple_Pack(2, PyUnicode_FromString(t_network_config), PyLong_FromLong(m_iteration));
         if(pFunc) { 
             pValue = PyObject_CallObject(pFunc, pArgs);
             if(pValue) {
-                Pydataset = pValue;
+                Pyimage = PyTuple_GetItem(pValue, 0);
+                Pylabel = PyTuple_GetItem(pValue, 1);
             }
         }
     }
@@ -94,19 +97,18 @@ void network_t::load_data(PyObject *pModule, const std::string m_network_config)
 void network_t::forward(PyObject *pModule, unsigned m_iteration, unsigned m_index) {
 
 #ifdef Pytorch
-    if(m_index == num_layers-1) {
-        if(pModule) {
-            PyObject *pFunc, *pArgs, *pValue;
-            pFunc = PyObject_GetAttrString(pModule, "forward");
+    if(pModule) {
+        PyObject *pFunc, *pArgs, *pValue;
+        pFunc = PyObject_GetAttrString(pModule, "layerwise_forward");
 
-            // Produce arguments and pass to PyTorch.
-            pArgs = PyTuple_Pack(4, Pynetwork, Pydataset, PyLong_FromLong(m_iteration), PyLong_FromLong(m_index));
+        PyObject *input_data = m_index > 0 ? layers[m_index-1]->output_data : Pyimage;
+        // Produce arguments and pass to PyTorch.
+        pArgs = PyTuple_Pack(4, Pylayers, Pylayers_name, input_data, PyLong_FromLong(m_index));
 
-            if(pFunc) { 
-                pValue = PyObject_CallObject(pFunc, pArgs);
-                if(pValue) {
-                    layers[m_index]->output_data = pValue;
-                }
+        if(pFunc) { 
+            pValue = PyObject_CallObject(pFunc, pArgs);
+            if(pValue) {
+                layers[m_index]->output_data = pValue;
             }
         }
     }
@@ -114,3 +116,17 @@ void network_t::forward(PyObject *pModule, unsigned m_iteration, unsigned m_inde
 
 }
 
+void network_t::print_result(PyObject *pModule) {
+#ifdef Pytorch
+    if(pModule) {
+        PyObject *pFunc, *pArgs, *pValue;
+        pFunc = PyObject_GetAttrString(pModule, "print_result");
+        
+        pArgs = PyTuple_Pack(2, layers[num_layers-1]->output_data, Pylabel);
+
+        if(pFunc) {
+            pValue = PyObject_CallObject(pFunc, pArgs);
+        }
+    }
+#endif
+}

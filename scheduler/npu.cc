@@ -211,7 +211,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
 	unsigned num_iteration = 1;
     // Run the network
 	for(unsigned iteration = 0; iteration < num_iteration; iteration++) {
-		network->load_data(pModule, m_network_config);
+		network->load_data(pModule, m_network_config, iteration);
 
         // Layer-wise simulation.
 		for(unsigned index = 0; index < network->num_layers; index++) {
@@ -263,6 +263,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
             network->layers[index]->forward();
 #endif
 		}
+#ifdef Pytorch
+        network->print_result(pModule);
+#endif
         print_total_result(m_accelerator_config, m_network_config);
 	}
 #ifdef Pytorch

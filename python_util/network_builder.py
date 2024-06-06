@@ -228,7 +228,7 @@ def build_network(m_network):
     if m_network.lower() == "inceptionv3":
         DNN_model = models.inceptionv3(pretrained=False)
     elif m_network.lower() == "resnet50":
-        DNN_model = models.resnet50(pretrained=False)
+        DNN_model = models.resnet50(pretrained=True)
     elif m_network.lower() == "alexnet":
         DNN_model = models.alexnet(pretrained=True)
     else:
@@ -238,7 +238,6 @@ def build_network(m_network):
     DNN_layers_name = []
     for i in DNN_layers:
         DNN_layers_name.append(extract_layer_name(i))
-    #return DNN_model, DNN_layers_name
     return DNN_model, DNN_layers, DNN_layers_name
 
 

@@ -16,6 +16,7 @@ from torchvision import models
 import torch 
 import torch.nn as nn
 
+from torchsummary import summary
 
 def network_parser():
     parser = argparse.ArgumentParser()
@@ -42,8 +43,8 @@ def init(m_network):
     return DNN_Model, DNN_layers, DNN_layers_name
 
 
-def load_data(m_network):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def load_data(m_network, m_iteration):
+    device = 'cpu'
     t_network = m_network
     sub_list = ['networks/', '.cfg']
     for sub in sub_list:
@@ -53,11 +54,16 @@ def load_data(m_network):
     dataset_str = parsing.parsing_dataset(t_network)
     dataset = data_loader.load_data(dataset_str)
 
-    return dataset
+    count = 0
+    for data in dataset:
+        if count == m_iteration:
+            images, labels = data[0].to(device), data[1].to(device)
+            break;
+        count += 1
+    return images, labels
 
-
-def forward(m_network, m_dataset, m_iteration, m_index):
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+def forward(m_network, m_image, m_label, m_iteration):
+    device = 'cpu'
     m_network.to(device)
 
     m_network.eval()
@@ -65,22 +71,32 @@ def forward(m_network, m_dataset, m_iteration, m_index):
     total = 0
     count = 0
 
-    for data in m_dataset:
-        if count == m_iteration :
-            images, labels = data[0].to(device), data[1].to(device)
-            outputs = m_network(images)
-            _, predicted = torch.max(outputs, 1)
-            correct += (predicted == labels).sum().item()
-            total += 1
-            break
-        count += 1
+    outputs = m_network(m_image)
+    _, predicted = torch.max(outputs, 1)
+    correct += (predicted == m_label).sum().item()
+    total += 1
     print (str(correct) + "/" + str(total))
 
-
-def layerwise_forward(m_layer, m_input_data, m_index) :
-
-    output = []
+def flatten(m_input) :
+    output = torch.flatten(m_input, 1)
     return output
+
+def layerwise_forward(m_layer, m_layer_name, m_input, m_index) :
+
+    output = m_layer[m_index](m_input)
+    if m_index != len(m_layer)-1:
+        if m_layer_name[m_index+1] == "Linear":
+            output = torch.flatten(output, 1)
+    return output
+
+def print_result(m_input, m_label):
+    correct = 0
+    total = 0
+    #print(m_input)
+    _, predicted = torch.max(m_input, 1)
+    correct += (predicted == m_label).sum().item()
+    total += 1
+    print (str(correct) + "/" + str(total))
      
 
 if __name__ == '__main__':
@@ -90,23 +106,18 @@ if __name__ == '__main__':
     network = args.n
 
     DNN_model, DNN_layers, DNN_layers_name = init(network)
-    dataset = load_data(network)
 
-    #output = forward(DNN_model, dataset, 0, 0)
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    image, label = load_data(network, 0)
 
-    for data in dataset:
-        image, label = data[0].to(device), data[1].to(device)
-        for i in range(len(DNN_layers)):
-            print(i)
-            if i == 0 :
-                output = layerwise_forward(DNN_layers[i], image, i)
-            else :
-                output = layerwise_forward(DNN_layers[i], output, i)
+    forward(DNN_model, image, label, 0)
 
-    #for i in range(len(DNN_layers)):
-    #    if i == 0 :
-    #        x = forward(DNN_model, image, i)
-    #    else :
-    #        x = forward(DNN_model, x, i)
+    output = None
+    total = 0
+    correct = 0
 
+    for i in range(len(DNN_layers)):
+        if i == 0 :
+            output = layerwise_forward(DNN_layers, DNN_layers_name, image, i)
+        else :
+            output = layerwise_forward(DNN_layers, DNN_layers_name, output, i)
+    print_result(output, label)
