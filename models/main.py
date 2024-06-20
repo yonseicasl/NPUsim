@@ -78,10 +78,6 @@ def forward(m_network, m_image, m_label, m_iteration):
     layers = network_builder.get_layers(m_network)
 
 
-    #for i in range(len(layers)):
-    #    print_output(layers, i)
-    #    print(str(i) + " layer done")
-    
     _, predicted = torch.max(outputs, 1)
     correct += (predicted == m_label).sum().item()
     total += 1
@@ -94,9 +90,6 @@ def flatten(m_input) :
 def layerwise_forward(m_layer, m_layer_name, m_input, m_index) :
 
     output = m_layer[m_index](m_input)
-    if m_index != len(m_layer)-1:
-        if m_layer_name[m_index+1] == "Linear":
-            output = torch.flatten(output, 1)
     return output
 
 def init_weight(m_layer, m_index) :
@@ -119,7 +112,7 @@ if __name__ == '__main__':
 
     DNN_model, DNN_layers, DNN_layers_name = init(network)
 
-    print(DNN_model)
+    print(len(DNN_layers_name))
     #for i in range(len(DNN_layers)):
     #    if DNN_layers_name[i] == "Conv2d":
     #        print(DNN_layers_name[i] + " " + str(DNN_layers[i].in_channels) + " " + str(DNN_layers[i].out_channels))
