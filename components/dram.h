@@ -60,6 +60,7 @@ public:
 
     // Tile size of DRAM. 
     std::vector<unsigned> tile_size;
+    std::vector<size_t> offsets;
     std::vector<bool> skip_transfer;
 
     /* Off-chip memory stats */
@@ -94,6 +95,7 @@ public:
 
     //nebula::layer_t *layer;
     layer_t *layer;
+    data_t *data;
 
 private:
     size_t size;
@@ -106,10 +108,6 @@ private:
     unsigned input_index;                           // Input index in DRAM.
     unsigned weight_index;                          // Weight index in DRAM.
     unsigned output_index;                          // Output index in DRAM.
-
-    data_t* input_data;                             // Input neural data
-    data_t* weight;                                 // Weight neural data
-    data_t* output_data;                            // Output neural data
 
     bool done;
     

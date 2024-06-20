@@ -7,6 +7,7 @@ dram_t::dram_t(section_config_t m_section_config) :
     u_transfer_cycle(0.0),
     u_transfer_energy(0.0),
     transfer_output(false),
+    data(NULL),
     size(0),
     frequency(0.0),
     bandwidth(0.0),
@@ -14,9 +15,6 @@ dram_t::dram_t(section_config_t m_section_config) :
     input_index(0),
     weight_index(0),
     output_index(0),
-    input_data(NULL),
-    weight(NULL),
-    output_data(NULL),
     done(false),
     multi_chip(NULL) {
     
@@ -38,6 +36,8 @@ void dram_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("size", &size);
 
     size *= 1024*1024*1024; 
+    size_t num_entry = size/sizeof(data_t);
+    data = new data_t[num_entry]();
 
     // Initialize frequency, bandwidth, and bitwidth of the off-chip memory
     m_section_config.get_setting("frequency", &frequency);
@@ -62,6 +62,9 @@ void dram_t::init(section_config_t m_section_config) {
     // Initialize the tile size
     tile_size.reserve(data_type_t::NUM_DATA_TYPES);
     tile_size.assign(data_type_t::NUM_DATA_TYPES, 1);
+
+    offsets.reserve(data_type_t::NUM_DATA_TYPES);
+    offsets.assign(data_type_t::NUM_DATA_TYPES, 1);
 
     skip_transfer.reserve(data_type_t::NUM_DATA_TYPES);
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
@@ -137,6 +140,8 @@ void dram_t::connect(multi_chip_t *m_multi_chip) {
     multi_chip = m_multi_chip;
 }
 
+/* TODO */
+// Copy neural data from PyTorch for Functional simulation
 void dram_t::connect_layer(layer_t *m_layer) {
     layer = m_layer;
 }

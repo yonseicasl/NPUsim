@@ -144,6 +144,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
     network = new network_t();
     network->init(pModule, m_network_config);
+    network->init_weight(pModule);
 #endif
 
     std::cout << "  Done!" << std::endl;
@@ -254,7 +255,6 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     request_to_pe_array();
                 }
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
-                //dram->disconnect_layer();
 			}
 #ifdef Pytorch
             network->forward(pModule, iteration, index);

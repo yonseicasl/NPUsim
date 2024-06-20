@@ -62,6 +62,9 @@ def load_data(m_network, m_iteration):
         count += 1
     return images, labels
 
+def print_output(m_layers, m_index) :
+    print(m_layers[m_index].out)
+
 def forward(m_network, m_image, m_label, m_iteration):
     device = 'cpu'
     m_network.to(device)
@@ -72,6 +75,13 @@ def forward(m_network, m_image, m_label, m_iteration):
     count = 0
 
     outputs = m_network(m_image)
+    layers = network_builder.get_layers(m_network)
+
+
+    #for i in range(len(layers)):
+    #    print_output(layers, i)
+    #    print(str(i) + " layer done")
+    
     _, predicted = torch.max(outputs, 1)
     correct += (predicted == m_label).sum().item()
     total += 1
@@ -89,10 +99,12 @@ def layerwise_forward(m_layer, m_layer_name, m_input, m_index) :
             output = torch.flatten(output, 1)
     return output
 
+def init_weight(m_layer, m_index) :
+    return m_layer[m_index].weight
+
 def print_result(m_input, m_label):
     correct = 0
     total = 0
-    #print(m_input)
     _, predicted = torch.max(m_input, 1)
     correct += (predicted == m_label).sum().item()
     total += 1
@@ -107,10 +119,18 @@ if __name__ == '__main__':
 
     DNN_model, DNN_layers, DNN_layers_name = init(network)
 
+    print(DNN_model)
+    #for i in range(len(DNN_layers)):
+    #    if DNN_layers_name[i] == "Conv2d":
+    #        print(DNN_layers_name[i] + " " + str(DNN_layers[i].in_channels) + " " + str(DNN_layers[i].out_channels))
+    #    elif DNN_layers_name[i] == "Linear":
+    #        print(DNN_layers_name[i] + " " + str(DNN_layers[i].in_features) + " " + str(DNN_layers[i].out_features))
+
     image, label = load_data(network, 0)
 
     forward(DNN_model, image, label, 0)
 
+    outputs = []
     output = None
     total = 0
     correct = 0

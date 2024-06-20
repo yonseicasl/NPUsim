@@ -1,6 +1,18 @@
 #include "dnn_model.h"
 
 layer_t::layer_t(layer_name_t m_layer_type) :
+    batch_size(1),
+    input_height(1),
+    input_width(1),
+    input_channel(1),
+    input_size(1),
+    weight_height(1),
+    weight_width(1),
+    weight_size(1),
+    output_height(1),
+    output_width(1),
+    output_channel(1),
+    output_size(1),
     layer_type(m_layer_type),
     Pylayer(NULL),
     input_data(NULL),
@@ -70,6 +82,36 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
         }
     }
 #endif
+}
+
+void network_t::init_layer(PyObject *pModule) {
+#ifdef Pytorch
+
+#endif
+
+}
+
+void network_t::init_weight(PyObject *pModule) {
+#ifdef Pytorch
+    if(pModule) {
+        PyObject *pFunc, *pArgs, *pValue;
+        pFunc = PyObject_GetAttrString(pModule, "init_weight");
+
+        for(unsigned i = 0; i < num_layers; i++) {
+            if(layers[i]->layer_type == layer_name_t::CONVOLUTIONAL_LAYER || 
+               layers[i]->layer_type == layer_name_t::CONNECTED_LAYER) {
+                pArgs = PyTuple_Pack(2, Pylayers, PyLong_FromLong(i));
+                if(pFunc) {
+                    pValue = PyObject_CallObject(pFunc, pArgs);
+                    if(pValue) {
+                        layers[i]->weight = pValue;
+                    }
+                }
+            }
+        }
+    }
+#endif
+
 }
 
 void network_t::load_data(PyObject *pModule, const std::string m_network_config, unsigned m_iteration) {

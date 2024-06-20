@@ -8,10 +8,10 @@
 #include <string>
 #include <iostream>
 
+#include "user-def.h"
 
 std::vector<std::string> python_list_to_vector(PyObject *pList);
 
-std::vector<PyObject*> python_list_to_pyobject(PyObject *pList);
-
+data_t* python_tensor_to_data(PyObject *pList);
 #endif
 #endif

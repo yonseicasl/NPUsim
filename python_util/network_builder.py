@@ -29,7 +29,7 @@ class layer_configuration:
         self.name = section.name
 
         self.activation_type = section.get_configuration_value("activation") if section.get_configuration_value("activation") != None else "linear"
-        self.batch_normalize = bool(section.get_configuration_value("batch_normalize") if section.get_configuration_value("batch_normalize") != None else "false")
+        self.batch_normalize = bool(section.get_configuration_value("batch_normalize") if section.get_configuration_value("batch_normalize") else "false")
 
     def activation(self):
         if self.activation_type == "elu":
@@ -62,6 +62,8 @@ class convolutional_layer_configuration(layer_configuration):
         self.prev_layer = prev_layer
         
         self.activation = layer_configuration.activation(self)
+        self.batch_normalize = bool(section.get_configuration_value("batch_normalize") if section.get_configuration_value("batch_normalize") != None else "false")
+        print(self.batch_normalize)
 
         self.batch_size = network.batch_size # Batch size
 
@@ -96,7 +98,7 @@ class convolutional_layer_configuration(layer_configuration):
         self.output_size = self.batch_size * self.output_height * self.output_width * self.output_channel
 
         self.build_convolutional_layer()
-
+        
         print(self.name + ": " + str(self.input_height) + "*" + str(self.input_width) + "*" + str(self.input_channel) + ", " + str(self.weight_height) + "*" + str(self.weight_width) + "*" + str(self.output_channel) + ", " + str(self.output_height) + "*" + str(self.output_width) + "*" + str(self.output_channel))
 
     def build_convolutional_layer(self):
@@ -104,12 +106,12 @@ class convolutional_layer_configuration(layer_configuration):
             self.model = nn.Sequential(
                          nn.Conv2d(in_channels=self.input_channel, out_channels=self.output_channel, kernel_size=(self.weight_height, self.weight_width), stride=(self.stride_height, self.stride_width), padding=(self.padding_height, self.padding_width)),
                          nn.BatchNorm2d(self.output_channel),
-                         self.activation
+                         self.activation()
                          )
         else:
             self.model = nn.Sequential(
                          nn.Conv2d(in_channels=self.input_channel, out_channels=self.output_channel, kernel_size=(self.weight_height, self.weight_width), stride=(self.stride_height, self.stride_width), padding=(self.padding_height, self.padding_width)),
-                         self.activation
+                         self.activation()
                          )
 
     def forward(self, x):
@@ -129,6 +131,8 @@ class connected_layer_configuration(layer_configuration):
         self.build_connected_layer()
 
         print(self.name + ": " + str(self.input_size) + ", " + str(self.weight_size) + ", " + str(self.output_size))
+
+
     def build_connected_layer(self):
         if self.batch_normalize:
             self.model = nn.Sequential(
