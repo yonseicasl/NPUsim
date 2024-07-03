@@ -242,12 +242,22 @@ def build_network(m_network):
     DNN_layers_name = []
     for i in DNN_layers:
         DNN_layers_name.append(extract_layer_name(i))
+    if m_network.lower() == 'resnet50':
+        DNN_layers = DNN_layers[:11] + DNN_layers[12:34] + DNN_layers[35:64] + DNN_layers[65:108] + DNN_layers[109:]
+        DNN_layers_name = DNN_layers_name[:11] + DNN_layers_name[12:34] + DNN_layers_name[35:64] + DNN_layers_name[65:108] + DNN_layers_name[109:]
+        for i in range(len(DNN_layers)):
+            if DNN_layers_name[i] == "Linear":
+                DNN_layers.insert(i,nn.Flatten())
+                DNN_layers_name.insert(i, "Flatten")
+                break
+
     if m_network.lower() == 'alexnet':
         for i in range(len(DNN_layers)):
             if DNN_layers_name[i] == "Linear":
                 DNN_layers.insert(i,nn.Flatten())
                 DNN_layers_name.insert(i, "Flatten")
                 break
+
     return DNN_model, DNN_layers, DNN_layers_name
 
 

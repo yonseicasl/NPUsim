@@ -52,7 +52,7 @@ def load_data(m_network, m_iteration):
 
     # Initialize DNN data
     dataset_str = parsing.parsing_dataset(t_network)
-    dataset = data_loader.load_data(dataset_str)
+    dataset = data_loader.load_data(m_network, dataset_str)
 
     count = 0
     for data in dataset:
@@ -75,8 +75,6 @@ def forward(m_network, m_image, m_label, m_iteration):
     count = 0
 
     outputs = m_network(m_image)
-    layers = network_builder.get_layers(m_network)
-
 
     _, predicted = torch.max(outputs, 1)
     correct += (predicted == m_label).sum().item()
@@ -111,13 +109,6 @@ if __name__ == '__main__':
     network = args.n
 
     DNN_model, DNN_layers, DNN_layers_name = init(network)
-
-    print(len(DNN_layers_name))
-    #for i in range(len(DNN_layers)):
-    #    if DNN_layers_name[i] == "Conv2d":
-    #        print(DNN_layers_name[i] + " " + str(DNN_layers[i].in_channels) + " " + str(DNN_layers[i].out_channels))
-    #    elif DNN_layers_name[i] == "Linear":
-    #        print(DNN_layers_name[i] + " " + str(DNN_layers[i].in_features) + " " + str(DNN_layers[i].out_features))
 
     image, label = load_data(network, 0)
 

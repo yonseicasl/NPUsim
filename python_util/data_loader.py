@@ -8,7 +8,7 @@ import numpy as np
 import cv2
 
 
-def load_data(m_dataset_str):
+def load_data(m_network, m_dataset_str):
 
     if m_dataset_str.lower() == 'imagenet':
         mean = [0.485, 0.456, 0.406]
@@ -20,12 +20,21 @@ def load_data(m_dataset_str):
         mean = [0.5]
         std = [1.0]
 
-    transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(227),
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std)
-    ])
+    if m_network == 'alexnet' :
+        transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(227),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std)
+        ])
+    else :
+        transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean, std)
+        ])
+
 
     if m_dataset_str.lower() == "imagenet":
         test_set = datasets.ImageNet(root='./datasets', split='val',
