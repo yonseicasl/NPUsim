@@ -260,7 +260,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
             network->forward(pModule, iteration, index);
 #endif
 #ifdef FUNCTIONAL
-            network->layers[index]->forward();
+            //network->layers[index]->forward();
 #endif
 		}
 #ifdef Pytorch

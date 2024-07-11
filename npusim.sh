@@ -55,7 +55,7 @@ PRINT=0
 # Debug.
 DEBUG=0
 # Functional simulation
-FUNCTIONAL=0
+FUNCTIONAL=1
 # Using integer
 USER_INTEGER=0
 # Using float 

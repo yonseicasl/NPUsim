@@ -1592,7 +1592,7 @@ void scheduler_t::input_data_load(data_t *m_dest, data_t *m_source, unsigned m_d
 
                         if(m_source[source_index] == 0.0) {num_zeros[data_type_t::INPUT]++;}
 
-                        m_dest[dest_index].value = m_source[source_index].value;
+                        m_dest[dest_index] = m_source[source_index];
                     }
                 }
             }
@@ -1635,7 +1635,7 @@ void scheduler_t::weight_data_load(data_t *m_dest, data_t *m_source, unsigned m_
 
                         if(m_source[source_index] == 0.0) {num_zeros[data_type_t::WEIGHT]++;}
                                               
-                        m_dest[dest_index].value = m_source[source_index].value;
+                        m_dest[dest_index] = m_source[source_index];
                     }
                 }
             }
@@ -1672,7 +1672,7 @@ void scheduler_t::output_data_load(data_t *m_dest, data_t *m_source, unsigned m_
                                               + k*dest_param[parameter_type_t::OUTPUT_HEIGHT]*dest_param[parameter_type_t::OUTPUT_WIDTH]
                                               + p*dest_param[parameter_type_t::OUTPUT_WIDTH] + q;
 
-                        m_dest[dest_index].value = m_source[source_index].value;
+                        m_dest[dest_index] = m_source[source_index];
                     }
                 }
             }
@@ -1708,7 +1708,7 @@ void scheduler_t::output_data_store(data_t *m_dest, data_t *m_source, unsigned m
                                               + k*dest_param[parameter_type_t::OUTPUT_HEIGHT]*dest_param[parameter_type_t::OUTPUT_WIDTH]
                                               + p*dest_param[parameter_type_t::OUTPUT_WIDTH] + q;
 
-                        m_dest[dest_index].value = m_source[source_index].value;
+                        m_dest[dest_index] = m_source[source_index];
                     }
                 }
             }

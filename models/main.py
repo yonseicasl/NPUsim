@@ -110,6 +110,10 @@ if __name__ == '__main__':
 
     DNN_model, DNN_layers, DNN_layers_name = init(network)
 
+    print(DNN_model)
+
+    #summary(DNN_model, (3, 224, 224))
+
     image, label = load_data(network, 0)
 
     forward(DNN_model, image, label, 0)
@@ -120,6 +124,7 @@ if __name__ == '__main__':
     correct = 0
 
     for i in range(len(DNN_layers)):
+        print(DNN_layers[i])
         if i == 0 :
             output = layerwise_forward(DNN_layers, DNN_layers_name, image, i)
         else :

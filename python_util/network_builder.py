@@ -235,6 +235,10 @@ def build_network(m_network):
         DNN_model = models.resnet50(pretrained=True)
     elif m_network.lower() == "alexnet":
         DNN_model = models.alexnet(pretrained=True)
+    elif m_network.lower() == "mobilenetv3-large":
+        DNN_model = models.mobilenet_v3_large(pretrained=True)
+    elif m_network.lower() == "mobilenetv3-small":
+        DNN_model = models.mobilenet_v3_small(pretrained=True)
     else:
         DNN_model = build_network_from_scratch(m_network.lower())
 
@@ -245,21 +249,26 @@ def build_network(m_network):
     if m_network.lower() == 'resnet50':
         DNN_layers = DNN_layers[:11] + DNN_layers[12:34] + DNN_layers[35:64] + DNN_layers[65:108] + DNN_layers[109:]
         DNN_layers_name = DNN_layers_name[:11] + DNN_layers_name[12:34] + DNN_layers_name[35:64] + DNN_layers_name[65:108] + DNN_layers_name[109:]
-        for i in range(len(DNN_layers)):
-            if DNN_layers_name[i] == "Linear":
-                DNN_layers.insert(i,nn.Flatten())
-                DNN_layers_name.insert(i, "Flatten")
-                break
+        #for i in range(len(DNN_layers)):
+        #    if DNN_layers_name[i] == "Linear":
+        #        DNN_layers.insert(i,nn.Flatten())
+        #        DNN_layers_name.insert(i, "Flatten")
+        #        break
 
-    if m_network.lower() == 'alexnet':
-        for i in range(len(DNN_layers)):
-            if DNN_layers_name[i] == "Linear":
-                DNN_layers.insert(i,nn.Flatten())
-                DNN_layers_name.insert(i, "Flatten")
-                break
+    #if m_network.lower() == 'alexnet':
+    #    for i in range(len(DNN_layers)):
+    #        if DNN_layers_name[i] == "Linear":
+    #            DNN_layers.insert(i,nn.Flatten())
+    #            DNN_layers_name.insert(i, "Flatten")
+    #            break
+
+    for i in range(len(DNN_layers)):
+        if DNN_layers_name[i] == "Linear":
+            DNN_layers.insert(i,nn.Flatten())
+            DNN_layers_name.insert(i, "Flatten")
+            break
 
     return DNN_model, DNN_layers, DNN_layers_name
-
 
 def build_network_from_scratch(network):
     sections = parsing.parsing_config(network)
