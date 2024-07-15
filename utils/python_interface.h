@@ -1,7 +1,7 @@
 #ifndef __PYTHON_INTERFACE_H__
 #define __PYTHON_INTERFACE_H__
 
-#ifdef Pytorch
+#ifdef PyTorch
 
 #include <Python.h>
 #include <vector>

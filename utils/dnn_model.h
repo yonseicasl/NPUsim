@@ -52,7 +52,6 @@ public:
 
     void print_result(PyObject *pModule);
 
-
     std::vector<layer_t*> layers; 
     PyObject *Pynetwork;
     PyObject *Pylayers;
@@ -63,7 +62,6 @@ public:
     unsigned num_layers;
 
     PyObject *input_data;
-
 };
 
 

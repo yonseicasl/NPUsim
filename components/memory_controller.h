@@ -5,6 +5,7 @@
 #include <list>
 #include "dramsim3.h"
 #include "mapping_table.h"
+#include "memory.h"
 #include "def.h"
 #include "user-def.h"
 

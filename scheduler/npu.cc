@@ -135,7 +135,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     /* Initialize the Neural network */
     std::cout << "# Initialize neural network model ..." << std::endl;
 
-#ifdef Pytorch
+#ifdef PyTorch
     Py_Initialize();
     PyRun_SimpleString("import sys");
     PyRun_SimpleString("sys.path.append(\".\")");
@@ -256,19 +256,19 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 }
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
 			}
-#ifdef Pytorch
+#ifdef PyTorch
             network->forward(pModule, iteration, index);
 #endif
 #ifdef FUNCTIONAL
             //network->layers[index]->forward();
 #endif
 		}
-#ifdef Pytorch
+#ifdef PyTorch
         network->print_result(pModule);
 #endif
         print_total_result(m_accelerator_config, m_network_config);
 	}
-#ifdef Pytorch
+#ifdef PyTorch
     Py_Finalize();
 #endif
 }

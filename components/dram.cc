@@ -38,6 +38,7 @@ void dram_t::init(section_config_t m_section_config) {
     size *= 1024*1024*1024; 
     size_t num_entry = size/sizeof(data_t);
     data = new data_t[num_entry]();
+    npu_mmu::npu_malloc(num_entry);
 
     // Initialize frequency, bandwidth, and bitwidth of the off-chip memory
     m_section_config.get_setting("frequency", &frequency);
@@ -151,6 +152,28 @@ void dram_t::disconnect_layer() {
 
 void dram_t::update_tile_size(scheduler_t *m_scheduler) {
     tile_size = m_scheduler->tile_size[component_type_t::DRAM];
+
+    update_offset();
+    check_tile_size();
+}
+
+void dram_t::update_offset() {
+    offsets[data_type_t::INPUT] = 0;
+    offsets[data_type_t::WEIGHT] = tile_size[data_type_t::INPUT];
+    offsets[data_type_t::OUTPUT] = tile_size[data_type_t::INPUT] + tile_size[data_type_t::WEIGHT];
+
+}
+
+void dram_t::check_tile_size() {
+    size_t data_size = tile_size[data_type_t::INPUT]
+                     + tile_size[data_type_t::WEIGHT]
+                     + tile_size[data_type_t::OUTPUT];
+    if(data_size*sizeof(data_t) > size) {
+        std::cerr << "The data size is bigger than the off-chip memory size\n" 
+                  << "Data : " << data_size*sizeof(data_t) 
+                  << ", Buffer : " << size << std::endl;
+        exit(1);
+    }
 }
 
 unsigned dram_t::get_bitwidth() {
@@ -164,7 +187,8 @@ bool dram_t::is_idle() {
 void dram_t::data_transfer(scheduler_t *m_scheduler) {
     if(multi_chip->request_to_dram[data_type_t::INPUT]) {
 #ifdef DRAMSIM3
-        send_request((data_t*)layer->input_data, m_scheduler->mapping_table, m_scheduler->input_offset_dram.front(), data_type_t::INPUT, action_type_t::LOAD);
+        //send_request((data_t*)layer->input_data, m_scheduler->mapping_table, m_scheduler->input_offset_dram.front(), data_type_t::INPUT, action_type_t::LOAD);
+        send_request((data_t*)data, m_scheduler->mapping_table, offsets[data_type_t::INPUT] + m_scheduler->input_offset_dram.front(), data_type_t::INPUT, action_type_t::LOAD);
 #endif
 
 #ifdef FUNCTIONAL
@@ -639,7 +663,8 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
     if(multi_chip->request_to_dram[data_type_t::WEIGHT]) {
 
 #ifdef DRAMSIM3
-        send_request((data_t*)layer->weight, m_scheduler->mapping_table, m_scheduler->weight_offset_dram.front(), data_type_t::WEIGHT, action_type_t::LOAD);
+        //send_request((data_t*)layer->weight, m_scheduler->mapping_table, m_scheduler->weight_offset_dram.front(), data_type_t::WEIGHT, action_type_t::LOAD);
+        send_request((data_t*)data, m_scheduler->mapping_table, offsets[data_type_t::WEIGHT] + m_scheduler->weight_offset_dram.front(), data_type_t::WEIGHT, action_type_t::LOAD);
 #endif
 
 #ifdef FUNCTIONAL
@@ -1162,7 +1187,8 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
             if(!skip_transfer[data_type_t::OUTPUT]) {
 
 #ifdef DRAMSIM3
-                send_request((data_t*)layer->output_data, m_scheduler->mapping_table, m_scheduler->output_offset_dram.front(), data_type_t::OUTPUT, action_type_t::LOAD);
+                //send_request((data_t*)layer->output_data, m_scheduler->mapping_table, m_scheduler->output_offset_dram.front(), data_type_t::OUTPUT, action_type_t::LOAD);
+                send_request((data_t*)data, m_scheduler->mapping_table, offsets[data_type_t::OUTPUT] + m_scheduler->output_offset_dram.front(), data_type_t::OUTPUT, action_type_t::LOAD);
 #endif
 
 #ifdef FUNCTIONAL

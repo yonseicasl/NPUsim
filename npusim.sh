@@ -55,15 +55,15 @@ PRINT=0
 # Debug.
 DEBUG=0
 # Functional simulation
-FUNCTIONAL=1
+FUNCTIONAL=0
 # Using integer
 USER_INTEGER=0
 # Using float 
 USER_FLOAT=0
 # DRAMsim
-DRAMSIM3=0
+DRAMSIM3=1
 # PyTorch
-Pytorch=1
+PyTorch=1
 
 ##### Append Makefile options #####
 
@@ -98,8 +98,8 @@ if [[ $DRAMSIM3 -eq 1 ]]; then
 fi
 
 # PyTorch connection
-if [[ $Pytorch -eq 1 ]]; then
-    ccopt+=" -I/usr/include/python3.8 -DPytorch"
+if [[ $PyTorch -eq 1 ]]; then
+    ccopt+=" -I/usr/include/python3.8 -DPyTorch"
     libopt+=" -lpython3.8 -lm -ldl -lutil"
 fi
 

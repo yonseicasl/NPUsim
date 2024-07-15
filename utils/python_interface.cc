@@ -1,6 +1,6 @@
 #include "python_interface.h"
 
-#ifdef Pytorch
+#ifdef PyTorch
 std::vector<std::string> python_list_to_vector(PyObject *pList) {
 
     std::vector<std::string> layer_list;

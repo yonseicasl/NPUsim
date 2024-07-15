@@ -7,7 +7,7 @@
 #include <cstring>
 #include <fstream>
 
-#ifdef Pytorch
+#ifdef PyTorch
     #include <Python.h>
 #endif
 
@@ -111,7 +111,7 @@ protected:
     //nebula::layer_t *layer;                         // Neural layers obtained from the software framework (PyTorch and Nebula)
     layer_t *layer;
 
-#ifdef Pytorch
+#ifdef PyTorch
     PyObject *pModule;
 #endif
     std::vector<scheduler_t*> schedulers;           // A set of schedulers.

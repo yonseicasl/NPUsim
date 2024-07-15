@@ -5,6 +5,7 @@
 #include "dnn_model.h"
 #include "scheduler.h"
 #include "multi_chip.h"
+#include "memory.h"
 #include "memory_controller.h"
 
 #include "convolutional.h"
@@ -31,6 +32,10 @@ public:
 
     // Update the tile size of DRAM.
     void update_tile_size(scheduler_t *m_scheduler);
+    
+    void update_offset();
+
+    void check_tile_size();
 
     /* Get the off-chip memory specifications */
 

@@ -44,7 +44,6 @@ network_t::~network_t() {
 }
 
 void network_t::init(PyObject* pModule, const std::string m_network_config) {
-#ifdef Pytorch
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
         pFunc = PyObject_GetAttrString(pModule, "init");
@@ -81,18 +80,12 @@ void network_t::init(PyObject* pModule, const std::string m_network_config) {
             num_layers++; 
         }
     }
-#endif
 }
 
 void network_t::init_layer(PyObject *pModule) {
-#ifdef Pytorch
-
-#endif
-
 }
 
 void network_t::init_weight(PyObject *pModule) {
-#ifdef Pytorch
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
         pFunc = PyObject_GetAttrString(pModule, "init_weight");
@@ -110,13 +103,10 @@ void network_t::init_weight(PyObject *pModule) {
             }
         }
     }
-#endif
-
 }
 
 void network_t::load_data(PyObject *pModule, const std::string m_network_config, unsigned m_iteration) {
 
-#ifdef Pytorch
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
         pFunc = PyObject_GetAttrString(pModule, "load_data");
@@ -133,12 +123,10 @@ void network_t::load_data(PyObject *pModule, const std::string m_network_config,
             }
         }
     }
-#endif
 }
 
 void network_t::forward(PyObject *pModule, unsigned m_iteration, unsigned m_index) {
 
-#ifdef Pytorch
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
         pFunc = PyObject_GetAttrString(pModule, "layerwise_forward");
@@ -154,12 +142,9 @@ void network_t::forward(PyObject *pModule, unsigned m_iteration, unsigned m_inde
             }
         }
     }
-#endif
-
 }
 
 void network_t::print_result(PyObject *pModule) {
-#ifdef Pytorch
     if(pModule) {
         PyObject *pFunc, *pArgs, *pValue;
         pFunc = PyObject_GetAttrString(pModule, "print_result");
@@ -170,5 +155,5 @@ void network_t::print_result(PyObject *pModule) {
             pValue = PyObject_CallObject(pFunc, pArgs);
         }
     }
-#endif
 }
+
