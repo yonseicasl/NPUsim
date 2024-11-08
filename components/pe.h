@@ -30,6 +30,10 @@ public:
 
     /* Get PE specifications */
 
+    // Get dynamic power of PE
+    double get_dynamic_power();
+    // Get static power of PE
+    double get_static_power();
     // Get stationary type of MAC register
     stationary_type_t get_mac_stationary_type();
     // Get stationary type of local buffer.
@@ -47,8 +51,6 @@ public:
     bool is_exist_data();
     // Check whether at least one request exist in the local buffer.
     bool is_exist_request();
-
-    double get_static_power();
 
     /* PE actions */
     // Wait for the data.
@@ -159,6 +161,8 @@ public:
 
     std::vector<double> transfer_cycle;                     // Total transfer cycle between MAC unit and local buffer
     std::vector<double> transfer_energy;                    // Total transfer energy between MAC unit and local buffer
+
+    std::vector<double> dynamic_power_lb;                   // Dynamic power of PE;
 
     std::vector<double> cycle_mac_lb;                       // Total cycle between MAC unit and local buffer.
 
