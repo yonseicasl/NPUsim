@@ -61,7 +61,7 @@ USER_INTEGER=0
 # Using float 
 USER_FLOAT=0
 # DRAMsim
-DRAMSIM3=1
+DRAMSIM3=0
 # PyTorch
 PyTorch=1
 

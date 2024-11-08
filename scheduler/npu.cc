@@ -6,6 +6,8 @@
 
 npu_t::npu_t() :
  num_processors(1),
+ total_cycle(0),
+ power_consumption(0.0),
  data_format(data_format_t::CONVOLUTION),
  compression_type(compression_type_t::DENSE),
  multi_chip(NULL),
@@ -233,6 +235,11 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 reset();
                 update_tile_size();
 
+                std::string output_file_name = m_accelerator_config + "_" 
+                                             + m_network_config + "_layer_" 
+                                             + std::to_string(index) + "_power_trace.txt";
+                std::ofstream output_file;
+                output_file.open(output_file_name, std::ios::out);
                 while(!is_idle()) {
                     // Process simulation in backward path.
                     execute();
@@ -253,7 +260,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     request_to_global_buffer();
                     // Request data from PEs to PE array.
                     request_to_pe_array();
+                    power_measurement(output_file);
                 }
+                output_file.close();
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
 			}
 #ifdef PyTorch
@@ -431,6 +440,11 @@ void npu_t::print_total_result(const std::string m_accelerator_config, const std
     network_stats->print_results(output_file);
 
     output_file.close();
+}
+
+void npu_t::power_measurement(std::ofstream &m_output_file) {
+    
+    m_output_file << total_cycle << " cycles, " << power_consumption << " mW" << std::endl;
 }
 
 // Reset the simulation result and stats

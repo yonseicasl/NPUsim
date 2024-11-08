@@ -131,8 +131,6 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     if(bypass[data_type_t::OUTPUT]) {
         utilization[data_type_t::OUTPUT] = (float)(tile_size[data_type_t::OUTPUT]*sizeof(data_t))/(float)(size);
     }
-    //std::cout << tile_size[data_type_t::INPUT] << " " << tile_size[data_type_t::WEIGHT] << " " << tile_size[data_type_t::OUTPUT] << " " << size << std::endl;
-    //std::cout << utilization[data_type_t::INPUT] << utilization[data_type_t::WEIGHT] << utilization[data_type_t::OUTPUT] << std::endl;
 
 
     // Transfer input data from Global buffer to temporal buffer of PE array.
