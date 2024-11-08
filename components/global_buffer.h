@@ -41,6 +41,7 @@ public:
     // Get global buffer bitwidth
     unsigned get_bitwidth();
 
+    double get_static_power();
 
     /* Check global buffer's status */
 
@@ -100,7 +101,8 @@ public:
     std::vector<double> u_write_cycle;                      // The unit global buffer write cycle
     std::vector<double> u_write_energy;                     // The unit global buffer write energy
 
-    std::vector<double> u_static_energy;                    // The unit static energy of the global buffer
+    std::vector<double> u_dynamic_power;                    // Dynamic power of the global buffer
+    std::vector<double> u_static_power;                     // Static power of the global buffer
 
     /* Global buffer stats */
 
@@ -111,8 +113,6 @@ public:
     std::vector<double> access_energy;                      // Total access energies to the global buffer
 
     std::vector<double> cycle_pe_array_global_buffer;       // Total cycle between PE array and global buffer
-
-    std::vector<double> static_energy;                      // Static energy of the global buffer
 
     std::vector<double> transfer_cycle;                     // Total data transfer cycle between PE array and Global buffer
     std::vector<double> transfer_energy;                    // Total data transfer energy between PE array and Global buffer;

@@ -84,9 +84,11 @@ void stats_t::init() {
     transfer_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
+/*
     // Initialize static energy at PE
     static_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+*/
     
     /* Initialize PE array stats */
 
@@ -413,12 +415,14 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             num_active_pe++;
         }
         
+        /*
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); j++) {
             for(unsigned k = 0; k < data_type_t::NUM_DATA_TYPES; k++) {
                 // Update static energy of PE
                 static_energy_pe[k] += m_pe_array[i]->pes[j]->static_energy[k];
             }
         }
+        */
 
         for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
             /* Update PE array stats */
@@ -473,12 +477,14 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         avg_access_cycle_lb[i] /= num_active_pe;
     }
 
+    /*
     // Update global buffer static energy
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); i++) {
         for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
             static_energy_global_buffer[j] += m_global_buffer[i]->static_energy[j];
         }
     }
+    */
 
     // Update stats of Multi chip and DRAM.
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {

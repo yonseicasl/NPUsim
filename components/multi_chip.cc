@@ -1593,11 +1593,13 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
         chips[i]->fill_data();
     }
 
+    /*
     for(unsigned i  = num_active_chips_x*num_active_chips_y; i < num_chips; i++) {
         chips[i]->static_energy[data_type_t::INPUT] += chips[i]->u_static_energy[data_type_t::INPUT];
         chips[i]->static_energy[data_type_t::WEIGHT] += chips[i]->u_static_energy[data_type_t::WEIGHT];
         chips[i]->static_energy[data_type_t::OUTPUT] += chips[i]->u_static_energy[data_type_t::OUTPUT];
     }
+    */
 
     if(tile_size[data_type_t::INPUT] == dram->tile_size[data_type_t::INPUT]) {skip_transfer[data_type_t::INPUT] = true;}
     if(tile_size[data_type_t::WEIGHT] == dram->tile_size[data_type_t::WEIGHT]) {skip_transfer[data_type_t::WEIGHT] = true;}

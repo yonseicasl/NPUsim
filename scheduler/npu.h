@@ -73,6 +73,8 @@ public:
     // Send data request from PE to PE array.
     void request_to_pe_array();
 
+    void update_power_consumption(double m_power);
+
 
     // Print out the Accelerator specification.
     void print_accelerator_specification();
@@ -87,6 +89,7 @@ public:
     void print_layerwise_results(const std::string m_accelerator_config, const std::string m_network_config, unsigned m_index);
     // Print out the simulation result.
     void print_total_result(const std::string m_accelerator_config, const std::string m_network_config);
+    // Print out power consumption of the accelerator. 
     void power_measurement(std::ofstream &m_output_file);
 
     // Reset performance counters and stats.
@@ -97,7 +100,7 @@ public:
 protected:
     unsigned num_processors;                        // The number of on-chip processors.
     unsigned total_cycle;
-    float power_consumption;
+    double power_consumption;
     data_format_t data_format;                      // Data format : Convolution or GEMM (General Matrix Multiplication).
     compression_type_t compression_type;            // Compression type : Dense, CSR, CSC, SparseMap
 

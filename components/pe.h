@@ -48,8 +48,9 @@ public:
     // Check whether at least one request exist in the local buffer.
     bool is_exist_request();
 
-    /* PE actions */
+    double get_static_power();
 
+    /* PE actions */
     // Wait for the data.
     void wait_data();
     // Exist data in PE.
@@ -122,6 +123,9 @@ public:
     double u_transfer_cycle;                                // The unit data transfer cycle between MAC and local buffer
     double u_transfer_energy;                               // The unit data transfer energy between MAC and local buffer
 
+    double u_dynamic_power_mac;                             // MAC dynamic power
+    double u_static_power_mac;                              // MAC static power
+
     std::vector<double> u_read_cycle_mac;                   // The unit MAC read cycle
     std::vector<double> u_read_energy_mac;                  // The unit MAC read energy
 
@@ -134,8 +138,8 @@ public:
     std::vector<double> u_write_cycle_lb;                   // The unit local buffer write cycle
     std::vector<double> u_write_energy_lb;                  // The unit local buffer write energy
 
-    std::vector<double> u_static_energy;
-
+    std::vector<double> u_dynamic_power_lb;                 // Dynamic power of local buffer
+    std::vector<double> u_static_power_lb;                  // Static power of local buffer
 
     /* PE stats */
 
@@ -157,8 +161,6 @@ public:
     std::vector<double> transfer_energy;                    // Total transfer energy between MAC unit and local buffer
 
     std::vector<double> cycle_mac_lb;                       // Total cycle between MAC unit and local buffer.
-
-    std::vector<double> static_energy;                      // Static energy.
 
     double utilization_mac;                                 // Utilization of MAC units.
     std::vector<double> utilization_local_buffer;           // Local buffer utilization.

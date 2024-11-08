@@ -22,6 +22,8 @@ pe_t::pe_t(section_config_t m_section_config) :
     u_computation_energy(0.0),
     u_transfer_cycle(0.0),
     u_transfer_energy(0.0),
+    u_dynamic_power_mac(0.0),
+    u_static_power_mac(0.0),
     /* Accelerator stats */
     num_computation(0),
     computation_cycle(0.0),
@@ -216,6 +218,9 @@ void pe_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("transfer_cycle_pe", &u_transfer_cycle);
     m_section_config.get_setting("transfer_energy_pe", &u_transfer_energy);
 
+    m_section_config.get_setting("mac_static_power", &u_static_power_mac);
+    m_section_config.get_setting("mac_dynamic_power", &u_dynamic_power_mac);
+
     // Initialize the unit cycle and energy of MAC unit
     u_read_cycle_mac.reserve(data_type_t::NUM_DATA_TYPES);
     u_read_cycle_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -250,9 +255,13 @@ void pe_t::init(section_config_t m_section_config) {
     u_write_energy_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("lb_write_energy", &u_write_energy_lb);
 
-    u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
-    u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    m_section_config.get_vector_setting("static_energy", &u_static_energy);
+    u_dynamic_power_lb.reserve(data_type_t::NUM_DATA_TYPES);
+    u_dynamic_power_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("lb_dynamic_power", &u_dynamic_power_lb);
+
+    u_static_power_lb.reserve(data_type_t::NUM_DATA_TYPES);
+    u_static_power_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("lb_static_power", &u_static_power_lb);
 
     /* Initialize PE stats */
 
@@ -291,10 +300,6 @@ void pe_t::init(section_config_t m_section_config) {
     // Overlapped cycle between MAC units and local buffer
     cycle_mac_lb.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_mac_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-
-    // Total static energy of PE.
-    static_energy.reserve(data_type_t::NUM_DATA_TYPES);
-    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     utilization_local_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     utilization_local_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -412,6 +417,19 @@ bool pe_t::is_exist_request() {
     }
 }
 
+double pe_t::get_static_power() {
+    double static_power = 0.0;
+    if(get_memory_type() == memory_type_t::SEPARATE) { 
+        static_power = u_static_power_mac 
+                     + u_static_power_lb[data_type_t::INPUT] 
+                     + u_static_power_lb[data_type_t::WEIGHT] 
+                     + u_static_power_lb[data_type_t::OUTPUT];
+    }
+    else if(get_memory_type() == memory_type_t::SHARED) {
+        static_power = u_static_power_mac + u_static_power_lb[data_type_t::INPUT];
+    }
+    return static_power;
+}
 
 // Wait for the data comes from Global buffer.
 void pe_t::wait_data() {
@@ -2286,9 +2304,6 @@ void pe_t::reset() {
     // Reset overlapped cycle between MAC unit and local buffer
     cycle_mac_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     
-    // Reset static energy of PE.
-    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-
     utilization_local_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);

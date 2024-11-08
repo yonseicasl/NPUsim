@@ -870,11 +870,13 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
             pes[i]->fill_data();
         }
 
+        /*
         for(unsigned i = get_number_of_active_pes(); i < get_number_of_pes(); i++) {
             pes[i]->static_energy[data_type_t::INPUT] += pes[i]->u_static_energy[data_type_t::INPUT];
             pes[i]->static_energy[data_type_t::WEIGHT] += pes[i]->u_static_energy[data_type_t::WEIGHT];
             pes[i]->static_energy[data_type_t::OUTPUT] += pes[i]->u_static_energy[data_type_t::OUTPUT];
         }
+        */
 
         if(tile_size[data_type_t::INPUT] == global_buffer->tile_size[data_type_t::INPUT]) {skip_transfer[data_type_t::INPUT] = true;}
         if(tile_size[data_type_t::WEIGHT] == global_buffer->tile_size[data_type_t::WEIGHT]) {skip_transfer[data_type_t::WEIGHT] = true;}

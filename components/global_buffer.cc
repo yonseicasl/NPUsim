@@ -65,6 +65,19 @@ unsigned global_buffer_t::get_bitwidth() { return bitwidth; }
 // A signal to check whether the Global buffer is idle state or not.
 bool global_buffer_t::is_idle() { return idle; }
 
+double global_buffer_t::get_static_power() {
+    double static_power = 0.0;
+    if(get_memory_type() == memory_type_t::SEPARATE) { 
+        static_power = u_static_power[data_type_t::INPUT] 
+                     + u_static_power[data_type_t::WEIGHT] 
+                     + u_static_power[data_type_t::OUTPUT];
+    }
+    else if(get_memory_type() == memory_type_t::SHARED) {
+        static_power = u_static_power[data_type_t::INPUT];
+    }
+    return static_power;
+}
+
 // A signal to check whether all data exist in the Global buffer or not.
 bool global_buffer_t::is_exist_data() {
     if(exist_data[data_type_t::INPUT] && exist_data[data_type_t::WEIGHT] && exist_data[data_type_t::OUTPUT]) {
@@ -1861,8 +1874,6 @@ void global_buffer_t::reset() {
 
     cycle_pe_array_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-
     transfer_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
@@ -1987,9 +1998,9 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     u_write_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("write_energy", &u_write_energy);
     
-    u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
-    u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    m_section_config.get_vector_setting("static_energy", &u_static_energy);
+    u_static_power.reserve(data_type_t::NUM_DATA_TYPES);
+    u_static_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("static_power", &u_static_power);
 
     m_section_config.get_setting("transfer_cycle", &u_transfer_cycle);
     m_section_config.get_setting("transfer_energy", &u_transfer_energy);
@@ -2014,9 +2025,6 @@ void separate_buffer_t::init(section_config_t m_section_config) {
 
     cycle_pe_array_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_pe_array_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-
-    static_energy.reserve(data_type_t::NUM_DATA_TYPES);
-    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize the total transfer cycle between PE array and Global buffer
     transfer_cycle.reserve(data_type_t::NUM_DATA_TYPES);
@@ -2224,9 +2232,9 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     u_write_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("write_energy", &u_write_energy);
 
-    u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
-    u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    m_section_config.get_vector_setting("static_energy", &u_static_energy);
+    u_static_power.reserve(data_type_t::NUM_DATA_TYPES);
+    u_static_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("static_power", &u_static_power);
 
     m_section_config.get_setting("transfer_cycle", &u_transfer_cycle);
     m_section_config.get_setting("transfer_energy", &u_transfer_energy);
@@ -2250,9 +2258,6 @@ void shared_buffer_t::init(section_config_t m_section_config) {
 
     cycle_pe_array_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_pe_array_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-
-    static_energy.reserve(data_type_t::NUM_DATA_TYPES);
-    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize the data transfer cycle.
     transfer_cycle.reserve(data_type_t::NUM_DATA_TYPES);

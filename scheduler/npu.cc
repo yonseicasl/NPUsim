@@ -241,6 +241,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 std::ofstream output_file;
                 output_file.open(output_file_name, std::ios::out);
                 while(!is_idle()) {
+                    power_consumption = 0.0;
                     // Process simulation in backward path.
                     execute();
                     // Transfer data from PE array to PE
@@ -313,6 +314,9 @@ void npu_t::execute() {
             if(pe_arrays[i]->pes[j]->is_exist_data()) {
                 pe_arrays[i]->pes[j]->data_transfer_to_mac(scheduler);
             }
+            else {
+                update_power_consumption(pe_arrays[i]->pes[j]->get_static_power());
+            }
         }
     }
 }
@@ -332,6 +336,9 @@ void npu_t::transfer_data_to_pe_array() {
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         if(global_buffers[i]->is_exist_data() && pe_arrays[i]->is_exist_request_at_buffer()) {
             global_buffers[i]->data_transfer(scheduler);
+        }
+        else {
+            update_power_consumption(global_buffers[i]->get_static_power());
         }
     }
 }
@@ -384,6 +391,10 @@ void npu_t::request_to_pe_array() {
             }
         }
     }
+}
+
+void npu_t::update_power_consumption(double m_power) {
+    power_consumption += m_power;
 }
 
 // Print out the accelerator specification.
