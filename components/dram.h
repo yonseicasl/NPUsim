@@ -46,6 +46,10 @@ public:
     // Check whether the DRAM  is idle or not.
     bool is_idle();
 
+    double get_dynamic_power();
+
+    double get_static_power();
+
     /* DRAM actions */
 
     // Transfer data from DRAM to Global buffer.
@@ -78,6 +82,7 @@ public:
     std::vector<double> transfer_cycle;             // Total data transfer cycle between Global buffer and DRAM
     std::vector<double> transfer_energy;            // Total data transfer energy between Global buffer and DRAM
 
+
     std::vector<double> cycle_chip_dram;            // Overlapped cycle between the off-chip memory and chip-level processor
 
     /* Off-chip memory unit stats */
@@ -90,7 +95,6 @@ public:
 
     std::vector<double> u_write_cycle;              // Unit write cycle to the off-chip memory
     std::vector<double> u_write_energy;             // Unit write energy to the off-chip memory
-
 
     /* off chip memory specification */
 
@@ -108,6 +112,8 @@ private:
     float frequency;                                // Frequency of DRAM.
     float bandwidth;                                // Bandwidth between chip-level processor and the off-chip memory
     unsigned bitwidth;                              // The bitwidth between the off-chip memory and chip-level processor
+    double dynamic_power;                           // Dynamic power of the off-chip memory
+    double static_power;                            // Static power of the off-chip memory
 
     // Indices to count the sequence of tiled data,
     unsigned input_index;                           // Input index in DRAM.

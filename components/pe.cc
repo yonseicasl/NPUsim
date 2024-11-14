@@ -380,13 +380,13 @@ void pe_t::check_tile_size() {
 // Get dynamic power of PE
 double pe_t::get_dynamic_power() {
     double dynamic_power = 0.0;
-    if(get_memory_type() == memory_type_t::SHARED) {
+    if(get_memory_type() == memory_type_t::SEPARATE) {
         dynamic_power = u_dynamic_power_mac
                       + dynamic_power_lb[data_type_t::INPUT]
                       + dynamic_power_lb[data_type_t::WEIGHT]
                       + dynamic_power_lb[data_type_t::OUTPUT];
     }
-    else if(get_memory_type() == memory_type_t::SEPARATE) {
+    else if(get_memory_type() == memory_type_t::SHARED) {
         dynamic_power = u_dynamic_power_mac + dynamic_power_lb[data_type_t::INPUT];
     }
     return dynamic_power;
@@ -495,9 +495,7 @@ void pe_t::request_data() {
 // And execute MAC operation.
 void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
-    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
-        dynamic_power_lb[i] += u_static_power_lb[i];
-    }
+    dynamic_power_lb = u_static_power_lb;
 
     if(!bypass[data_type_t::INPUT]) {
         utilization_local_buffer[data_type_t::INPUT] = (float)(tile_size_lb[data_type_t::INPUT])/(float)(input_size);
@@ -509,7 +507,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
         utilization_local_buffer[data_type_t::OUTPUT] = (float)(tile_size_lb[data_type_t::OUTPUT])/(float)(output_size);
     }
     if(request_to_lb[data_type_t::INPUT]) {
-        dynamic_power_lb[data_type_t::INPUT] += u_dynamic_power_lb[data_type_t::INPUT];
+        dynamic_power_lb[data_type_t::INPUT] = u_dynamic_power_lb[data_type_t::INPUT];
 #ifdef FUNCTIONAL       
         // Input data transfer 
         m_scheduler->transfer_data(input_data_mac, input_data_lb, 0, m_scheduler->input_offset_pe.front(),
@@ -985,7 +983,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
     }
     // Transfer weight from local buffer to MAC unit.
     if(request_to_lb[data_type_t::WEIGHT]) {
-        dynamic_power_lb[data_type_t::WEIGHT] += u_dynamic_power_lb[data_type_t::WEIGHT];
+        dynamic_power_lb[data_type_t::WEIGHT] = u_dynamic_power_lb[data_type_t::WEIGHT];
 #ifdef FUNCTIONAL
 
         // Weight data transfer 
@@ -1484,7 +1482,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
     if(request_to_lb[data_type_t::OUTPUT]) {
         // Load output data from local buffer to MAC unit.
         if(m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()]) {
-            dynamic_power_lb[data_type_t::WEIGHT] += u_dynamic_power_lb[data_type_t::WEIGHT];
+            dynamic_power_lb[data_type_t::OUTPUT] = u_dynamic_power_lb[data_type_t::OUTPUT];
             if(!skip_transfer[data_type_t::OUTPUT]) {
 #ifdef FUNCTIONAL
 

@@ -12,6 +12,8 @@ dram_t::dram_t(section_config_t m_section_config) :
     frequency(0.0),
     bandwidth(0.0),
     bitwidth(0.0),
+    dynamic_power(0.0),
+    static_power(0.0),
     input_index(0),
     weight_index(0),
     output_index(0),
@@ -45,6 +47,9 @@ void dram_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("bandwidth", &bandwidth);
     bitwidth = 8*bandwidth/frequency;
     m_section_config.get_setting("bitwidth", &bitwidth);
+
+    m_section_config.get_setting("dynamic_power", &dynamic_power);
+    m_section_config.get_setting("static_power", &static_power);
 
     // Initialize off-chip memory line size.
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
@@ -94,7 +99,7 @@ void dram_t::init(section_config_t m_section_config) {
     // Initialize the transfer energy between Global buffer and DRAM.
     transfer_energy.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-
+   
     // Initialize total cycles at the off-chip memory.
     cycle_chip_dram.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_chip_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -182,6 +187,14 @@ unsigned dram_t::get_bitwidth() {
 
 bool dram_t::is_idle() {
     return done;
+}
+
+double dram_t::get_dynamic_power() {
+    return dynamic_power;
+}
+
+double dram_t::get_static_power() {
+    return static_power;
 }
 
 void dram_t::data_transfer(scheduler_t *m_scheduler) {

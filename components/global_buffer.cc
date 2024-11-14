@@ -65,19 +65,6 @@ unsigned global_buffer_t::get_bitwidth() { return bitwidth; }
 // A signal to check whether the Global buffer is idle state or not.
 bool global_buffer_t::is_idle() { return idle; }
 
-double global_buffer_t::get_static_power() {
-    double static_power = 0.0;
-    if(get_memory_type() == memory_type_t::SEPARATE) { 
-        static_power = u_static_power[data_type_t::INPUT] 
-                     + u_static_power[data_type_t::WEIGHT] 
-                     + u_static_power[data_type_t::OUTPUT];
-    }
-    else if(get_memory_type() == memory_type_t::SHARED) {
-        static_power = u_static_power[data_type_t::INPUT];
-    }
-    return static_power;
-}
-
 // A signal to check whether all data exist in the Global buffer or not.
 bool global_buffer_t::is_exist_data() {
     if(exist_data[data_type_t::INPUT] && exist_data[data_type_t::WEIGHT] && exist_data[data_type_t::OUTPUT]) {
@@ -135,6 +122,8 @@ void global_buffer_t::request_data() {
 // Transfer the data to temporal buffer of PE array.
 void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
 
+    dynamic_power = u_static_power;
+
     if(!bypass[data_type_t::INPUT]) {
         utilization[data_type_t::INPUT] = (float)(tile_size[data_type_t::INPUT]*sizeof(data_t))/(float)(size);
     }
@@ -144,6 +133,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     if(bypass[data_type_t::OUTPUT]) {
         utilization[data_type_t::OUTPUT] = (float)(tile_size[data_type_t::OUTPUT]*sizeof(data_t))/(float)(size);
     }
+
 
 
     // Transfer input data from Global buffer to temporal buffer of PE array.
@@ -163,6 +153,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
         // Case 1. Dense data format
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
             if(!skip_transfer[data_type_t::INPUT]) {
+                dynamic_power[data_type_t::INPUT] = u_dynamic_power[data_type_t::INPUT];
                 // Update PE array write cycle and energy.
                 num_data_transfer[data_type_t::INPUT]++;
 
@@ -655,6 +646,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
         // Case 1. Dense
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
             if(!skip_transfer[data_type_t::WEIGHT]) {
+                dynamic_power[data_type_t::WEIGHT] = u_dynamic_power[data_type_t::WEIGHT];
                 num_data_transfer[data_type_t::WEIGHT]++;
 
                 std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1152,6 +1144,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
             //                                data_type_t::OUTPUT, pe_array->get_stationary_type(), action_type_t::LOAD, true);
 #endif
             if(!skip_transfer[data_type_t::OUTPUT]) {
+                dynamic_power[data_type_t::OUTPUT] = u_dynamic_power[data_type_t::OUTPUT];
                 num_data_transfer[data_type_t::OUTPUT]++;
 
                 std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1997,6 +1990,10 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     u_write_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_write_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("write_energy", &u_write_energy);
+
+    u_dynamic_power.reserve(data_type_t::NUM_DATA_TYPES);
+    u_dynamic_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("dynamic_power", &u_dynamic_power);
     
     u_static_power.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -2034,6 +2031,10 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     transfer_energy.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
+    // Initialize dynamic power of global buffer
+    dynamic_power.reserve(data_type_t::NUM_DATA_TYPES);
+    dynamic_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
     utilization.reserve(data_type_t::NUM_DATA_TYPES);
     utilization.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
@@ -2064,6 +2065,23 @@ void separate_buffer_t::check_tile_size() {
         exit(1);
     }
 }
+
+double separate_buffer_t::get_dynamic_power() {
+    double t_dynamic_power = 0.0;
+    t_dynamic_power += dynamic_power[data_type_t::INPUT]
+                   + dynamic_power[data_type_t::WEIGHT]
+                   + dynamic_power[data_type_t::OUTPUT];
+    return t_dynamic_power;
+}
+
+double separate_buffer_t::get_static_power() {
+    double static_power = 0.0;
+    static_power = u_static_power[data_type_t::INPUT] 
+                 + u_static_power[data_type_t::WEIGHT] 
+                 + u_static_power[data_type_t::OUTPUT];
+    return static_power;
+}
+
 
 // Print out the stat of separate Global buffer.
 void separate_buffer_t::print_specification() {
@@ -2232,6 +2250,10 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     u_write_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("write_energy", &u_write_energy);
 
+    u_dynamic_power.reserve(data_type_t::NUM_DATA_TYPES);
+    u_dynamic_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("dynamic_power", &u_dynamic_power);
+
     u_static_power.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_power", &u_static_power);
@@ -2267,6 +2289,10 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     transfer_energy.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
+    // Initialize dynamic power of global buffer
+    dynamic_power.reserve(data_type_t::NUM_DATA_TYPES);
+    dynamic_power.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
     utilization.reserve(data_type_t::NUM_DATA_TYPES);
     utilization.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     
@@ -2298,6 +2324,19 @@ void shared_buffer_t::check_tile_size() {
                   << " Buffer : " << size << std::endl;
         exit(1);
     }
+}
+
+
+double shared_buffer_t::get_dynamic_power() {
+    double dynamic_power = 0.0;
+    dynamic_power = u_dynamic_power[data_type_t::INPUT];
+    return dynamic_power;
+}
+
+double shared_buffer_t::get_static_power() {
+    double static_power = 0.0;
+    static_power = u_static_power[data_type_t::INPUT];
+    return static_power;
 }
 
 

@@ -329,6 +329,11 @@ void npu_t::transfer_data_to_pe() {
             pe_arrays[i]->data_transfer(scheduler);
         }
     }
+    //for(unsigned i = multi_chip->get_number_of_active_chips(); i < multi_chip->get_number_of_chips(); i++) {
+    //    for(unsigned j = 0; j < pe_arrays[i]->get_number_of_pes(); j++) {
+    //        update_power_consumption(pe_arrays[i]->pes[j]->get_static_power());
+    //    }
+    //}
 }
 
 
@@ -339,9 +344,9 @@ void npu_t::transfer_data_to_pe_array() {
             global_buffers[i]->data_transfer(scheduler);
             //update_power_consumption(global_buffers[i]->get_dynamic_power());
         }
-        else {
-            update_power_consumption(global_buffers[i]->get_static_power());
-        }
+        //else {
+        //    update_power_consumption(global_buffers[i]->get_static_power());
+        //}
     }
 }
 
@@ -349,6 +354,17 @@ void npu_t::transfer_data_to_pe_array() {
 void npu_t::transfer_data_to_global_buffer() {
     if(multi_chip->is_exist_request_at_global_buffer() && multi_chip->is_exist_data()) {
         multi_chip->data_transfer(scheduler);
+        for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
+            update_power_consumption(global_buffers[i]->get_dynamic_power());
+        }
+        for(unsigned i = multi_chip->get_number_of_active_chips(); i < multi_chip->get_number_of_chips(); i++) {
+            update_power_consumption(global_buffers[i]->get_static_power());
+        }
+    }
+    else {
+        for(unsigned i = 0; i < multi_chip->get_number_of_chips(); i++){
+            update_power_consumption(global_buffers[i]->get_static_power());
+        }
     }
 }
 
@@ -356,6 +372,14 @@ void npu_t::transfer_data_to_global_buffer() {
 void npu_t::transfer_data_to_multi_chip() {
     if(multi_chip->is_exist_request_at_buffer()) {
         dram->data_transfer(scheduler);
+#ifndef DRAMSIM3
+        update_power_consumption(dram->get_dynamic_power());
+#endif
+    }
+    else {
+#ifndef DRAMSIM3
+        update_power_consumption(dram->get_static_power());
+#endif
     }
 }
 

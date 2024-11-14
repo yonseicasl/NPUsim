@@ -41,7 +41,10 @@ public:
     // Get global buffer bitwidth
     unsigned get_bitwidth();
 
-    double get_static_power();
+    // Get dynamic power of global buffer
+    virtual double get_dynamic_power() = 0;
+    // Get static power of global buffer
+    virtual double get_static_power() = 0;
 
     /* Check global buffer's status */
 
@@ -117,6 +120,8 @@ public:
     std::vector<double> transfer_cycle;                     // Total data transfer cycle between PE array and Global buffer
     std::vector<double> transfer_energy;                    // Total data transfer energy between PE array and Global buffer;
 
+    std::vector<double> dynamic_power;                      // Dynamic power of global buffer. 
+
     std::vector<double> utilization;                        // Utilization of the global buffer
 
     double write_back_cycle;                                //
@@ -166,7 +171,10 @@ public:
     void update_offset();
     // Check the tile size.
     void check_tile_size();
-
+    // Get dynamic power
+    double get_dynamic_power();
+    // Get static power
+    double get_static_power();
     // Print out the configuration of the separate Global buffer.
     void print_specification();
 
@@ -188,6 +196,10 @@ public:
     void update_offset();
     // Check the tile size.
     void check_tile_size();
+    // Get dynamic power
+    double get_dynamic_power();
+    // Get static power
+    double get_static_power();
     // Print out the configuration of the shared Global buffer.
     void print_specification();
 
