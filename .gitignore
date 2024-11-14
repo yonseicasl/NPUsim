@@ -4,13 +4,13 @@ raw-mapping/
 
 library/libnpusim.so
 
-mappings/
-
 models/model
 
 models/datasets
 
 models/weights
+
+models/mappings
 
 ext/
 

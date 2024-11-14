@@ -1,0 +1,296 @@
+# The order of mapping table is 
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[convolutional]
+#         32,  1,608,608,  3,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#         64,  1,304,304, 32,  3,  3,  0,  0,  1,  2,
+
+[convolutional]
+#         32,  1,304,304, 64,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#         64,  1,304,304, 32,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1,152,152, 64,  3,  3,  0,  0,  1,  2,
+
+[convolutional]
+#         64,  1,152,152,128,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        128,  1,152,152, 64,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#         64,  1,152,152,128,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        128,  1,152,152, 64,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  2,
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        128,  1, 76, 76,256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76,128,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  2,
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        256,  1, 38, 38,512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38,256,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+# Downsample
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  2,
+
+[convolutional]
+#        512,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        512,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        512,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        512,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  1,
+
+[shortcut]
+
+[convolutional]
+#        512,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#       1024,  1, 19, 19,512,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        255,  1, 19, 19,1024,  1,  1,  0,  0,  1,  1,
+
+#[yolo]
+#
+#[route]
+
+[convolutional]
+#        256,  1, 19, 19, 512,  1,  1,  0,  0,  1,  1,
+
+[upsample]
+
+[concat]
+
+[convolutional]
+#        256,  1, 38, 38, 768,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38, 256,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 38, 38, 512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38, 256,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 38, 38, 512,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        512,  1, 38, 38, 256,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        255,  1, 38, 38, 512,  1,  1,  0,  0,  1,  1,
+
+#[yolo]
+#
+#[route]
+
+[convolutional]
+#        128,  1, 38, 38, 256,  1,  1,  0,  0,  1,  1,
+
+[upsample]
+
+[concat]
+
+[convolutional]
+#        128,  1, 76, 76, 384,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76, 128,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        128,  1, 76, 76, 256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76, 128,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        128,  1, 76, 76, 256,  1,  1,  0,  0,  1,  1,
+
+[convolutional]
+#        256,  1, 76, 76, 128,  3,  3,  0,  0,  1,  1,
+
+[convolutional]
+#        255,  1, 76, 76, 256,  1,  1,  0,  0,  1,  1,
+
+#[yolo]
+
