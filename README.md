@@ -1,4 +1,4 @@
-# NPUsim: Cycle-level, Full-model, Value-aware Functional Simulations of DNN Accelerators
+# NPUsim: Full-model, Cycle-level, and Value-aware Functional Simulations of DNN Accelerators
 Developed by Bogil Kim, Chanho Park, and William J. Song\
 Computer Architecture and Systems Lab, Yonsei University\
 Current release: v1.0 (Feb. 2024)
