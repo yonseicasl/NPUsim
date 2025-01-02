@@ -35,17 +35,17 @@ Alternatively, you can download the latest development version by cloning the Gi
     $ git clone https://github.com/yonsei-icsl/npusim
 
 ## Build
-NPUsim provides a script file named `npusim.sh` to facilitate the building and running of the simulator. To build all modules of NPUsim, enter the following commnds in the main directory of NPUsim.
+NPUsim provides a script file named `npusim.sh` to facilitate the building and running of the simulator. To build all modules of NPUsim, enter the following commands in the main directory of NPUsim.
 
     $ cd npusim/
     $ ./npusim.sh build all
 
-To build specific NPUsim module, it can be executed as follows.
+To build a specific NPUsim module, it can be executed as follows.
 
     $ ./npusim.sh build <module>
 
 ## Simulation
-After building NPUsim, it takes accelerator specifications, DNN network configurations, and a scheduling table (i.e., mapping and dataflow methods) to execute a simulation. The `npusim.sh` file facilitates the simulation. A simulation command follows the format shown below. The <accelerator> field represents the accelerator specification, the <DNN> model indicates the configuration of DNN, and the <scheduling table> shows scheduling schemes, including dataflows and data mappings.
+Running NPUsim takes a set of inputs, including accelerator specifications (`<accelerator>`), DNN network configurations (`<DNN model>`), and a scheduling table (`<scheduling table>`) that specifies dataflow and mapping methods for the target accelerator. The `npusim.sh` script is again used for running the simulation.
 
     $ ./npusim.sh run <accelerator> <DNN model> <scheduling table>
 
@@ -54,7 +54,7 @@ For example, the following command simulates the execution of AlexNet on Eyeriss
     $./npusim.sh run eyeriss alexnet energy
 
 ## Reference and Contact
-To reference NPUsim, please use our ModSim workshop whitepaper.
+To reference NPUsim, please use our ModSim workshop white paper.
 
     @misc{kim_modsim2021,
         author      = {B. Kim and C. Park and T. Lim and W. Song},
@@ -63,4 +63,4 @@ To reference NPUsim, please use our ModSim workshop whitepaper.
         month       = {Oct.},
         year        = {2021},
     }
-For troubleshooting, bug reports, or any questions regarding the PUsim simulation framework, please contact Bogil Kim via email: bogilkim {\at} yonsei {\dot} ac {\dot} kr. Or, visit our lab webpage: https://casl.yonsei.ac.kr
+For troubleshooting, bug reports, or any questions regarding the NPUsim simulation framework, please contact Bogil Kim via email: bogilkim {\at} yonsei {\dot} ac {\dot} kr. Or, visit our lab webpage: https://casl.yonsei.ac.kr.
