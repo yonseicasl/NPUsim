@@ -12,38 +12,40 @@ Current release: v1.0 (Feb. 2024)
 6. [Reference and Contact](#reference-and-contact)
 
 ## Introduction
-Rapid advances in deep learning techniques have sparked competitive races for developing dedicated hardware for deep neural network (DNN) acceleration. As the development of DNN accelerators becomes increasingly complicated to incorporate advanced optimization features exploiting variable dataflows, bit precision, data sparsity, etc. There are strong demands on simulation frameworks for DNN accelerators to facilitate their design space exploration and rapid pre-silicon analyses. Simulations for DNN accelerators address different modeling challenges compared to conventional processors (i.e., CPUs and GPUs). The execution of DNN on the accelerator is driven by dataflow and mapping instead of instructions. Hence, implementing variable dataflows and numerous data mapping options is crucial to cover a wide variety of accelerator designs and DNN models. In addition, neural accelerators heavily utilize value-dependent optimization features to enhance execution efficiency, such as zero-skipping, compression, quantization, etc. Enabling these advanced optimization techniques requires value-aware functional executions with cycle-accurate timing simulations.
+Rapid advancements in deep learning techniques have sparked competitive races to develop specialized hardware for accelerating deep neural networks (DNNs). As the development of DNN accelerators becomes increasingly complex to incorporate advanced optimization features exploiting variable dataflows, bit precisions, data sparsity, etc., there is a strong demand for simulation frameworks for DNN accelerators to facilitate their design space explorations and rapid pre-silicon analyses. However, simulating DNN accelerators addresses different challenges from modeling conventional processes (e.g., CPUs, GPUs) in that accelerator executions are i) driven by dataflows rather than instructions, ii) associated with spatiotemporal data mapping in the hardware, and iii) influenced by value-based optimization controls, such as zero skipping.
 
-_NPUsim_ is a simulation framework for DNN accelerator that features full-system, cycle-accurate, and value-aware functional simulations. The framework consists of three modules; input, main, and output modules. The input module processes system specifications to construct a target accelerator, including dataflow and mapping schemes. Interfacing with PyTorch, the input module also handles DNN workload configurations and neural datasets. The main module includes a simulation engine and execution schedulers. The simulation engine models an accelerator component hierarchy and performs the cycle-accurate simulations. Execution schedulers control data movements between accelerator components along the memory hierarchy to drive an intended execution flow. The output module displays simulation results at the end of the simulation.
+Neural computations are typically expressed as nested loops in program code. Previous studies have employed loop-centric models, where hardware characteristics are implicitly embedded in the loops. This approach requires rearranging the entire loop sequence to modify execution flows or hardware features, which significantly restricts the tools’ usability and modeling coverage. The open-source NPUsim framework aims to overcome these modeling challenges and improve self-evaluate-only research practices in the accelerator domain.
+
+_NPUsim_ is a modeling framework for full-model, cycle-level, and value-aware functional simulations of DNN accelerators. Unlike the prior tools that built loop-centric models with the implicit embedding of hardware characteristics in the loops, NPUsim implements an architecture-oriented simulation framework where hardware components are explicitly created outside the nested loops of neural computations. NPUsim employs a novel simulation methodology that i) provides comprehensive accelerator models, ii) offers configurable dataflows and mappings that cover a wide range of accelerator designs by effectively separating architecture models from the loop sequence of neural layers, iii) enables cycle-level timing simulations, and iv) supports in-model functional execution with actual neural data, allowing for integrating value-based optimizations into the framework.
 
 ## Prerequisites
-NPUsim uses g++ to compile C++ codes. If the gcc compiler is not installed, type the following command in terminal.
+NPUsim requires g++ to compile C++ code.
     
     $ sudo apt install build-essential
 
-The simulation framework contains several extensions including Nebula, DRAMsim3, and PyTorch. Please refer to https://github.com/yonsei-icsl/nebula, https://github.com/umd-memsys/DRAMsim3, and https://pytorch.org.
+The simulation framework includes several extensions, such as Nebula, DRAMsim3, and PyTorch. For more information, please refer to https://github.com/yonsei-icsl/nebula, https://github.com/umd-memsys/DRAMsim3, and https://pytorch.org.
 
 ## Download
-The latest release of NPUsim simulation framework is v1.0 (as of Feb. 2024). To obtain a copy of NPUsim v1.0, use the following command in a terminal 
+The latest release of the NPUsim framework is v1.0 (as of Feb. 2024). To download NPUsim v1.0, use the following command in the terminal.
 
     $ git clone --branch v1.0 https://github.com/yonsei-icsl/npusim
 
-Or, you can download the latest development version, clone the git repository as is.
+Alternatively, you can download the latest development version by cloning the Git repo without specifying a branch.
 
     $ git clone https://github.com/yonsei-icsl/npusim
 
 ## Build
-NPUsim provides a script file name npusim.sh to facilitate the buid and run the simulator. To build the entire modules of NPUsim, type the following commnds in the main directory of NPUsim.
+NPUsim provides a script file named `npusim.sh` to facilitate the building and running of the simulator. To build all modules of NPUsim, enter the following commnds in the main directory of NPUsim.
 
     $ cd npusim/
     $ ./npusim.sh build all
 
-Or, you can specify NPUsim modules by typeing a command in the following format
+To build specific NPUsim module, it can be executed as follows.
 
     $ ./npusim.sh build <module>
 
 ## Simulation
-After NPUsim framework is built, the simulator becomes ready to perform DNN simulation on an accelerator. The accelerator specification, DNN model, and scheduling table is required to dispatch simulation. The npusim.sh file facilitates the simulation. A simulation command follows the format shown below. The <accelerator> field represents the accelerator specification, the <DNN> model indicates the configuration of DNN, and <scheduling table> shows scheduling schemes including dataflows and data mappings.
+After building NPUsim, it takes accelerator specifications, DNN network configurations, and a scheduling table (i.e., mapping and dataflow methods) to execute a simulation. The `npusim.sh` file facilitates the simulation. A simulation command follows the format shown below. The <accelerator> field represents the accelerator specification, the <DNN> model indicates the configuration of DNN, and the <scheduling table> shows scheduling schemes, including dataflows and data mappings.
 
     $ ./npusim.sh run <accelerator> <DNN model> <scheduling table>
 
@@ -55,11 +57,10 @@ For example, the following command simulates the execution of AlexNet on Eyeriss
 To reference NPUsim, please use our ModSim workshop whitepaper.
 
     @misc{kim_modsim2021,
-        author      = {B. Kim and C. park and T. Lim and W. Song},
+        author      = {B. Kim and C. Park and T. Lim and W. Song},
         title       = {{NPUsim: Full-System, Cycle-Accurate, Functional Simulations of Deep Neural Network Accelerators}},
-        booktitle   = {Workshop on Modeling and Simulation of Systems and Applications}, 
+        booktitle   = {US DOE Workshop on Modeling and Simulation of Systems and Applications (ModSim)}, 
         month       = {Oct.},
         year        = {2021},
-        pages       = {1-2},
     }
-For troubleshooting, bug reports, or any questions regarding NPUsim simualtion framework, please contact Bogil Kim via email: bogilkim {\at} yonsei {\dot} ac {\dot} kr. Or, visit our lab webpage: https://casl.yonsei.ac.kr
+For troubleshooting, bug reports, or any questions regarding the PUsim simulation framework, please contact Bogil Kim via email: bogilkim {\at} yonsei {\dot} ac {\dot} kr. Or, visit our lab webpage: https://casl.yonsei.ac.kr
