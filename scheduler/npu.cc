@@ -85,6 +85,10 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             if(section_config.get_setting("compression_type", &compression_str)) {
                 compression_type = (compression_type_t)get_type(compression_type_str, compression_str);
             }
+            if(compression_type != compression_type_t::DENSE) {
+                std::cerr << "Error: sparse PE execution is not implemented; use compression_type=dense" << std::endl;
+                exit(1);
+            }
         }
         // Initialize PE array.
         else if(section_config.name == "adder_tree" || section_config.name == "ADDER_TREE") {

@@ -13,7 +13,7 @@ if [[ $sanitizers == 1 ]]; then
 fi
 
 "$cxx" "${cxxflags[@]}" \
-    "$repo_dir/tests/validation_test.cc" \
+    "$repo_dir/unittest/validation_test.cc" \
     "$repo_dir/utils/config.cc" \
     "$repo_dir/utils/utils.cc" \
     "$repo_dir/utils/datatype.cc" \

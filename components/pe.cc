@@ -407,6 +407,12 @@ void pe_t::init(section_config_t m_section_config) {
     u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+        if(u_static_energy[i] != 0.0) {
+            std::cerr << "Error: PE static_energy is not implemented as elapsed-time leakage" << std::endl;
+            exit(1);
+        }
+    }
 
     /* Initialize PE stats */
 
@@ -1188,15 +1194,15 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                 unsigned ratio = ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(line_size_mac[data_type_t::WEIGHT]));
 
                 // At the 1, 2, before last, last stages
-                unsigned first_stage = u_read_cycle_lb[data_type_t::WEIGHT];
-                unsigned second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
+                double first_stage = u_read_cycle_lb[data_type_t::WEIGHT];
+                double second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
                                                  u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
-                unsigned last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
+                double last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                                       u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
-                unsigned last_stage = ratio*u_write_cycle_mac[data_type_t::WEIGHT];
+                double last_stage = ratio*u_write_cycle_mac[data_type_t::WEIGHT];
 
                 // Remainder stages
-                unsigned other_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
+                double other_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
                                        std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                                 u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
@@ -1558,15 +1564,15 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
             unsigned ratio = ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(line_size_mac[data_type_t::WEIGHT]));
 
             // At the 1, 2, before last, last stages
-            unsigned first_stage = u_read_cycle_lb[data_type_t::WEIGHT];
-            unsigned second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
+            double first_stage = u_read_cycle_lb[data_type_t::WEIGHT];
+            double second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
                                              u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
-            unsigned last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
+            double last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                                   u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
-            unsigned last_stage = ratio*u_write_cycle_mac[data_type_t::WEIGHT];
+            double last_stage = ratio*u_write_cycle_mac[data_type_t::WEIGHT];
 
             // Remainder stages
-            unsigned other_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
+            double other_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
                                    std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
@@ -1688,15 +1694,15 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                 unsigned ratio = ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(line_size_mac[data_type_t::OUTPUT]));
 
                 // at the 1, 2, before last, and last stages
-                unsigned first_stage = u_read_cycle_lb[data_type_t::OUTPUT];
-                unsigned second_stage = std::max(u_read_cycle_lb[data_type_t::OUTPUT],
+                double first_stage = u_read_cycle_lb[data_type_t::OUTPUT];
+                double second_stage = std::max(u_read_cycle_lb[data_type_t::OUTPUT],
                                                  u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-                unsigned last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::OUTPUT],
+                double last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::OUTPUT],
                                                       u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-                unsigned last_stage = ratio*u_write_cycle_mac[data_type_t::OUTPUT];
+                double last_stage = ratio*u_write_cycle_mac[data_type_t::OUTPUT];
 
                 // Remainder stages
-                unsigned other_stage = std::max(u_read_cycle_lb[data_type_t::OUTPUT],
+                double other_stage = std::max(u_read_cycle_lb[data_type_t::OUTPUT],
                                        std::max(ratio*u_write_cycle_mac[data_type_t::OUTPUT],
                                                 u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
@@ -2701,14 +2707,14 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
         // Update overlapped cycle at MAC units and local buffer
         unsigned ratio = ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(line_size_mac[data_type_t::OUTPUT]));
 
-        unsigned first_stage = ratio*u_read_cycle_mac[data_type_t::OUTPUT];
-        unsigned second_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
+        double first_stage = ratio*u_read_cycle_mac[data_type_t::OUTPUT];
+        double second_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
                                          u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-        unsigned last_before_stage = std::max(u_write_cycle_lb[data_type_t::OUTPUT],
+        double last_before_stage = std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                               u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-        unsigned last_stage = u_write_cycle_lb[data_type_t::OUTPUT];
+        double last_stage = u_write_cycle_lb[data_type_t::OUTPUT];
 
-        unsigned other_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
+        double other_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
                                std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                         u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
@@ -2881,14 +2887,14 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
         // Update overlapped cycle at MAC units and local buffer
         unsigned ratio = ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(line_size_mac[data_type_t::OUTPUT]));
 
-        unsigned first_stage = ratio*u_read_cycle_mac[data_type_t::OUTPUT];
-        unsigned second_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
+        double first_stage = ratio*u_read_cycle_mac[data_type_t::OUTPUT];
+        double second_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
                                          u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-        unsigned last_before_stage = std::max(u_write_cycle_lb[data_type_t::OUTPUT],
+        double last_before_stage = std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                               u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-        unsigned last_stage = u_write_cycle_lb[data_type_t::OUTPUT];
+        double last_stage = u_write_cycle_lb[data_type_t::OUTPUT];
 
-        unsigned other_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
+        double other_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
                                std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                         u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
@@ -3088,14 +3094,14 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
             // Update overlapped cycle at MAC units and local buffer
             unsigned ratio = ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(line_size_mac[data_type_t::OUTPUT]));
 
-            unsigned first_stage = ratio*u_read_cycle_mac[data_type_t::OUTPUT];
-            unsigned second_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
+            double first_stage = ratio*u_read_cycle_mac[data_type_t::OUTPUT];
+            double second_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
                                              u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-            unsigned last_before_stage = std::max(u_write_cycle_lb[data_type_t::OUTPUT],
+            double last_before_stage = std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                                   u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
-            unsigned last_stage = u_write_cycle_lb[data_type_t::OUTPUT];
+            double last_stage = u_write_cycle_lb[data_type_t::OUTPUT];
 
-            unsigned other_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
+            double other_stage = std::max(ratio*u_read_cycle_mac[data_type_t::OUTPUT],
                                    std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 

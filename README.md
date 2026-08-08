@@ -87,7 +87,7 @@ For example, the following command simulates the execution of AlexNet on Eyeriss
 
 Run the dependency-free validation suite before submitting a change:
 
-    $ ./tests/run_validation.sh
+    $ ./unittest/run_validation.sh
 
 It parses all committed accelerator/network/mapping files, checks accelerator component cardinality and multi-chip dimensions, exercises strict parser failure cases, and checks build/run script regressions. GitHub Actions also runs this suite with AddressSanitizer and UndefinedBehaviorSanitizer.
 
