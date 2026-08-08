@@ -144,6 +144,7 @@ pe_t::pe_t(section_config_t m_section_config) :
     mac_width(1),
     num_active_macs(1),
     active_mac_width(1),
+    active_mac_units(1),
     mac_register_capacity(1),
     frequency(0.0),
     bandwidth(0.0),
@@ -407,12 +408,6 @@ void pe_t::init(section_config_t m_section_config) {
     u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
-    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
-        if(u_static_energy[i] != 0.0) {
-            std::cerr << "Error: PE static_energy is not implemented as elapsed-time leakage" << std::endl;
-            exit(1);
-        }
-    }
 
     /* Initialize PE stats */
 
@@ -472,9 +467,16 @@ void pe_t::update_tile_size(scheduler_t *m_scheduler) {
     num_active_macs = m_scheduler->num_active_mac;
     if(num_active_macs == 0 || num_active_macs > mac_register_capacity) {
         std::cerr << "The number of Active macs : " << num_active_macs
-                  << " is bigger than the number of macs : " << num_macs << std::endl;
+                  << " is bigger than the scalar FMA lane capacity : " << mac_register_capacity << std::endl;
         exit(1);
     }
+    // Mapping's MAC factor denotes scalar FMA lanes. num_macs is the number
+    // of independent accumulators and mac_width is the number of lanes each
+    // accumulator can issue in one computation step.
+    active_mac_units = (num_active_macs + mac_width - 1)/mac_width;
+    active_mac_width = num_active_macs - (active_mac_units - 1)*mac_width;
+    utilization_mac = static_cast<double>(num_active_macs)/
+                      static_cast<double>(mac_register_capacity);
     // Update tile sizes.
     tile_size_mac = m_scheduler->tile_size[component_type_t::MAC];
     tile_size_lb = m_scheduler->tile_size[component_type_t::PE];
@@ -730,7 +732,9 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                        std::max(ratio*u_write_cycle_mac[data_type_t::INPUT],
                                                 u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
 
-                if(num_access_lb == 1) {
+                if(num_access_lb == 0) {
+                    // No transaction: leave the overlapped stage unchanged.
+                } else if(num_access_lb == 1) {
                     cycle_mac_lb[data_type_t::INPUT] += u_read_cycle_lb[data_type_t::INPUT] +
                                                         u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) +
                                                         ratio*u_write_cycle_mac[data_type_t::INPUT];
@@ -1082,7 +1086,9 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                    std::max(ratio*u_write_cycle_mac[data_type_t::INPUT],
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
 
-            if(num_access_lb == 1) {
+            if(num_access_lb == 0) {
+                // No transaction: leave the overlapped stage unchanged.
+            } else if(num_access_lb == 1) {
                 cycle_mac_lb[data_type_t::INPUT] += u_read_cycle_lb[data_type_t::INPUT] +
                                                     u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) +
                                                     ratio*u_write_cycle_mac[data_type_t::INPUT];
@@ -1206,7 +1212,9 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                        std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                                 u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
-                if(num_access_lb == 1) {
+                if(num_access_lb == 0) {
+                    // No transaction: leave the overlapped stage unchanged.
+                } else if(num_access_lb == 1) {
                     cycle_mac_lb[data_type_t::WEIGHT] += u_read_cycle_lb[data_type_t::WEIGHT] +
                                                          u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                          ratio*u_write_cycle_mac[data_type_t::WEIGHT];
@@ -1576,7 +1584,9 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                    std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
-            if(num_access_lb == 1) {
+            if(num_access_lb == 0) {
+                // No transaction: leave the overlapped stage unchanged.
+            } else if(num_access_lb == 1) {
                 cycle_mac_lb[data_type_t::WEIGHT] += u_read_cycle_lb[data_type_t::WEIGHT] +
                                                      u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                      ratio*u_write_cycle_mac[data_type_t::WEIGHT];
@@ -1706,7 +1716,9 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                        std::max(ratio*u_write_cycle_mac[data_type_t::OUTPUT],
                                                 u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
-                if(num_access_lb == 1) {
+                if(num_access_lb == 0) {
+                    // No transaction: leave the overlapped stage unchanged.
+                } else if(num_access_lb == 1) {
                     cycle_mac_lb[data_type_t::OUTPUT] += u_read_cycle_lb[data_type_t::OUTPUT] +
                                                          u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                          ratio*u_write_cycle_mac[data_type_t::OUTPUT];
@@ -1925,9 +1937,10 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             }
             /*
             // Update local buffer read cycle and energy.
-            access_cycle_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            write_back_cycle_lb += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            access_energy_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_energy_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
+            const size_t output_lines_lb = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], line_size_lb[data_type_t::OUTPUT]);
+            access_cycle_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            write_back_cycle_lb += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
             pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
@@ -2032,9 +2045,10 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             /* TODO */
             // Update overlapped cycle between the local buffer and PE array.
             // Overlap read cycle of local buffer, write_back_cycle, and write cycle at the accumulator.
-            access_cycle_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            write_back_cycle_lb += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            access_energy_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_energy_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
+            const size_t output_lines_lb = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], line_size_lb[data_type_t::OUTPUT]);
+            access_cycle_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            write_back_cycle_lb += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
             pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
@@ -2133,9 +2147,10 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             /*
             // Update stats.
             // Update local buffer read cycle and energy.
-            access_cycle_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            write_back_cycle_lb += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            access_energy_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_energy_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
+            const size_t output_lines_lb = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], line_size_lb[data_type_t::OUTPUT]);
+            access_cycle_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            write_back_cycle_lb += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
             pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
@@ -2250,9 +2265,10 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 
             /*
             // Update local buffer read cycle and energy.
-            access_cycle_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            write_back_cycle_lb += tile_size_lb[data_type_t::OUTPUT]*u_read_cycle_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
-            access_energy_lb[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*u_read_energy_lb[data_type_t::OUTPUT]/(line_size_lb[data_type_t::OUTPUT]/8/sizeof(data_t));
+            const size_t output_lines_lb = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], line_size_lb[data_type_t::OUTPUT]);
+            access_cycle_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            write_back_cycle_lb += output_lines_lb*u_read_cycle_lb[data_type_t::OUTPUT];
+            access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
             pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
@@ -2447,9 +2463,35 @@ void pe_t::print_specification() {
 	std::cout << std::endl;
 }
 
+double pe_t::modeled_elapsed_cycles() const {
+    double elapsed = std::max(computation_cycle,
+                              std::max(write_back_cycle_mac, write_back_cycle_lb));
+    elapsed = std::max(elapsed, overlapped_transfer_cycle);
+    for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
+        elapsed = std::max(elapsed, access_cycle_mac[type]);
+        elapsed = std::max(elapsed, access_cycle_lb[type]);
+        elapsed = std::max(elapsed, transfer_cycle[type]);
+        elapsed = std::max(elapsed, cycle_mac_lb[type]);
+    }
+    return elapsed;
+}
+
+void pe_t::update_static_energy(double elapsed_cycles) {
+    if(elapsed_cycles < 0.0) {
+        std::cerr << "Error: PE elapsed cycles cannot be negative" << std::endl;
+        exit(1);
+    }
+    for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
+        if(u_static_energy[type] < 0.0) {
+            std::cerr << "Error: PE static_energy must be a non-negative pJ/cycle value" << std::endl;
+            exit(1);
+        }
+        static_energy[type] = u_static_energy[type] * elapsed_cycles;
+    }
+}
+
 // Reset the stats
 void pe_t::reset() {
-
     std::fill_n(input_data_mac, mac_register_capacity, data_t{});
     std::fill_n(weight_mac, mac_register_capacity, data_t{});
     clear_output_accumulators();
@@ -2554,20 +2596,23 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
         //                                data_type_t::OUTPUT, get_mac_stationary_type()), action_type_t::STORE);
 #endif
         /* Stats */
+        const size_t output_mac_lines = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], line_size_mac[data_type_t::OUTPUT]);
+        const size_t output_link_transactions = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], bitwidth);
+
         // Update MAC read cycle and energy.
-        access_cycle_mac[data_type_t::OUTPUT] += tile_size_mac[data_type_t::OUTPUT]*u_read_cycle_mac[data_type_t::OUTPUT]/(line_size_mac[data_type_t::OUTPUT]/8/sizeof(data_t));
-        write_back_cycle_mac += tile_size_mac[data_type_t::OUTPUT]*u_read_cycle_mac[data_type_t::OUTPUT]/(line_size_mac[data_type_t::OUTPUT]/8/sizeof(data_t));
-        access_energy_mac[data_type_t::OUTPUT] += tile_size_mac[data_type_t::OUTPUT]*u_read_energy_mac[data_type_t::OUTPUT]/(line_size_mac[data_type_t::OUTPUT]/8/sizeof(data_t));
+        access_cycle_mac[data_type_t::OUTPUT] += output_mac_lines*u_read_cycle_mac[data_type_t::OUTPUT];
+        write_back_cycle_mac += output_mac_lines*u_read_cycle_mac[data_type_t::OUTPUT];
+        access_energy_mac[data_type_t::OUTPUT] += output_mac_lines*u_read_energy_mac[data_type_t::OUTPUT];
 
         // Update local buffer write cycle and energy.
-        access_cycle_lb[data_type_t::OUTPUT] += tile_size_mac[data_type_t::OUTPUT]*u_write_cycle_lb[data_type_t::OUTPUT]/(line_size_mac[data_type_t::OUTPUT]/8/sizeof(data_t));
-        write_back_cycle_lb += tile_size_mac[data_type_t::OUTPUT]*u_write_cycle_lb[data_type_t::OUTPUT]/(line_size_mac[data_type_t::OUTPUT]/8/sizeof(data_t));
-        access_energy_lb[data_type_t::OUTPUT] += tile_size_mac[data_type_t::OUTPUT]*u_write_energy_lb[data_type_t::OUTPUT]/(line_size_mac[data_type_t::OUTPUT]/8/sizeof(data_t));
+        access_cycle_lb[data_type_t::OUTPUT] += output_mac_lines*u_write_cycle_lb[data_type_t::OUTPUT];
+        write_back_cycle_lb += output_mac_lines*u_write_cycle_lb[data_type_t::OUTPUT];
+        access_energy_lb[data_type_t::OUTPUT] += output_mac_lines*u_write_energy_lb[data_type_t::OUTPUT];
 
         // Update data transfer cycle and energy between MAC and local buffer.
-        transfer_cycle[data_type_t::OUTPUT] += u_transfer_cycle*ceil((double)(tile_size_mac[data_type_t::OUTPUT]*8*sizeof(data_t))/(double)bitwidth);
-        overlapped_transfer_cycle += u_transfer_cycle*ceil((double)(tile_size_mac[data_type_t::OUTPUT]*8*sizeof(data_t))/(double)bitwidth);
-        transfer_energy[data_type_t::OUTPUT] += u_transfer_energy*ceil((double)(tile_size_mac[data_type_t::OUTPUT]*8*sizeof(data_t))/(double)bitwidth);
+        transfer_cycle[data_type_t::OUTPUT] += u_transfer_cycle*output_link_transactions;
+        overlapped_transfer_cycle += u_transfer_cycle*output_link_transactions;
+        transfer_energy[data_type_t::OUTPUT] += u_transfer_energy*output_link_transactions;
         /* Stats */
 
 
@@ -2718,7 +2763,9 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                                std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                         u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
-        if(num_access_lb == 1) {
+        if(num_access_lb == 0) {
+            // No transaction: leave the overlapped stage unchanged.
+        } else if(num_access_lb == 1) {
             cycle_mac_lb[data_type_t::OUTPUT] += ratio*u_read_cycle_mac[data_type_t::OUTPUT] +
                                                  u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                  u_write_cycle_lb[data_type_t::OUTPUT];
@@ -2898,7 +2945,9 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                                std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                         u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
-        if(num_access_lb == 1) {
+        if(num_access_lb == 0) {
+            // No transaction: leave the overlapped stage unchanged.
+        } else if(num_access_lb == 1) {
             cycle_mac_lb[data_type_t::OUTPUT] += ratio*u_read_cycle_mac[data_type_t::OUTPUT] +
                                                  u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                  u_write_cycle_lb[data_type_t::OUTPUT];
@@ -3105,7 +3154,9 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                                    std::max(u_write_cycle_lb[data_type_t::OUTPUT],
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
-            if(num_access_lb == 1) {
+            if(num_access_lb == 0) {
+                // No transaction: leave the overlapped stage unchanged.
+            } else if(num_access_lb == 1) {
                 cycle_mac_lb[data_type_t::OUTPUT] += ratio*u_read_cycle_mac[data_type_t::OUTPUT] +
                                                      u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                      u_write_cycle_lb[data_type_t::OUTPUT];

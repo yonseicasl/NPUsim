@@ -355,6 +355,22 @@ void stats_t::update_tile_size(scheduler_t *m_scheduler) {
 
 void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<global_buffer_t*> m_global_buffer, multi_chip_t *m_multi_chip, dram_t *m_dram) {
 
+    // static_energy in the PE config is leakage energy in pJ/cycle. Every
+    // physical PE leaks for the modeled duration of the layer, rather than
+    // once per data-transfer callback.
+    double pe_elapsed_cycles = 0.0;
+    for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); ++i) {
+        for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); ++j) {
+            pe_elapsed_cycles = std::max(pe_elapsed_cycles,
+                                         m_pe_array[i]->pes[j]->modeled_elapsed_cycles());
+        }
+    }
+    for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); ++i) {
+        for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); ++j) {
+            m_pe_array[i]->pes[j]->update_static_energy(pe_elapsed_cycles);
+        }
+    }
+
     unsigned num_active_pe = 0;
     for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); i++) {
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_active_pes(); j++) {
@@ -1082,4 +1098,3 @@ void stats_t::print_results(std::ofstream &m_output_file) {
 #endif
 
 }
-

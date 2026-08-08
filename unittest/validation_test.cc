@@ -66,9 +66,13 @@ void validate_runtime_datatypes() {
        runtime_datatypes().payload_bits(data_type_t::WEIGHT, 32) != 128 ||
        runtime_datatypes().metadata_bits(data_type_t::WEIGHT, 32) != 8 ||
        runtime_datatypes().storage_bytes(data_type_t::WEIGHT, 32) != 17 ||
+       runtime_datatypes().payload_transactions(data_type_t::WEIGHT, 33, 16) != 9 ||
+       runtime_datatypes().metadata_transactions(data_type_t::WEIGHT, 33, 16) != 1 ||
+       runtime_datatypes().storage_transactions(data_type_t::WEIGHT, 33, 16) != 10 ||
        runtime_datatypes().accumulator_format().name != "fp32" ||
        runtime_datatypes().describe(data_type_t::OUTPUT) != "int4" ||
-       runtime_datatypes().storage_bytes(data_type_t::OUTPUT, 3) != 2) {
+       runtime_datatypes().storage_bytes(data_type_t::OUTPUT, 3) != 2 ||
+       runtime_datatypes().storage_transactions(data_type_t::OUTPUT, 3, 8) != 2) {
         fail("runtime datatype storage accounting");
     }
 }

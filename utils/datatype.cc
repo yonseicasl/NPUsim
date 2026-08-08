@@ -134,3 +134,30 @@ runtime_datatypes_t &runtime_datatypes() {
     static runtime_datatypes_t instance;
     return instance;
 }
+
+size_t runtime_datatypes_t::payload_transactions(data_type_t type, size_t elements,
+                                                  size_t transaction_bits) const {
+    if(transaction_bits == 0) {
+        std::cerr << "Error: datatype transaction width must be non-zero" << std::endl;
+        exit(1);
+    }
+    return ceil_div(payload_bits(type, elements), transaction_bits);
+}
+
+size_t runtime_datatypes_t::metadata_transactions(data_type_t type, size_t elements,
+                                                   size_t transaction_bits) const {
+    if(transaction_bits == 0) {
+        std::cerr << "Error: datatype transaction width must be non-zero" << std::endl;
+        exit(1);
+    }
+    return ceil_div(metadata_bits(type, elements), transaction_bits);
+}
+
+size_t runtime_datatypes_t::storage_transactions(data_type_t type, size_t elements,
+                                                  size_t transaction_bits) const {
+    if(transaction_bits == 0) {
+        std::cerr << "Error: datatype transaction width must be non-zero" << std::endl;
+        exit(1);
+    }
+    return ceil_div(storage_bits(type, elements), transaction_bits);
+}

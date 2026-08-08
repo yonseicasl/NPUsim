@@ -40,6 +40,9 @@ public:
     size_t metadata_bits(data_type_t type, size_t elements) const;
     size_t storage_bits(data_type_t type, size_t elements) const;
     size_t storage_bytes(data_type_t type, size_t elements) const;
+    size_t payload_transactions(data_type_t type, size_t elements, size_t transaction_bits) const;
+    size_t metadata_transactions(data_type_t type, size_t elements, size_t transaction_bits) const;
+    size_t storage_transactions(data_type_t type, size_t elements, size_t transaction_bits) const;
     std::string describe(data_type_t type) const;
 
 private:

@@ -75,6 +75,11 @@ public:
     // Reset component and stats.
     void reset();
 
+    // Timing-only helpers. static_energy is pJ/cycle multiplied by the
+    // elapsed layer time, not an event counter.
+    double modeled_elapsed_cycles() const;
+    void update_static_energy(double elapsed_cycles);
+
     /* PE specifications */
 
     // Data at MAC unit.
@@ -184,10 +189,11 @@ protected:
     mac_type_t mac_type;                                    // Mac type.
 
     // Number of MACS.
-    unsigned num_macs;                                      // Number of MAC units (accumulator)
-    unsigned mac_width;                                     // Number of multiplier per MAC units
-    unsigned num_active_macs;                               // Number of active MAC units.
-    unsigned active_mac_width;
+    unsigned num_macs;                                      // Number of independent accumulator units.
+    unsigned mac_width;                                     // Scalar FMA lanes per accumulator unit.
+    unsigned num_active_macs;                               // Active scalar FMA lanes from the mapping.
+    unsigned active_mac_width;                              // Lanes occupied in the final active MAC unit.
+    unsigned active_mac_units;                              // Active accumulator units for the current tile.
     size_t mac_register_capacity;                            // Scalar register entries allocated per operand.
 
     float frequency;                                        // The frequency (GHz)
