@@ -1,5 +1,33 @@
 #include <iostream>
+#include <cstdint>
+#include <limits>
+#include <sstream>
 #include "mapping_table.h"
+namespace {
+
+unsigned checked_multiply(unsigned lhs, unsigned rhs, const char *context) {
+    const uint64_t product = static_cast<uint64_t>(lhs) * rhs;
+    if(product > std::numeric_limits<unsigned>::max()) {
+        std::cerr << "Error: unsigned overflow while calculating " << context << std::endl;
+        exit(1);
+    }
+    return static_cast<unsigned>(product);
+}
+
+unsigned checked_extent(unsigned output, unsigned stride, unsigned filter, const char *context) {
+    if(output == 0 || stride == 0 || filter == 0) {
+        std::cerr << "Error: zero dimension while calculating " << context << std::endl;
+        exit(1);
+    }
+    const uint64_t extent = static_cast<uint64_t>(output - 1) * stride + filter;
+    if(extent > std::numeric_limits<unsigned>::max()) {
+        std::cerr << "Error: unsigned overflow while calculating " << context << std::endl;
+        exit(1);
+    }
+    return static_cast<unsigned>(extent);
+}
+
+} // namespace
 
 mapping_table_t::mapping_table_t(section_config_t m_section_config) {	
     init(m_section_config);
@@ -28,20 +56,46 @@ void mapping_table_t::init(section_config_t m_section_config) {
 
 // Read parameters and fill values to mapping table.
 std::vector<unsigned> mapping_table_t::get_value(section_config_t m_section_config, std::string m_name) {
-	std::string line;
-	std::vector<unsigned> parameters;
-	parameters.reserve(parameter_type_t::NUM_PARAMETER_TYPES);
-	m_section_config.get_setting(m_name, &line);
-
-	line.erase(remove(line.begin(), line.end(), ' '),line.end());
-	unsigned found = 0;
-	for(unsigned i = 0; i < parameter_type_t::NUM_PARAMETER_TYPES; i++) {
-		found = line.find(',');
-		parameters.emplace_back(stoi(line.substr(0, found)));
-		line.erase(0, found + 1);
-	}
-
-	return parameters;
+    std::string line;
+    if(!m_section_config.get_setting(m_name, &line)) {
+        std::cerr << "Error: missing mapping entry '" << m_name << "'" << std::endl;
+        exit(1);
+    }
+    std::stringstream stream(line);
+    std::vector<unsigned> parameters;
+    parameters.reserve(parameter_type_t::NUM_PARAMETER_TYPES);
+    for(unsigned i = 0; i < parameter_type_t::NUM_PARAMETER_TYPES; i++) {
+        std::string token;
+        if(!std::getline(stream, token, ',') || token.empty()) {
+            std::cerr << "Error: mapping entry '" << m_name << "' requires "
+                      << parameter_type_t::NUM_PARAMETER_TYPES << " values" << std::endl;
+            exit(1);
+        }
+        try {
+            size_t parsed = 0;
+            unsigned long value = std::stoul(token, &parsed);
+            if(parsed != token.size() || value > std::numeric_limits<unsigned>::max()) {
+                throw std::out_of_range("mapping value");
+            }
+            parameters.emplace_back((unsigned)value);
+            if(value == 0 && (i <= parameter_type_t::FILTER_WIDTH ||
+                              i == parameter_type_t::GROUP || i == parameter_type_t::STRIDE)) {
+                std::cerr << "Error: zero mapping factor in '" << m_name << "'" << std::endl;
+                exit(1);
+            }
+        } catch(const std::exception &) {
+            std::cerr << "Error: invalid unsigned mapping value '" << token
+                      << "' in '" << m_name << "'" << std::endl;
+            exit(1);
+        }
+    }
+    std::string remainder;
+    std::getline(stream, remainder, '\0');
+    if(!remainder.empty()) {
+        std::cerr << "Error: too many values in mapping entry '" << m_name << "'" << std::endl;
+        exit(1);
+    }
+    return parameters;
 }
 
 // Calculate the parameter size.
@@ -50,52 +104,20 @@ std::vector<unsigned> mapping_table_t::calculate_parameter_size(component_type_t
 
     for(unsigned i = 0; i <= m_component_type; i++) {
         for(unsigned j = 0; j < parameter_type_t::NUM_PARAMETER_TYPES; j++) {
-            parameters[j] *= mapping_table[i][j];
+            parameters[j] = checked_multiply(parameters[j], mapping_table[i][j], "parameter size");
         }
     }
     parameters[parameter_type_t::STRIDE]       = mapping_table[m_component_type][parameter_type_t::STRIDE];
-    parameters[parameter_type_t::INPUT_HEIGHT] = (parameters[parameter_type_t::OUTPUT_HEIGHT] - 1)*parameters[parameter_type_t::STRIDE] + parameters[parameter_type_t::FILTER_HEIGHT];
-    parameters[parameter_type_t::INPUT_WIDTH]  = (parameters[parameter_type_t::OUTPUT_WIDTH] - 1)*parameters[parameter_type_t::STRIDE] + parameters[parameter_type_t::FILTER_WIDTH];
+    parameters[parameter_type_t::INPUT_HEIGHT] =
+        checked_extent(parameters[parameter_type_t::OUTPUT_HEIGHT], parameters[parameter_type_t::STRIDE],
+                       parameters[parameter_type_t::FILTER_HEIGHT], "input height");
+    parameters[parameter_type_t::INPUT_WIDTH] =
+        checked_extent(parameters[parameter_type_t::OUTPUT_WIDTH], parameters[parameter_type_t::STRIDE],
+                       parameters[parameter_type_t::FILTER_WIDTH], "input width");
 
     return parameters;
 }
 
-std::vector<unsigned> mapping_table_t::calculate_parameter_size(component_type_t m_component_type, std::string m_parameter_order) {
-    std::vector<unsigned> parameters(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-
-    char t_parameter_order[parameter_type_t::NUM_PARAMETER_TYPES];
-    strcpy(t_parameter_order, m_parameter_order.c_str());
-
-    for(unsigned i = 0; i < parameter_type_t::NUM_PARAMETER_TYPES; i++) {
-        std::cout << t_parameter_order[i] << " " << std::endl;
-    }
-
-    for(unsigned i = 0; i <= m_component_type; i++) {
-        for(unsigned j = 0; j < parameter_type_t::NUM_PARAMETER_TYPES; j++) {
-            if(t_parameter_order[j] == 'K' || t_parameter_order[j] == 'k') {
-                parameters[j] *= mapping_table[i][parameter_type_t::OUTPUT_CHANNEL];
-            } else if(t_parameter_order[j] == 'B' || t_parameter_order[j] == 'b') {
-                parameters[j] *= mapping_table[i][parameter_type_t::BATCH_SIZE];
-            } else if(t_parameter_order[j] == 'P' || t_parameter_order[j] == 'P') {
-                parameters[j] *= mapping_table[i][parameter_type_t::OUTPUT_HEIGHT];
-            } else if(t_parameter_order[j] == 'Q' || t_parameter_order[j] == 'q') {
-                parameters[j] *= mapping_table[i][parameter_type_t::OUTPUT_WIDTH];
-            } else if(t_parameter_order[j] == 'C' || t_parameter_order[j] == 'c') {
-                parameters[j] *= mapping_table[i][parameter_type_t::INPUT_CHANNEL];
-            } else if(t_parameter_order[j] == 'R' || t_parameter_order[j] == 'r') {
-                parameters[j] *= mapping_table[i][parameter_type_t::FILTER_HEIGHT];
-            } else if(t_parameter_order[j] == 'S' || t_parameter_order[j] == 's') {
-                parameters[j] *= mapping_table[i][parameter_type_t::FILTER_WIDTH];
-            }
-        }
-    }
-    parameters[parameter_type_t::STRIDE]       = mapping_table[m_component_type][parameter_type_t::STRIDE];
-    parameters[parameter_type_t::INPUT_HEIGHT] = (parameters[parameter_type_t::OUTPUT_HEIGHT] - 1)*parameters[parameter_type_t::STRIDE] + parameters[parameter_type_t::FILTER_HEIGHT];
-    parameters[parameter_type_t::INPUT_WIDTH]  = (parameters[parameter_type_t::OUTPUT_WIDTH] - 1)*parameters[parameter_type_t::STRIDE] + parameters[parameter_type_t::FILTER_WIDTH];
-
-    return parameters;
-
-}
 
 void mapping_table_t::calculate_num_tile_granular_data(component_type_t m_component_type, std::vector<unsigned> *m_tile_granular_data) {
 
@@ -103,11 +125,15 @@ void mapping_table_t::calculate_num_tile_granular_data(component_type_t m_compon
     std::vector<unsigned> parameters(parameter_type_t::NUM_PARAMETER_TYPES, 1);
 
     for(unsigned j = 0; j < parameter_type_t::NUM_PARAMETER_TYPES; j++) {
-        parameters[j] *= mapping_table[m_component_type][j];
+        parameters[j] = checked_multiply(parameters[j], mapping_table[m_component_type][j], "tile parameter size");
     }
     parameters[parameter_type_t::STRIDE]       = mapping_table[m_component_type][parameter_type_t::STRIDE];
-    parameters[parameter_type_t::INPUT_HEIGHT] = (parameters[parameter_type_t::OUTPUT_HEIGHT] - 1)*parameters[parameter_type_t::STRIDE] + parameters[parameter_type_t::FILTER_HEIGHT];
-    parameters[parameter_type_t::INPUT_WIDTH]  = (parameters[parameter_type_t::OUTPUT_WIDTH] - 1)*parameters[parameter_type_t::STRIDE] + parameters[parameter_type_t::FILTER_WIDTH];
+    parameters[parameter_type_t::INPUT_HEIGHT] =
+        checked_extent(parameters[parameter_type_t::OUTPUT_HEIGHT], parameters[parameter_type_t::STRIDE],
+                       parameters[parameter_type_t::FILTER_HEIGHT], "tile input height");
+    parameters[parameter_type_t::INPUT_WIDTH] =
+        checked_extent(parameters[parameter_type_t::OUTPUT_WIDTH], parameters[parameter_type_t::STRIDE],
+                       parameters[parameter_type_t::FILTER_WIDTH], "tile input width");
 
     m_tile_granular_data->at(data_type_t::INPUT) *= parameters[parameter_type_t::BATCH_SIZE]
                                                    *parameters[parameter_type_t::INPUT_CHANNEL]
@@ -128,12 +154,20 @@ void mapping_table_t::calculate_num_tile_granular_data(component_type_t m_compon
 
 // Calculate the number of active components (i.e., MAC, PE, Chips)
 unsigned mapping_table_t::calculate_active_component(component_type_t m_component_type) {
-    unsigned num_comp = 1;
+    uint64_t num_comp = 1;
     for(unsigned i = 0; i < 7; i++) {
         num_comp *= mapping_table[m_component_type][i];
+        if(num_comp > std::numeric_limits<unsigned>::max()) {
+            std::cerr << "Error: unsigned overflow while calculating active components" << std::endl;
+            exit(1);
+        }
     }
-    num_comp /= mapping_table[m_component_type][parameter_type_t::GROUP];
-    return num_comp;
+    const unsigned group = mapping_table[m_component_type][parameter_type_t::GROUP];
+    if(group == 0) {
+        std::cerr << "Error: mapping GROUP must be non-zero" << std::endl;
+        exit(1);
+    }
+    return static_cast<unsigned>(num_comp / group);
 }
 
 // Print out the value of mapping table.

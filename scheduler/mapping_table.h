@@ -2,7 +2,11 @@
 #define __PARAMETER_H__
 
 #include <cstring>
-#include "convolutional_layer.h"
+#include <string>
+#include <vector>
+
+#include "config.h"
+#include "def.h"
 
 class mapping_table_t {
 
@@ -17,8 +21,6 @@ public:
 	std::vector<unsigned> get_value(section_config_t m_section_config, std::string m_name);
     // Calculate the parameter size.
     std::vector<unsigned> calculate_parameter_size(component_type_t m_component_type);
-
-    std::vector<unsigned> calculate_parameter_size(component_type_t m_component_type, std::string m_parameter_order);
 
     // Calculate the number of tile-granular data 
     void calculate_num_tile_granular_data(component_type_t m_component_type, std::vector<unsigned> *m_tile_granumlar_data);

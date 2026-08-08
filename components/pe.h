@@ -1,6 +1,8 @@
 #ifndef __PE_H__
 #define __PE_H__
 
+#include <cstddef>
+
 #include "def.h"
 #include "utils.h"
 #include "data.h"
@@ -11,10 +13,10 @@
 class pe_array_t;
 class pe_t {
 
-public: 
+public:
     pe_t(section_config_t m_section_config);
     virtual ~pe_t();
-    
+
     // Initialize the PE.
     void init(section_config_t m_section_config);
 
@@ -41,7 +43,7 @@ public:
 
     /* Check PE status */
 
-    // Return true when the PE has no data. 
+    // Return true when the PE has no data.
     bool is_idle();
     // Check whether all data exist in the Local buffer.
     bool is_exist_data();
@@ -64,10 +66,8 @@ public:
     virtual void computation(scheduler_t *m_scheduler) = 0;
 
     // MAC operation
-    void mac_operation();
+    void mac_operation(scheduler_t *m_scheduler);
     void activation();
-    void max_pooling();
-    void avg_pooling();
 
     // Print out the configuration of PE.
     void print_specification();
@@ -86,11 +86,11 @@ public:
     data_t *input_data_lb;                                  // input data in local buffer
     data_t *weight_lb;                                      // weight in local buffer
     data_t *output_data_lb;                                 // output data in local buffer
-    
+
     unsigned input_size;                                    // Input local buffer size
     unsigned weight_size;                                   // Weight local buffer size
     unsigned output_size;                                   // Output local buffer size
-    
+
     std::vector<bool> bypass;                               // Check if bypass is applied at the local buffer
     unsigned index;                                         // Index of PE in PE array.
 
@@ -141,9 +141,9 @@ public:
 
     unsigned num_computation;                               // The number of computations
 
-    double    computation_cycle;                            // Total computation cycle 
+    double    computation_cycle;                            // Total computation cycle
     double    computation_energy;                           // Total computation energy.
-    
+
     std::vector<unsigned> num_request_to_lb;                // The number of data request from MAC unit to local buffer
     std::vector<unsigned> num_data_transfer_to_mac;         // The number of data transfer from local buffer to MAC unit
 
@@ -166,7 +166,7 @@ public:
     double write_back_cycle_mac;                            // Access cycle to MAC units when writing back output data.
     double write_back_cycle_lb;                             // Access cycle to local buffers when writing back output data.
     double overlapped_transfer_cycle;                       // Total transfer cycles between MAC unit and local buffer
-    
+
     std::vector<unsigned> line_size_mac;                    // Data block size of MAC unit.
     std::vector<unsigned> line_size_lb;                     // Data block size of local buffer.
 
@@ -188,6 +188,7 @@ protected:
     unsigned mac_width;                                     // Number of multiplier per MAC units
     unsigned num_active_macs;                               // Number of active MAC units.
     unsigned active_mac_width;
+    size_t mac_register_capacity;                            // Scalar register entries allocated per operand.
 
     float frequency;                                        // The frequency (GHz)
     float bandwidth;                                        // The bandwidth between MAC and local buffer (GB/sec)
@@ -198,13 +199,16 @@ protected:
     unsigned weight_index;                                  // Weight index in local buffer.
     unsigned output_index;                                  // Output index in local buffer.
 
-    // Flush counter 
+    // Flush counter
     unsigned input_flush_counter;                           // Input data flush counter.
     unsigned weight_flush_counter;                          // Weight flush counter.
     unsigned output_flush_counter;                          // Output data flush counter.
 
     // Whether the PE is in idle state or not.
     bool idle;
+
+    void clear_output_accumulators();
+    unsigned count_nonzero_mac_operations(scheduler_t *m_scheduler) const;
 
 };
 
@@ -241,7 +245,7 @@ class output_stationary_t : public pe_t {
 public:
     output_stationary_t(section_config_t m_section_config);
     ~output_stationary_t();
-    
+
     //Execute the MAC operation
     void computation(scheduler_t *m_scheduler);
 };

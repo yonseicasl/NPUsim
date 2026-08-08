@@ -4,7 +4,7 @@
 # Yonsei University, Seoul, Korea          #
 ############################################
 
-HDR=$(wildcard $(DIR)/schduler/*.h)
+HDR=$(wildcard $(DIR)/scheduler/*.h)
 HDR+=$(wildcard $(DIR)/utils/*.h)
 HDR+=$(wildcard $(DIR)/components/*.h)
 

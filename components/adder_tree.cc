@@ -1,3 +1,4 @@
+#include <iomanip>
 #include "adder_tree.h"
 
 adder_tree_t::adder_tree_t(section_config_t m_section_config) :
@@ -66,51 +67,7 @@ void adder_tree_t::init(section_config_t m_section_config) {
     }
     m_section_config.get_setting("pe_array_parameter_order", &array_parameter_order);
 
-    m_section_config.get_setting("exist_temporal_buffer", &exist_temporal_buffer);
-    std::string memory_type_str;
-    m_section_config.get_setting("memory_type", &memory_type_str);
-    if(memory_type_str == "shared") {
-        memory_type = memory_type_t::SEPARATE;
-
-        m_section_config.get_setting("input_buffer", &input_size);
-        m_section_config.get_setting("weight_buffer", &weight_size);
-        m_section_config.get_setting("output_buffer", &output_size);
-
-        input_size *= num_pes, weight_size *= num_pes, output_size *= num_pes;
-
-        unsigned num_input = input_size*num_pes/sizeof(data_t);
-        unsigned num_weight = weight_size*num_pes/sizeof(data_t);
-        unsigned num_output = output_size*num_pes/sizeof(data_t);
-
-        input_data  = new data_t[num_input]();
-        weight      = new data_t[num_weight]();
-        output_data = new data_t[num_output]();
-
-        memset(input_data, 1.0, num_input*sizeof(data_t));
-        memset(weight, 1.0, num_weight*sizeof(data_t));
-        memset(output_data, 1.0, num_output*sizeof(data_t));
-    }
-    else if(memory_type_str == "separate") {
-        memory_type = memory_type_t::SHARED;
-
-        m_section_config.get_setting("input_buffer", &input_size);
-        m_section_config.get_setting("weight_buffer", &weight_size);
-        m_section_config.get_setting("output_buffer", &output_size);
-
-        input_size *= num_pes, weight_size *= num_pes, output_size *= num_pes;
-
-        unsigned num_input = input_size*num_pes/sizeof(data_t);
-        unsigned num_weight = weight_size*num_pes/sizeof(data_t);
-        unsigned num_output = output_size*num_pes/sizeof(data_t);
-
-        input_data  = new data_t[num_input]();
-        weight      = new data_t[num_weight]();
-        output_data = new data_t[num_output]();
-
-        memset(input_data, 1.0, num_input*sizeof(data_t));
-        memset(weight, 1.0, num_weight*sizeof(data_t));
-        memset(output_data, 1.0, num_output*sizeof(data_t));
-    }
+    initialize_temporal_buffer(m_section_config);
 
     // Initialize the NoC type.
     std::string noc_str;
@@ -155,8 +112,6 @@ void adder_tree_t::init(section_config_t m_section_config) {
     tile_size.reserve(data_type_t::NUM_DATA_TYPES);
     tile_size.assign(data_type_t::NUM_DATA_TYPES, 1);
 
-    offsets.reserve(data_type_t::NUM_DATA_TYPES);
-    offsets.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     /* Initialize signals of adder tree */
 

@@ -1,13 +1,13 @@
 #include <iostream>
+#include <limits>
 #include <cmath>
 #include <cstring>
 #include "pe_array.h"
 
-pe_array_t::pe_array_t(section_config_t m_section_config) :
+pe_array_t::pe_array_t(section_config_t /*m_section_config*/) :
     input_data(NULL),
     weight(NULL),
     output_data(NULL),
-	workspace(NULL),
     equal_output_tile(false),
     duplicated_input(0),
     index(0),
@@ -19,7 +19,6 @@ pe_array_t::pe_array_t(section_config_t m_section_config) :
     stationary_type(stationary_type_t::UNDEFINED_STATIONARY),
     array_parameter_order("kbpqcrs"),
     noc_type(noc_type_t::UNDEFINED_NOC), 
-    data_format(data_format_t::CONVOLUTION),
     memory_type(memory_type_t::SEPARATE),
     height(1),
     width(1),
@@ -39,6 +38,61 @@ pe_array_t::pe_array_t(section_config_t m_section_config) :
 
 pe_array_t::~pe_array_t() {
 
+}
+void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
+    m_section_config.get_setting("exist_temporal_buffer", &exist_temporal_buffer);
+
+    std::string memory_type_str;
+    if(!m_section_config.get_setting("memory_type", &memory_type_str)) {
+        std::cerr << "Error: PE array requires memory_type" << std::endl;
+        exit(1);
+    }
+    lowercase(memory_type_str);
+    if(memory_type_str == "separated") memory_type_str = "separate";
+    if(memory_type_str == "separate") memory_type = memory_type_t::SEPARATE;
+    else if(memory_type_str == "shared") memory_type = memory_type_t::SHARED;
+    else {
+        std::cerr << "Error: invalid PE-array memory_type: " << memory_type_str << std::endl;
+        exit(1);
+    }
+
+    unsigned per_pe_input = 0;
+    unsigned per_pe_weight = 0;
+    unsigned per_pe_output = 0;
+    const bool have_explicit_buffers =
+        m_section_config.get_setting("input_buffer", &per_pe_input) &&
+        m_section_config.get_setting("weight_buffer", &per_pe_weight) &&
+        m_section_config.get_setting("output_buffer", &per_pe_output);
+    if(!have_explicit_buffers) {
+        if(!m_section_config.get_setting("input_size", &per_pe_input) ||
+           !m_section_config.get_setting("weight_size", &per_pe_weight) ||
+           !m_section_config.get_setting("output_size", &per_pe_output)) {
+            std::cerr << "Error: PE array requires input/weight/output buffer sizes" << std::endl;
+            exit(1);
+        }
+    }
+    if(per_pe_input == 0 || per_pe_weight == 0 || per_pe_output == 0) {
+        std::cerr << "Error: PE-array buffer sizes must be non-zero" << std::endl;
+        exit(1);
+    }
+    if(num_pes == 0 || num_pes > std::numeric_limits<unsigned>::max()/per_pe_input ||
+       num_pes > std::numeric_limits<unsigned>::max()/per_pe_weight ||
+       num_pes > std::numeric_limits<unsigned>::max()/per_pe_output) {
+        std::cerr << "Error: PE-array buffer size overflow" << std::endl;
+        exit(1);
+    }
+
+    input_size = per_pe_input * num_pes;
+    weight_size = per_pe_weight * num_pes;
+    output_size = per_pe_output * num_pes;
+
+    const size_t num_input = (static_cast<size_t>(input_size) + sizeof(data_t) - 1) / sizeof(data_t);
+    const size_t num_weight = (static_cast<size_t>(weight_size) + sizeof(data_t) - 1) / sizeof(data_t);
+    const size_t num_output = (static_cast<size_t>(output_size) + sizeof(data_t) - 1) / sizeof(data_t);
+
+    input_data = new data_t[num_input]();
+    weight = new data_t[num_weight]();
+    output_data = new data_t[num_output]();
 }
 
 void pe_array_t::connect(global_buffer_t *m_global_buffer) {
@@ -242,9 +296,9 @@ void pe_array_t::reset() {
         pes[i]->reset();
     }
 
-    memset(input_data, 0.0, input_size);
-    memset(weight, 0.0, weight_size);
-    memset(output_data, 0.0, output_size);
+    std::fill_n(input_data, (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+    std::fill_n(weight, (static_cast<size_t>(weight_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+    std::fill_n(output_data, (static_cast<size_t>(output_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
 
     initial = true;
     equal_output_tile = false;

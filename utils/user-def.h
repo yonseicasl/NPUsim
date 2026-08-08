@@ -3,7 +3,7 @@
 
 #ifdef USER_INTEGER
     #define DATA_BIT 3
-#elif USER_FLOAT
+#elif defined(USER_FLOAT)
     #define DATA_BIT 16
     #define SIGN_BIT 1
     #define EXPONENT 5

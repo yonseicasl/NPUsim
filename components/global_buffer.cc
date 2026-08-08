@@ -1,8 +1,9 @@
+#include <iomanip>
 #include <cmath>
 #include <cstring>
 #include "global_buffer.h"
 
-global_buffer_t::global_buffer_t(section_config_t m_section_config) :
+global_buffer_t::global_buffer_t(section_config_t /*m_section_config*/) :
     multi_chip(NULL),
     data(NULL),
     double_buffer(false),
@@ -1845,7 +1846,7 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
 }
 
 void global_buffer_t::reset() {
-    memset(data, 0.0, size);
+    std::fill_n(data, ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
     
     idle = false;
     initial = true;
@@ -1897,9 +1898,8 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     input_size *= 1024, weight_size *= 1024, output_size *= 1024;
     size = input_size + weight_size + output_size;
 
-    unsigned num_entry = (unsigned)size/sizeof(data_t);
+    unsigned num_entry = ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t);
     data = new data_t[num_entry]();
-    memset(data, 1.0, num_entry*sizeof(data_t));
 
     // Initialize the frequency and bandwidth of the separate buffer
     m_section_config.get_setting("frequency", &frequency);
@@ -2136,9 +2136,8 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     // KB -> Byte
     size *= 1024;
 
-    unsigned num_entry = size/sizeof(data_t);
+    unsigned num_entry = ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t);
     data = new data_t[num_entry]();
-    memset(data, 1.0, num_entry*sizeof(data_t));
 
     // Initialize frequency and bandwidth of the shared buffer
     m_section_config.get_setting("frequency", &frequency);

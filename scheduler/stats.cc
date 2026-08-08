@@ -1,3 +1,5 @@
+#include <iomanip>
+#include <fstream>
 #include "stats.h"
 
 stats_t::stats_t() :

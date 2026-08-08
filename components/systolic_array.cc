@@ -1,10 +1,8 @@
+#include <iomanip>
 #include "systolic_array.h"
 
 systolic_array_t::systolic_array_t(section_config_t m_section_config) :
-    pe_array_t(m_section_config),
-    workspace_input(NULL),
-    workspace_weight(NULL),
-    workspace_output(NULL) {
+    pe_array_t(m_section_config) {
 
     init(m_section_config);
 }
@@ -19,11 +17,6 @@ systolic_array_t::~systolic_array_t() {
 		delete pes[i];
 	}
 
-	if(data_format == data_format_t::GEMM) {
-		delete [] workspace_input;
-        delete [] workspace_weight;
-        delete [] workspace_output;
-	}
 }
 
 // Initialize the PE array.
@@ -73,63 +66,8 @@ void systolic_array_t::init(section_config_t m_section_config) {
     }
     m_section_config.get_setting("pe_array_parameter_order", &array_parameter_order);
 
-    /* TODO */
-    std::string memory_type_str;
-    m_section_config.get_setting("memory_type", &memory_type_str);
-    if(memory_type_str == "shared") {
-        memory_type = memory_type_t::SEPARATE;
+    initialize_temporal_buffer(m_section_config);
 
-        m_section_config.get_setting("input_buffer", &input_size);
-        m_section_config.get_setting("weight_buffer", &weight_size);
-        m_section_config.get_setting("output_buffer", &output_size);
-
-        input_size *= num_pes, weight_size *= num_pes, output_size *= num_pes;
-
-        unsigned num_input = input_size*num_pes/sizeof(data_t);
-        unsigned num_weight = weight_size*num_pes/sizeof(data_t);
-        unsigned num_output = output_size*num_pes/sizeof(data_t);
-
-        input_data  = new data_t[num_input]();
-        weight      = new data_t[num_weight]();
-        output_data = new data_t[num_output]();
-
-        memset(input_data, 1.0, num_input*sizeof(data_t));
-        memset(weight, 1.0, num_weight*sizeof(data_t));
-        memset(output_data, 1.0, num_output*sizeof(data_t));
-    }
-    else if(memory_type_str == "separate") {
-        memory_type = memory_type_t::SHARED;
-
-        m_section_config.get_setting("input_buffer", &input_size);
-        m_section_config.get_setting("weight_buffer", &weight_size);
-        m_section_config.get_setting("output_buffer", &output_size);
-
-        input_size *= num_pes, weight_size *= num_pes, output_size *= num_pes;
-
-        unsigned num_input = input_size*num_pes/sizeof(data_t);
-        unsigned num_weight = weight_size*num_pes/sizeof(data_t);
-        unsigned num_output = output_size*num_pes/sizeof(data_t);
-
-        input_data  = new data_t[num_input]();
-        weight      = new data_t[num_weight]();
-        output_data = new data_t[num_output]();
-
-        memset(input_data, 1.0, num_input*sizeof(data_t));
-        memset(weight, 1.0, num_weight*sizeof(data_t));
-        memset(output_data, 1.0, num_output*sizeof(data_t));
-    }
-
-    // Initialize data format at systolic array
-    std::string data_format_str_pe_array;
-    if(m_section_config.get_setting("data_format", &data_format_str_pe_array)) {
-        data_format = (data_format_t)get_type(data_format_str, data_format_str_pe_array);
-    }
-
-	if(data_format == data_format_t::GEMM) {
-		unsigned input_workspace_size = output_size * weight_size / sizeof(data_t);
-		workspace_input = new data_t[input_workspace_size]();
-		memset(workspace_input, 1.0, input_workspace_size*sizeof(data_t));
-	}
 
     // Initialize the NoC type
     std::string noc_str;
@@ -182,8 +120,6 @@ void systolic_array_t::init(section_config_t m_section_config) {
     tile_size.reserve(data_type_t::NUM_DATA_TYPES);
     tile_size.assign(data_type_t::NUM_DATA_TYPES, 1);
 
-    offsets.reserve(data_type_t::NUM_DATA_TYPES);
-    offsets.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     /* Initialize signals of systolic array */
 
@@ -245,8 +181,6 @@ void systolic_array_t::update_tile_size(scheduler_t *m_scheduler) {
     
     // Update PE array tile size.
     tile_size = m_scheduler->tile_size[component_type_t::PE_Y];
-    /* TODO */
-    //update_offset();
 
     // Update PEs' tile size.
     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
@@ -276,12 +210,6 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
 
                     parameters_pe_array = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::PE_Y);
                     parameters_pe = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::PE);
-#ifdef FUNCTIONAL
-                    flatten(parameters_pe_array[parameter_type_t::INPUT_CHANNEL], parameters_pe_array[parameter_type_t::INPUT_HEIGHT], parameters_pe_array[parameter_type_t::INPUT_WIDTH], 
-                            parameters_pe_array[parameter_type_t::FILTER_HEIGHT], parameters_pe_array[parameter_type_t::FILTER_WIDTH], parameters_pe_array[parameter_type_t::STRIDE], 
-                            0, 0,
-                            input_data, workspace_input);
-#endif
 
                     unsigned num_access_pe = 0, num_access_pe_array = 0;
 
@@ -400,12 +328,6 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
 
                     parameters_pe_array = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::PE_Y);
                     parameters_pe = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::PE);
-#ifdef FUNCTIONAL
-                    flatten(parameters_pe_array[parameter_type_t::INPUT_CHANNEL], parameters_pe_array[parameter_type_t::INPUT_HEIGHT], parameters_pe_array[parameter_type_t::INPUT_WIDTH], 
-                            parameters_pe_array[parameter_type_t::FILTER_HEIGHT], parameters_pe_array[parameter_type_t::FILTER_WIDTH], parameters_pe_array[parameter_type_t::STRIDE], 
-                            0, 0,
-                            input_data, workspace_input);
-#endif
 
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
 #ifdef FUNCTIONAL
@@ -886,45 +808,6 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
 
 }
 
-void systolic_array_t::flatten(unsigned m_channel, unsigned m_height, unsigned m_width,
-							 unsigned m_weight_height, unsigned m_weight_width, unsigned m_stride, 
-							 unsigned m_padding_height, unsigned m_padding_width,
-                             data_t *m_data, data_t *m_workspace) {
-	unsigned column_height = (m_height + 2*m_padding_height - m_weight_height) / m_stride + 1;
-	unsigned column_width = (m_width + 2*m_padding_width - m_weight_width) / m_stride + 1;
-	unsigned column_channel = m_channel*m_weight_height*m_weight_width;
-
-	// Flatten input data.
-	for (unsigned i = 0; i < column_channel; i++) {
-		unsigned offset_w = i % m_weight_width;
-		unsigned offset_h = (i / m_weight_width) % m_weight_height;
-		unsigned im_c = i / m_weight_width / m_weight_height;
-
-		for (unsigned h = 0; h < column_height; h++) {
-			for (unsigned w = 0; w < column_width; w++) {
-				unsigned im_row = offset_h + h * m_stride;
-				unsigned im_col = offset_w + w * m_stride;
-				unsigned column_index = (i * column_height + h) * column_width + w;
-				im_row -= m_padding_height;
-				im_col -= m_padding_width;
-
-#if defined(USER_INTEGER) || defined(USER_FLOAT)
-				if (im_row < 0 || im_col < 0 || im_row >= m_height || im_col >= m_width) {m_workspace[column_index].value = 0.0;}
-				else {
-					m_workspace[column_index].value = 
-						m_data[im_col + m_width * (im_row + m_height * im_c)].value;
-				}
-#else 
-				if (im_row < 0 || im_col < 0 || im_row >= m_height || im_col >= m_width) {m_workspace[column_index] = 0.0;}
-				else {
-					m_workspace[column_index] = 
-						m_data[im_col + m_width * (im_row + m_height * im_c)];
-				}
-#endif
-			}
-		}
-	}
-}
 
 // Print out the specification of PE array.
 void systolic_array_t::print_specification() {

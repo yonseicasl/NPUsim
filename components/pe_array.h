@@ -26,8 +26,6 @@ public:
     // Update tile size of PE array
     virtual void update_tile_size(scheduler_t *m_scheduler) = 0;
 
-    void update_offset();
-
     /* Get the PE array's specifications */
 
     // Get stationary type (same as PE stationary type)
@@ -70,17 +68,14 @@ public:
     void reset();
 
     std::vector<pe_t*> pes;                                 // A group of PEs.
-    data_t *data;
     data_t *input_data;
     data_t *weight;
     data_t *output_data;
-	data_t *workspace;							            // Temporal workspace for GEMM used in PE array.
 
     std::vector<bool> skip_transfer;                        // Check whether the data should transferred or not.
     bool              equal_output_tile;
    
     std::vector<unsigned> tile_size;                        // Tile size of PE array
-    std::vector<unsigned> offsets;                          // Offset index of PE array
     unsigned duplicated_input;                              //
 
     /* PE array specifications */
@@ -128,12 +123,13 @@ public:
 
 protected:
 
+    void initialize_temporal_buffer(section_config_t m_section_config);
+
     global_buffer_t *global_buffer;                         // Global buffer to connect
 
     stationary_type_t stationary_type;                      // Stationary type at the PE array (equal to PE stationary type)
     std::string array_parameter_order;                      // Order of DNN parameters
     noc_type_t noc_type;                                    // NoC type
-	data_format_t data_format;                              // Data format (General or GEMM)
     memory_type_t memory_type;
 
     unsigned height;                                        // Y-dimension of PE array

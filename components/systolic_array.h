@@ -19,18 +19,9 @@ public:
     // Transfer data to the local buffers
     void data_transfer(scheduler_t *m_scheduler);
 
-	// Flatten DNN data.
-	void flatten(unsigned m_channel, unsigned m_height, unsigned m_width,
-				unsigned m_weight_height, unsigned m_weight_width, unsigned m_stride, 
-				unsigned m_padding_height, unsigned m_padding_width,
-                data_t *m_data, data_t *m_workspace);
-
     // Print out the configuration of PU.
     void print_specification();
 
-    data_t *workspace_input;                        // Input data for GEMM used in systolic array
-    data_t *workspace_weight;                       // Weight for GEMM used in systolic array
-    data_t *workspace_output;                       // Output data for GEMM used in systolic array
 };
 
 #endif

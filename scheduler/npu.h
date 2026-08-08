@@ -50,8 +50,6 @@ public:
 
     /* Operation at accelerator components. */
 
-    // MAC operation at PEs (Multi threads).
-    void execute_thread(unsigned begin, unsigned end);
     // Computation at PEs.
     void execute();
     // Data transfer from PE array to local buffers in PEs.
@@ -95,8 +93,13 @@ public:
 protected:
     unsigned num_processors;                        // The number of on-chip processors.
     unsigned num_pes;                               // The number of processing elements for each processors.
-    data_format_t data_format;                      // Data format : Convolution or GEMM (General Matrix Multiplication).
     compression_type_t compression_type;            // Compression type : Dense, CSR, CSC, SparseMap
+    unsigned num_skipped_timing_layers;             // Layers excluded from accelerator timing.
+    // Validate physical component counts before connecting the hierarchy.
+    void validate_accelerator_components();
+    // Validate mapping-selected active components before a layer starts.
+    void validate_active_components();
+
 
     /* Accelerator components */
     std::vector<pe_array_t*> pe_arrays;             // PE array

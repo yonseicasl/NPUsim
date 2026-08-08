@@ -6,6 +6,7 @@
 #include "convolutional_layer.h"
 #include "connected_layer.h"
 
+#include "data.h"
 #include "mapping_table.h"
 #include "user-def.h"
 #include "def.h"

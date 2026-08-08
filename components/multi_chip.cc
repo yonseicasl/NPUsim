@@ -1,3 +1,4 @@
+#include <iomanip>
 #include <cmath>
 #include <cstring>
 #include "multi_chip.h"
@@ -113,10 +114,9 @@ void multi_chip_t::init(section_config_t m_section_config) {
         std::cerr << "Error: Wrong memory type name : " << memory_type << std::endl;
         exit(1);
     }
-    unsigned num_entry = memory_size/sizeof(data_t);
+    unsigned num_entry = (memory_size + sizeof(data_t) - 1)/sizeof(data_t);
 
     data = new data_t[num_entry](); 
-    memset(data, 0.0, num_entry*sizeof(data_t));
 
     std::string nop_str;
     if(m_section_config.get_setting("nop", &nop_str)) {
@@ -1667,7 +1667,7 @@ void multi_chip_t::print_specification() {
 }
 
 void multi_chip_t::reset() {
-    memset(data, 0.0, memory_size);
+    std::fill_n(data, (memory_size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
 
     initial = true;
     equal_output_tile = false;

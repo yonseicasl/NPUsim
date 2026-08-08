@@ -19,12 +19,14 @@ lib=$libdir/libnpusim.so
 ##### External directory #####
 # Nebula directory
 nebuladir=$extdir/nebula
-# Pytorch directory
-pytorchdir=$extdir/pytorch
 # DRAMsim directory
 dramsim3dir=$extdir/DRAMsim3
 # NPUsim model directory
 modeldir=$npusimdir/models
+
+# Reproducible external dependency revisions (override through the environment if needed).
+NEBULA_COMMIT=${NEBULA_COMMIT:-36d7d9049a76d3dd2c2c2eeca8f8b7e93e9a17d6}
+DRAMSIM3_COMMIT=${DRAMSIM3_COMMIT:-29817593b3389f1337235d63cac515024ab8fd6e}
 
 
 ##### NPUsim compile options #####
@@ -83,13 +85,13 @@ if [[ $FUNCTIONAL -eq 1 ]]; then
 fi
 
 # Using integer
-if [[ $USE_INTEGER -eq 1 ]]; then
+if [[ $USER_INTEGER -eq 1 ]]; then
     ccopt+=" -DUSER_INTEGER"
 fi
 
 #Using float
-if [[ $USE_FLOAT -eq 1 ]]; then
-    ccopt +=" -DUSER_FLOAT"
+if [[ $USER_FLOAT -eq 1 ]]; then
+    ccopt+=" -DUSER_FLOAT"
 fi
 
 # DRAMsim3 Connection
@@ -122,6 +124,14 @@ function print_help {
     exit 0
 }
 
+function pin_dependency {
+    local dependency_dir=$1
+    local dependency_branch=$2
+    local dependency_commit=$3
+    git -C "$dependency_dir" fetch origin "$dependency_branch"
+    git -C "$dependency_dir" checkout --detach "$dependency_commit"
+}
+
 ##### NPUsim build function #####
 function build_model {
     #echo -e "NPUsim build $1"
@@ -138,16 +148,12 @@ function build_model {
                 echo -e "\n# Install Nebula framework from Github"
                 cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
             fi
+            pin_dependency "$nebuladir" npusim "$NEBULA_COMMIT"
 
             # Build Nebula library
             echo -e "\n# Build Nebula software framework"
             cd $nebuladir; ./nebula.sh build lib
 
-            # Install PyTorch framework from Github
-            if [[ ! -d $pytorchdir ]]; then
-                echo -e "\n# Install PyTorch software framework"
-                cd $extdir; git clone https://github.com/pytorch/pytorch.git
-            fi
 
             # Build DRAMSim3
             # Install DRAMSim3 from Github
@@ -155,6 +161,7 @@ function build_model {
                 echo -e "\n# Install DRAMSim3"
                 cd $extdir; git clone --branch master --single-branch https://github.com/umd-memsys/DRAMsim3.git
             fi
+            pin_dependency "$dramsim3dir" master "$DRAMSIM3_COMMIT"
             # Build DRAMSim3
             echo -e "\n# Build DRAMsim3"
             cd $dramsim3dir; make libdramsim3.so
@@ -179,6 +186,7 @@ function build_model {
                 echo -e "\n# Install DRAMSim3"
                 cd $extdir; git clone --branch master --single-branch https://github.com/umd-memsys/DRAMsim3.git
             fi
+            pin_dependency "$dramsim3dir" master "$DRAMSIM3_COMMIT"
             # Build DRAMSim3
             echo -e "\n# Build DRAMsim3"
             cd $dramsim3dir; make libdramsim3.so
@@ -195,16 +203,12 @@ function build_model {
                 echo -e "\n# Install Nebula framework from Github"
                 cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
             fi
+            pin_dependency "$nebuladir" npusim "$NEBULA_COMMIT"
 
             # Build Nebula library
             echo -e "\n# Build Nebula software framework"
             cd $nebuladir; ./nebula.sh build lib
 
-            # Install PyTorch framework from Github
-            if [[ ! -d $pytorchdir ]]; then
-                echo -e "\n# Install PyTorch software framework"
-                cd $extdir; git clone https://github.com/pytorch/pytorch.git
-            fi
 
             # Build DRAMSim3
             # Install DRAMSim3 from Github
@@ -212,6 +216,7 @@ function build_model {
                 echo -e "\n# Install DRAMSim3"
                 cd $extdir; git clone --branch master --single-branch https://github.com/umd-memsys/DRAMsim3.git
             fi
+            pin_dependency "$dramsim3dir" master "$DRAMSIM3_COMMIT"
             # Build DRAMSim3
             echo -e "\n# Build DRAMsim3"
             cd $dramsim3dir; make libdramsim3.so
@@ -238,6 +243,7 @@ function build_model {
                 echo -e "\n# Install Nebula framework from Github"
                 cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
             fi
+            pin_dependency "$nebuladir" npusim "$NEBULA_COMMIT"
 
             # Build Nebula library
             echo -e "\n# Build Nebula software framework"
@@ -254,15 +260,8 @@ function build_model {
             cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
             ;;
         pytorch)
-            # Make extension directory
-            if [[ ! -d $extdir ]]; then
-                mkdir $extdir
-            fi
-            # Install PyTorch framework from Github
-            if [[ ! -d $pytorchdir ]]; then
-                echo -e "\n# Install PyTorch software framework"
-                cd $extdir; git clone https://github.com/pytorch/pytorch.git
-            fi
+            echo "NPUsim uses the system Python/PyTorch installation; a PyTorch source checkout is not required."
+            echo "Install the Python development package and PyTorch in the active Python environment."
             ;;
         *)
             # Print out error message
@@ -356,9 +355,20 @@ function clean_model {
 }
 
 function run_npusim {
+    local target=$1
+    local network=$2
+    local mapping=$3
+    local identifier_pattern='^[A-Za-z0-9._-]+$'
+
+    if [[ ! $target =~ $identifier_pattern || ! $network =~ $identifier_pattern || ! $mapping =~ $identifier_pattern ]]; then
+        echo "Error: accelerator, network, and mapping names may contain only letters, numbers, '.', '_', and '-'." >&2
+        return 1
+    fi
+
     echo -e "\n# Running $network on $target"
-    cd $modeldir
-    eval ./model run $target $network $mapping
+    cd "$modeldir" || return 1
+    NPUSIM_CONFIG_ROOT="$npusimdir/configs" ./model run "$target" "$network" "$mapping" || return 1
+    ./move.sh "$target" "$network" "$mapping"
 }
 
 # Print usage help.
@@ -382,7 +392,7 @@ case "$action" in
         ;;
     run)
         # Action for running
-        run_npusim $target $network $mapping
+        run_npusim "$target" "$network" "$mapping"
         ;;
     help) 
         # Action for help

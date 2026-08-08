@@ -2,24 +2,27 @@
 
 #include "npu.h"
 #include "config.h"
+#include "datatype.h"
 
 npu_t::npu_t() :
  num_processors(1),
  num_pes(1),
- data_format(data_format_t::CONVOLUTION),
  compression_type(compression_type_t::DENSE),
+ num_skipped_timing_layers(0),
  multi_chip(NULL),
- dram(NULL) {
+ dram(NULL),
+ network(NULL),
+ layer(NULL),
+ scheduler(NULL),
+ network_stats(NULL) {
 
 }
 
 npu_t::~npu_t() {
 
     // Free the memory for accelerator components
-    for(unsigned i = 0; i < num_processors; i++) {
-        delete pe_arrays[i];
-        delete global_buffers[i];
-    }
+    for(auto pe_array : pe_arrays) { delete pe_array; }
+    for(auto global_buffer : global_buffers) { delete global_buffer; }
 
     delete multi_chip;
     delete dram;
@@ -28,19 +31,11 @@ npu_t::~npu_t() {
 	delete network;
 
 	// Free the memory for mapping table.
-    for(auto vector : mapping_tables) { delete vector;}
-    mapping_tables.clear();
-	//for(unsigned i = 0; i < mapping_tables.size(); i++) { delete mapping_tables[i]; }
+    for(auto mapping_table : mapping_tables) { delete mapping_table; }
 
     // Free the memory for scheduler.
-    schedulers.clear();
-    for(unsigned i = 0; i < schedulers.size(); i++) {
-        delete schedulers[i];
-    }
-
-    for(unsigned i = 0; i < layer_stats.size(); i++) {
-        delete layer_stats[i];
-    }
+    for(auto scheduler_ : schedulers) { delete scheduler_; }
+    for(auto stats : layer_stats) { delete stats; }
     delete network_stats;
 
 }
@@ -52,19 +47,39 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     config_t accelerator_config;
     accelerator_config.parse(m_accelerator_config);
 
+    // Read the accelerator-wide chip count before creating per-chip components.
+    unsigned accelerator_sections = 0;
+    for(unsigned i = 0; i < accelerator_config.sections.size(); i++) {
+        section_config_t section_config = accelerator_config.sections[i];
+        std::string section_name = section_config.name;
+        lowercase(section_name);
+        if(section_name != "accelerator") continue;
+
+        accelerator_sections++;
+        runtime_datatypes().configure(section_config);
+        std::cout << "# Runtime formats: input=" << runtime_datatypes().describe(data_type_t::INPUT)
+                  << " weight=" << runtime_datatypes().describe(data_type_t::WEIGHT)
+                  << " output=" << runtime_datatypes().describe(data_type_t::OUTPUT)
+                  << " accumulator=" << runtime_datatypes().accumulator_format().name << std::endl;
+        if(!section_config.get_setting("num_chips", &num_processors) &&
+           !section_config.get_setting("num_processors", &num_processors)) {
+            std::cerr << "Error: [accelerator] requires num_chips" << std::endl;
+            exit(1);
+        }
+    }
+    if(accelerator_sections != 1 || num_processors == 0) {
+        std::cerr << "Error: accelerator config requires exactly one non-zero [accelerator] section"
+                  << std::endl;
+        exit(1);
+    }
+
     // Initialize the components.
     for(unsigned i = 0 ; i < accelerator_config.sections.size(); i++) {
         section_config_t section_config = accelerator_config.sections[i];
 
         if(section_config.name == "accelerator") {
-            section_config.get_setting("num_processors", &num_processors);
             section_config.get_setting("num_pes", &num_pes);
     
-            // Initialize data format : Convolution or GEMM.
-            std::string format_str;
-            if(section_config.get_setting("data_format", &format_str)) {
-                data_format = (data_format_t)get_type(data_format_str, format_str);
-            }
             // Initialize compression type : Dense, CSR, CSC, SparseMap.
             std::string compression_str;
             if(section_config.get_setting("compression_type", &compression_str)) {
@@ -105,7 +120,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
                 global_buffers.emplace_back(global_buffer);
             }
         }
-        else if(section_config.name == "shared" || section_config.name == " SHARED") {
+        else if(section_config.name == "shared" || section_config.name == "SHARED") {
             global_buffer_t *global_buffer;
             for(unsigned i = 0; i < num_processors; i++) {
                 global_buffer = new shared_buffer_t(section_config);
@@ -115,10 +130,18 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         }
         // Initialize Processors.
         else if(section_config.name == "multi_chip" || section_config.name == "MULTI_CHIP") {
+            if(multi_chip != NULL) {
+                std::cerr << "Error: duplicate [multi_chip] section" << std::endl;
+                exit(1);
+            }
             multi_chip = new multi_chip_t(section_config);
         }
         // Initialize off-chip memory 
         else if(section_config.name == "dram") {
+            if(dram != NULL) {
+                std::cerr << "Error: duplicate [dram] section" << std::endl;
+                exit(1);
+            }
             dram = new dram_t(section_config);
         }
         else {
@@ -126,6 +149,8 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             exit(1);
         }
     }
+    validate_accelerator_components();
+
 
     // Connect components
     connect();
@@ -178,6 +203,10 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 		mapping_table = new mapping_table_t(section_config);
 		mapping_tables.emplace_back(mapping_table);
 	}
+    if(mapping_tables.empty()) {
+        std::cerr << "Error: mapping config contains no layers" << std::endl;
+        exit(1);
+    }
     std::cout << "  Done!" << std::endl;
 
     /* Initialize the scheduler */
@@ -203,6 +232,49 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     network_stats = new stats_t();
     std::cout << "  Done!" << std::endl;
 }
+void npu_t::validate_accelerator_components() {
+    if(pe_arrays.size() != num_processors || global_buffers.size() != num_processors) {
+        std::cerr << "Error: expected " << num_processors
+                  << " PE arrays and global buffers, but found "
+                  << pe_arrays.size() << " and " << global_buffers.size() << std::endl;
+        exit(1);
+    }
+    if(multi_chip == NULL || dram == NULL) {
+        std::cerr << "Error: accelerator config requires one [multi_chip] and one [dram] section" << std::endl;
+        exit(1);
+    }
+    if(multi_chip->get_number_of_chips() != num_processors) {
+        std::cerr << "Error: num_chips=" << num_processors
+                  << " does not match [multi_chip] height*width="
+                  << multi_chip->get_number_of_chips() << std::endl;
+        exit(1);
+    }
+    for(unsigned i = 0; i < pe_arrays.size(); i++) {
+        if(pe_arrays[i] == NULL || pe_arrays[i]->pes.empty() || global_buffers[i] == NULL) {
+            std::cerr << "Error: chip " << i << " has an incomplete PE-array/global-buffer hierarchy" << std::endl;
+            exit(1);
+        }
+    }
+}
+
+void npu_t::validate_active_components() {
+    const size_t active_chips = static_cast<size_t>(scheduler->num_active_chips_x) * scheduler->num_active_chips_y;
+    const size_t active_pes = static_cast<size_t>(scheduler->num_active_pe_x) * scheduler->num_active_pe_y;
+    if(active_chips == 0 || active_chips > pe_arrays.size() || active_chips > global_buffers.size()) {
+        std::cerr << "Error: mapping activates " << active_chips
+                  << " chips, but the accelerator provides " << num_processors << std::endl;
+        exit(1);
+    }
+    for(size_t i = 0; i < active_chips; i++) {
+        if(active_pes == 0 || active_pes > pe_arrays[i]->get_number_of_pes()) {
+            std::cerr << "Error: mapping activates " << active_pes
+                      << " PEs on chip " << i << ", but only "
+                      << pe_arrays[i]->get_number_of_pes() << " are available" << std::endl;
+            exit(1);
+        }
+    }
+}
+
 
 // Connect accelerator components.
 void npu_t::connect() {
@@ -232,25 +304,23 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
     // Run the network
 	for(unsigned iteration = 0; iteration < num_iteration; iteration++) {
 		network->load_data(iteration);
+        num_skipped_timing_layers = 0;
 
         // Layer-wise simulation.
 		for(unsigned index = 0; index < network->num_layers; index++) {
             network->layers[index]->input_data = index > 0 ? network->layers[index-1]->output_data : network->input_data;
-            // Run on accelerator if the layer type is
-            // Convolutional, Fully-connected, Max pooling, or Average pooling.
+            // The current accelerator timing path supports convolution and fully-connected layers.
 			if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
 			   network->layers[index]->layer_type == nebula::CONNECTED_LAYER) {
-               //network->layers[index]->layer_type == nebula::AVGPOOL_LAYER ||
-               //network->layers[index]->layer_type == nebula::MAXPOOL_LAYER) {
-
+                if(index >= schedulers.size()) {
+                    std::cerr << "Error: no mapping section for executable network layer "
+                              << index << std::endl;
+                    exit(1);
+                }
                 if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER) {
                     schedulers[index]->layer_name = layer_name_t::CONVOLUTIONAL_LAYER;
                 } else if(network->layers[index]->layer_type == nebula::CONNECTED_LAYER) {
                     schedulers[index]->layer_name = layer_name_t::CONNECTED_LAYER;
-                } else if(network->layers[index]->layer_type == nebula::AVGPOOL_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::AVGPOOL_LAYER;
-                } else if(network->layers[index]->layer_type == nebula::MAXPOOL_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::MAXPOOL_LAYER;
                 }
 
                 layer = network->layers[index];
@@ -286,6 +356,11 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
                 //dram->disconnect_layer();
 			}
+            else {
+                num_skipped_timing_layers++;
+                std::cerr << "Warning: network layer " << index
+                          << " is excluded from accelerator timing (only convolution/connected are supported)" << std::endl;
+            }
 #ifdef FUNCTIONAL
             network->layers[index]->forward();
 #endif
@@ -448,6 +523,13 @@ void npu_t::print_total_result(const std::string m_accelerator_config, const std
     output_file.open(output_file_name, std::ios::out);
 
     network_stats->print_results(output_file);
+    if(num_skipped_timing_layers > 0) {
+        const std::string warning = "WARNING: partial timing result; " +
+            std::to_string(num_skipped_timing_layers) +
+            " non-convolution/connected layers were excluded.";
+        std::cerr << warning << std::endl;
+        output_file << warning << std::endl << std::endl;
+    }
 
     output_file.close();
 }
@@ -463,6 +545,7 @@ void npu_t::reset() {
 }
 
 void npu_t::update_tile_size() {
+    validate_active_components();
     dram->update_tile_size(scheduler);
     multi_chip->update_tile_size(scheduler);
 

@@ -1,8 +1,112 @@
+#include <iomanip>
 #include <string>
 #include <cassert>
 #include <cstring>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include "pe.h"
+#include "datatype.h"
+
+namespace {
+
+size_t checked_product(size_t lhs, size_t rhs, const char *context) {
+    if(lhs != 0 && rhs > std::numeric_limits<size_t>::max()/lhs) {
+        std::cerr << "Error: size overflow while calculating " << context << std::endl;
+        exit(1);
+    }
+    return lhs * rhs;
+}
+
+bool is_power_of_two(unsigned value) {
+    return value != 0 && (value & (value - 1)) == 0;
+}
+
+struct mac_geometry_t {
+    unsigned batch;
+    unsigned groups;
+    unsigned output_channels_per_group;
+    unsigned input_channels_per_group;
+    unsigned output_height;
+    unsigned output_width;
+    unsigned input_height;
+    unsigned input_width;
+    unsigned filter_height;
+    unsigned filter_width;
+    unsigned stride;
+    size_t input_elements;
+    size_t weight_elements;
+    size_t output_elements;
+    size_t operations;
+};
+
+mac_geometry_t get_mac_geometry(scheduler_t *m_scheduler) {
+    const std::vector<unsigned> parameters =
+        m_scheduler->mapping_table->calculate_parameter_size(component_type_t::MAC);
+    const unsigned groups = parameters[parameter_type_t::GROUP];
+    const unsigned output_channels = parameters[parameter_type_t::OUTPUT_CHANNEL];
+    const unsigned input_channels = parameters[parameter_type_t::INPUT_CHANNEL];
+
+    if(groups == 0 || output_channels == 0 || input_channels == 0 ||
+       output_channels % groups != 0 || input_channels % groups != 0 ||
+       parameters[parameter_type_t::BATCH_SIZE] == 0 ||
+       parameters[parameter_type_t::OUTPUT_HEIGHT] == 0 ||
+       parameters[parameter_type_t::OUTPUT_WIDTH] == 0 ||
+       parameters[parameter_type_t::INPUT_HEIGHT] == 0 ||
+       parameters[parameter_type_t::INPUT_WIDTH] == 0 ||
+       parameters[parameter_type_t::FILTER_HEIGHT] == 0 ||
+       parameters[parameter_type_t::FILTER_WIDTH] == 0 ||
+       parameters[parameter_type_t::STRIDE] == 0) {
+        std::cerr << "Error: invalid MAC mapping geometry" << std::endl;
+        exit(1);
+    }
+
+    mac_geometry_t geometry;
+    geometry.batch = parameters[parameter_type_t::BATCH_SIZE];
+    geometry.groups = groups;
+    geometry.output_channels_per_group = output_channels/groups;
+    geometry.input_channels_per_group = input_channels/groups;
+    geometry.output_height = parameters[parameter_type_t::OUTPUT_HEIGHT];
+    geometry.output_width = parameters[parameter_type_t::OUTPUT_WIDTH];
+    geometry.input_height = parameters[parameter_type_t::INPUT_HEIGHT];
+    geometry.input_width = parameters[parameter_type_t::INPUT_WIDTH];
+    geometry.filter_height = parameters[parameter_type_t::FILTER_HEIGHT];
+    geometry.filter_width = parameters[parameter_type_t::FILTER_WIDTH];
+    geometry.stride = parameters[parameter_type_t::STRIDE];
+
+    geometry.input_elements = checked_product(
+        checked_product(checked_product(geometry.batch, input_channels, "MAC input elements"),
+                        geometry.input_height, "MAC input elements"),
+        geometry.input_width, "MAC input elements");
+    geometry.weight_elements = checked_product(
+        checked_product(checked_product(output_channels, geometry.input_channels_per_group, "MAC weight elements"),
+                        geometry.filter_height, "MAC weight elements"),
+        geometry.filter_width, "MAC weight elements");
+    geometry.output_elements = checked_product(
+        checked_product(checked_product(geometry.batch, output_channels, "MAC output elements"),
+                        geometry.output_height, "MAC output elements"),
+        geometry.output_width, "MAC output elements");
+    geometry.operations = checked_product(
+        checked_product(geometry.output_elements, geometry.input_channels_per_group, "MAC operations"),
+        checked_product(geometry.filter_height, geometry.filter_width, "MAC operations"), "MAC operations");
+    return geometry;
+}
+
+void validate_mac_geometry(const mac_geometry_t &geometry, size_t register_capacity,
+                           unsigned active_macs) {
+    if(geometry.input_elements > register_capacity ||
+       geometry.weight_elements > register_capacity ||
+       geometry.output_elements > register_capacity) {
+        std::cerr << "Error: MAC tile exceeds PE register capacity" << std::endl;
+        exit(1);
+    }
+    if(geometry.operations != active_macs) {
+        std::cerr << "Error: MAC mapping operation count does not match active MAC count" << std::endl;
+        exit(1);
+    }
+}
+
+} // namespace
 
 pe_t::pe_t(section_config_t m_section_config) :
     input_data_mac(NULL),
@@ -39,6 +143,8 @@ pe_t::pe_t(section_config_t m_section_config) :
     num_macs(1),
     mac_width(1),
     num_active_macs(1),
+    active_mac_width(1),
+    mac_register_capacity(1),
     frequency(0.0),
     bandwidth(0.0),
     bitwidth(0),
@@ -74,44 +180,72 @@ void pe_t::init(section_config_t m_section_config) {
     /* Initialize PE specifications */
 
     // Initialize the size of input, weight, and output buffer in Byte.
-    m_section_config.get_setting("input_size", &input_size);
-    m_section_config.get_setting("weight_size", &weight_size);
-    m_section_config.get_setting("output_size", &output_size);
+    const bool have_size_keys =
+        m_section_config.get_setting("input_size", &input_size) &&
+        m_section_config.get_setting("weight_size", &weight_size) &&
+        m_section_config.get_setting("output_size", &output_size);
+    if(!have_size_keys &&
+       (!m_section_config.get_setting("input_buffer", &input_size) ||
+        !m_section_config.get_setting("weight_buffer", &weight_size) ||
+        !m_section_config.get_setting("output_buffer", &output_size))) {
+        std::cerr << "Error: PE requires input/weight/output buffer sizes" << std::endl;
+        exit(1);
+    }
+    if(input_size == 0 || weight_size == 0 || output_size == 0) {
+        std::cerr << "Error: PE buffer sizes must be non-zero" << std::endl;
+        exit(1);
+    }
 
     // Initialize the number of elements in each buffer.
-    unsigned num_input = input_size/sizeof(data_t);
-    unsigned num_weight = weight_size/sizeof(data_t);
-    unsigned num_output = output_size/sizeof(data_t);
+    size_t num_input = (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t);
+    size_t num_weight = (static_cast<size_t>(weight_size) + sizeof(data_t) - 1)/sizeof(data_t);
+    size_t num_output = (static_cast<size_t>(output_size) + sizeof(data_t) - 1)/sizeof(data_t);
 
     // Allocate the memory space for local buffer.
     input_data_lb  = new data_t[num_input]();
     weight_lb      = new data_t[num_weight]();
-    output_data_lb = new data_t[num_output](); 
-    memset(input_data_lb, 1.0, num_input * sizeof(data_t));
-    memset(weight_lb, 1.0, num_weight * sizeof(data_t));
-    memset(output_data_lb, 1.0, num_output * sizeof(data_t));
+    output_data_lb = new data_t[num_output]();
 
-    // Initialize the size of MAC register
+    // Initialize the size of MAC register.
     m_section_config.get_setting("number_of_macs", &num_macs);
     m_section_config.get_setting("mac_width", &mac_width);
+    if(num_macs == 0 || mac_width == 0) {
+        std::cerr << "Error: number_of_macs and mac_width must be non-zero" << std::endl;
+        exit(1);
+    }
+    mac_register_capacity = checked_product(num_macs, mac_width, "MAC register capacity");
 
-    input_data_mac  = new data_t[mac_width*num_macs]();
-    weight_mac      = new data_t[mac_width*num_macs]();
-    output_data_mac = new data_t[num_macs]();
+    input_data_mac  = new data_t[mac_register_capacity]();
+    weight_mac      = new data_t[mac_register_capacity]();
+    // A mapping may expose up to num_macs * mac_width independent outputs.
+    // Keep scalar storage for that maximum even when lanes reduce together.
+    output_data_mac = new data_t[mac_register_capacity]();
 
-    memset(input_data_mac, 1.0, mac_width*num_macs*sizeof(data_t));
-    memset(weight_mac, 1.0, mac_width*num_macs*sizeof(data_t));
-    memset(output_data_mac, 1.0, num_macs*sizeof(data_t));
-
-    // Initialize the frequency (MHz) and bandwidth (GB/sec)
-    m_section_config.get_setting("frequency", &frequency);
-    m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = 8*bandwidth/frequency;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // Initialize the frequency (MHz) and bandwidth (GB/sec).
+    const bool have_frequency = m_section_config.get_setting("frequency", &frequency);
+    const bool have_bandwidth = m_section_config.get_setting("bandwidth", &bandwidth);
+    const bool have_bitwidth = m_section_config.get_setting("bitwidth", &bitwidth);
+    if(!have_bitwidth) {
+        if(!have_frequency || !have_bandwidth || frequency <= 0.0f || bandwidth <= 0.0f) {
+            std::cerr << "Error: PE requires a positive bitwidth or positive frequency and bandwidth" << std::endl;
+            exit(1);
+        }
+        bitwidth = static_cast<unsigned>(8.0f*bandwidth/frequency);
+    }
+    if(bitwidth == 0) {
+        std::cerr << "Error: PE bitwidth must be non-zero" << std::endl;
+        exit(1);
+    }
 
     bypass.reserve(data_type_t::NUM_DATA_TYPES);
     bypass.assign(data_type_t::NUM_DATA_TYPES, 0);
     m_section_config.get_vector_setting("bypass", &bypass);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+        if(bypass[i]) {
+            std::cerr << "Error: PE local-buffer bypass is not implemented" << std::endl;
+            exit(1);
+        }
+    }
 
     // Initialize line size and mask bits of MAC register and local buffer
     line_size_mac.reserve(data_type_t::NUM_DATA_TYPES);
@@ -130,46 +264,66 @@ void pe_t::init(section_config_t m_section_config) {
     m_section_config.get_vector_setting("lb_line_size", &line_size_lb);
 
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
-        while(line_size_mac[i] > 8) {
-            line_size_mac[i] /= 2;
+        unsigned mac_line_size = line_size_mac[i];
+        unsigned lb_line_size = line_size_lb[i];
+        if(mac_line_size < 8 || lb_line_size < 8 ||
+           !is_power_of_two(mac_line_size) || !is_power_of_two(lb_line_size)) {
+            std::cerr << "Error: PE line sizes must be power-of-two values of at least 8 bits" << std::endl;
+            exit(1);
+        }
+        while(mac_line_size > 8) {
+            mac_line_size /= 2;
             mask_bits_mac[i]++;
         }
 
-        while(line_size_lb[i] > 8) {
-            line_size_lb[i] /= 2;
+        while(lb_line_size > 8) {
+            lb_line_size /= 2;
             mask_bits_lb[i]++;
         }
     }
 
-    m_section_config.get_vector_setting("mac_line_size", &line_size_mac);
-    m_section_config.get_vector_setting("lb_line_size", &line_size_lb); 
-
     // Initialize the stationary type.
     // Initialize the stationary type between MAC and local buffer.
     std::string stationary_str;
-    if(m_section_config.get_setting("mac_stationary", &stationary_str)) {
-        stationary_type_mac = (stationary_type_t)get_type(stationary_type_str, stationary_str);
+    if(!m_section_config.get_setting("mac_stationary", &stationary_str) ||
+       !is_valid_type(stationary_type_str, stationary_str) ||
+       stationary_str == "undefined_stationary") {
+        std::cerr << "Error: PE requires a valid mac_stationary" << std::endl;
+        exit(1);
     }
-    
+    stationary_type_mac = (stationary_type_t)get_type(stationary_type_str, stationary_str);
+
     // Initialize the order of parameters.
     if(stationary_type_mac == stationary_type_t::INPUT_STATIONARY) {
         parameter_order = "BCPQKRS";
     } else if(stationary_type_mac == stationary_type_t::WEIGHT_STATIONARY) {
         parameter_order = "KCRSBPQ";
     } else if(stationary_type_mac == stationary_type_t::OUTPUT_STATIONARY) {
-        parameter_order = "BKPQKRS";
+        parameter_order = "BKPQCRS";
     }
     m_section_config.get_setting("pe_parameter_order", &parameter_order);
 
     // Initialize the stationary type between PE array and Global buffer.
-    if(m_section_config.get_setting("pe_stationary", &stationary_str)) {
-        stationary_type_local_buffer = (stationary_type_t)get_type(stationary_type_str, stationary_str);
+    if(!m_section_config.get_setting("pe_stationary", &stationary_str) ||
+       !is_valid_type(stationary_type_str, stationary_str) ||
+       stationary_str == "undefined_stationary") {
+        std::cerr << "Error: PE requires a valid pe_stationary" << std::endl;
+        exit(1);
     }
+    stationary_type_local_buffer = (stationary_type_t)get_type(stationary_type_str, stationary_str);
 
     std::string memory_str;
-    if(m_section_config.get_setting("memory_type", &memory_str)) {
-        memory_type = (memory_type_t)get_type(memory_type_str, memory_str);
+    if(!m_section_config.get_setting("memory_type", &memory_str)) {
+        std::cerr << "Error: PE requires memory_type" << std::endl;
+        exit(1);
     }
+    lowercase(memory_str);
+    if(memory_str == "separated") memory_str = "separate";
+    if(memory_str != "separate") {
+        std::cerr << "Error: shared PE local buffers are not implemented" << std::endl;
+        exit(1);
+    }
+    memory_type = memory_type_t::SEPARATE;
 
     skip_transfer.reserve(data_type_t::NUM_DATA_TYPES);
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
@@ -192,7 +346,7 @@ void pe_t::init(section_config_t m_section_config) {
 
     // Exist data in MAC unit.
     exist_data_mac.reserve(data_type_t::NUM_DATA_TYPES);
-    exist_data_mac.assign(data_type_t::NUM_DATA_TYPES, false);    
+    exist_data_mac.assign(data_type_t::NUM_DATA_TYPES, false);
 
     // Exist data in Local buffer.
     exist_data_lb.reserve(data_type_t::NUM_DATA_TYPES);
@@ -237,11 +391,11 @@ void pe_t::init(section_config_t m_section_config) {
     u_read_cycle_lb.reserve(data_type_t::NUM_DATA_TYPES);
     u_read_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("lb_read_cycle", &u_read_cycle_lb);
-    
+
     u_read_energy_lb.reserve(data_type_t::NUM_DATA_TYPES);
     u_read_energy_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("lb_read_energy", &u_read_energy_lb);
-    
+
     u_write_cycle_lb.reserve(data_type_t::NUM_DATA_TYPES);
     u_write_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("lb_write_cycle", &u_write_cycle_lb);
@@ -275,7 +429,7 @@ void pe_t::init(section_config_t m_section_config) {
     // Total access cycles to local buffer
     access_cycle_lb.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    
+
     // Total access energies to local buffer
     access_energy_lb.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -310,14 +464,20 @@ void pe_t::connect(pe_array_t *m_pe_array) {
 void pe_t::update_tile_size(scheduler_t *m_scheduler) {
 
     num_active_macs = m_scheduler->num_active_mac;
-    if(num_active_macs > num_macs*mac_width) {
-        std::cerr << "The number of Active macs : " << num_active_macs 
+    if(num_active_macs == 0 || num_active_macs > mac_register_capacity) {
+        std::cerr << "The number of Active macs : " << num_active_macs
                   << " is bigger than the number of macs : " << num_macs << std::endl;
         exit(1);
     }
     // Update tile sizes.
     tile_size_mac = m_scheduler->tile_size[component_type_t::MAC];
     tile_size_lb = m_scheduler->tile_size[component_type_t::PE];
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+        if(tile_size_mac[i] == 0 || tile_size_mac[i] > mac_register_capacity) {
+            std::cerr << "Error: MAC tile exceeds PE register capacity" << std::endl;
+            exit(1);
+        }
+    }
 
 }
 
@@ -336,15 +496,15 @@ void pe_t::update_offset() {
 void pe_t::check_tile_size() {
     // Check the validity.
     if(memory_type == memory_type_t::SEPARATE) {
-        if((!bypass[data_type_t::INPUT] && tile_size_lb[data_type_t::INPUT]*sizeof(data_t) > input_size) || 
-           (!bypass[data_type_t::WEIGHT] && tile_size_lb[data_type_t::WEIGHT]*sizeof(data_t) > weight_size) ||
-           (!bypass[data_type_t::OUTPUT] && tile_size_lb[data_type_t::OUTPUT]*sizeof(data_t) > output_size)) {
-            std::cerr << "The data size is bigger than local buffer size\n" 
-                      << "Input data : " << tile_size_lb[data_type_t::INPUT]*sizeof(data_t) 
+        if(runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size_lb[data_type_t::INPUT]) > input_size ||
+           runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size_lb[data_type_t::WEIGHT]) > weight_size ||
+           runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]) > output_size) {
+            std::cerr << "The data size is bigger than local buffer size\n"
+                      << "Input data : " << runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size_lb[data_type_t::INPUT])
                       << " Input buffer : " << input_size << "\t"
-                      << "Weight : " << tile_size_lb[data_type_t::WEIGHT]*sizeof(data_t)
+                      << "Weight : " << runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size_lb[data_type_t::WEIGHT])
                       << " Weight buffer : " << weight_size << "\t"
-                      << "Output data : " << tile_size_lb[data_type_t::OUTPUT]*sizeof(data_t)
+                      << "Output data : " << runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT])
                       << " Output buffer : " << output_size << std::endl;
             exit(1);
         }
@@ -430,7 +590,7 @@ void pe_t::request_data() {
         // Request input data to PE array.
         request_to_pe_array[data_type_t::INPUT] = true;
         pe_array->exist_data[data_type_t::INPUT] = false;
-        
+
         // Update Stats.
         pe_array->num_request[data_type_t::INPUT]++;
     }
@@ -460,25 +620,25 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
 
     if(!bypass[data_type_t::INPUT]) {
-        utilization_local_buffer[data_type_t::INPUT] = (float)(tile_size_lb[data_type_t::INPUT])/(float)(input_size);
+        utilization_local_buffer[data_type_t::INPUT] = (float)(runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size_lb[data_type_t::INPUT]))/(float)(input_size);
     }
-    if(bypass[data_type_t::WEIGHT]) {
-        utilization_local_buffer[data_type_t::WEIGHT] = (float)(tile_size_lb[data_type_t::WEIGHT])/(float)(weight_size);
+    if(!bypass[data_type_t::WEIGHT]) {
+        utilization_local_buffer[data_type_t::WEIGHT] = (float)(runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size_lb[data_type_t::WEIGHT]))/(float)(weight_size);
     }
-    if(bypass[data_type_t::OUTPUT]) {
-        utilization_local_buffer[data_type_t::OUTPUT] = (float)(tile_size_lb[data_type_t::OUTPUT])/(float)(output_size);
+    if(!bypass[data_type_t::OUTPUT]) {
+        utilization_local_buffer[data_type_t::OUTPUT] = (float)(runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]))/(float)(output_size);
     }
     if(request_to_lb[data_type_t::INPUT]) {
-#ifdef FUNCTIONAL       
-        // Input data transfer 
+#ifdef FUNCTIONAL
+        // Input data transfer
         m_scheduler->transfer_data(input_data_mac, input_data_lb, 0, m_scheduler->input_offset_pe.front(),
-                                   component_type_t::MAC, component_type_t::PE, 
+                                   component_type_t::MAC, component_type_t::PE,
                                    data_type_t::INPUT, get_mac_stationary_type(), action_type_t::LOAD);
         // Update for NPUsim ver2
-        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
         //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-        //m_scheduler->transfer_data_ver2(input_data_mac, input_data_lb, 
-        //                                component_type_t::MAC, component_type_t::PE, 
+        //m_scheduler->transfer_data_ver2(input_data_mac, input_data_lb,
+        //                                component_type_t::MAC, component_type_t::PE,
         //                                data_type_t::INPUT, get_mac_stationary_type(), action_type_t::LOAD, last_component);
 
         // Case 1. Dense format
@@ -501,8 +661,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                               *parameters_mac[parameter_type_t::INPUT_HEIGHT]
                                                                               *parameters_mac[parameter_type_t::INPUT_WIDTH] +
                                                                              c*parameters_mac[parameter_type_t::INPUT_HEIGHT]
-                                                                              *parameters_mac[parameter_type_t::INPUT_WIDTH] + 
-                                                                             h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                              *parameters_mac[parameter_type_t::INPUT_WIDTH] +
+                                                                             h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                              mask_bits_mac[data_type_t::INPUT]) << mask_bits_mac[data_type_t::INPUT]) {
                                     // Update write cost to MAC unit
                                     access_energy_mac[data_type_t::INPUT] += u_write_energy_mac[data_type_t::INPUT];
@@ -514,8 +674,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                               *parameters_mac[parameter_type_t::INPUT_HEIGHT]
                                                                               *parameters_mac[parameter_type_t::INPUT_WIDTH] +
                                                                              c*parameters_mac[parameter_type_t::INPUT_HEIGHT]
-                                                                              *parameters_mac[parameter_type_t::INPUT_WIDTH] + 
-                                                                             h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                              *parameters_mac[parameter_type_t::INPUT_WIDTH] +
+                                                                             h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                              mask_bits_mac[data_type_t::INPUT]) << mask_bits_mac[data_type_t::INPUT];
                                 }
                                 if(address_lb != ((uint64_t)&input_data_lb[m_scheduler->input_offset_pe.front() +
@@ -523,8 +683,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                             *parameters_lb[parameter_type_t::INPUT_HEIGHT]
                                                                             *parameters_lb[parameter_type_t::INPUT_WIDTH] +
                                                                            c*parameters_lb[parameter_type_t::INPUT_HEIGHT]
-                                                                            *parameters_lb[parameter_type_t::INPUT_WIDTH] + 
-                                                                           h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                            *parameters_lb[parameter_type_t::INPUT_WIDTH] +
+                                                                           h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                            mask_bits_lb[data_type_t::INPUT]) << mask_bits_lb[data_type_t::INPUT]) {
 
                                     // Update read cost to local buffer.
@@ -538,41 +698,41 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                             *parameters_lb[parameter_type_t::INPUT_HEIGHT]
                                                                             *parameters_lb[parameter_type_t::INPUT_WIDTH] +
                                                                            c*parameters_lb[parameter_type_t::INPUT_HEIGHT]
-                                                                            *parameters_lb[parameter_type_t::INPUT_WIDTH] + 
-                                                                           h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                            *parameters_lb[parameter_type_t::INPUT_WIDTH] +
+                                                                           h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                            mask_bits_lb[data_type_t::INPUT]) << mask_bits_lb[data_type_t::INPUT];
                                 }
                             }
                         }
                     }
                 }
-                
+
                 // Update overlapped cycle at local buffer and MAC units.
 
                 unsigned ratio = ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(line_size_mac[data_type_t::INPUT]));
 
                 // At the 1, 2, before last, last stages
                 double first_stage = u_read_cycle_lb[data_type_t::INPUT];
-                double second_stage = std::max(u_read_cycle_lb[data_type_t::INPUT], 
+                double second_stage = std::max(u_read_cycle_lb[data_type_t::INPUT],
                                                  u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
-                double last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::INPUT], 
+                double last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::INPUT],
                                                       u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
                 double last_stage = ratio*u_write_cycle_mac[data_type_t::INPUT];
 
                 // Remainder stages.
-                double other_stage = std::max(u_read_cycle_lb[data_type_t::INPUT], 
-                                       std::max(ratio*u_write_cycle_mac[data_type_t::INPUT], 
+                double other_stage = std::max(u_read_cycle_lb[data_type_t::INPUT],
+                                       std::max(ratio*u_write_cycle_mac[data_type_t::INPUT],
                                                 u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
 
                 if(num_access_lb == 1) {
-                    cycle_mac_lb[data_type_t::INPUT] += u_read_cycle_lb[data_type_t::INPUT] + 
-                                                        u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) + 
+                    cycle_mac_lb[data_type_t::INPUT] += u_read_cycle_lb[data_type_t::INPUT] +
+                                                        u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) +
                                                         ratio*u_write_cycle_mac[data_type_t::INPUT];
                 } else {
-                    cycle_mac_lb[data_type_t::INPUT] += first_stage + second_stage + 
-                                                        (num_access_lb-2)*other_stage + 
+                    cycle_mac_lb[data_type_t::INPUT] += first_stage + second_stage +
+                                                        (num_access_lb-2)*other_stage +
                                                         last_before_stage + last_stage;
-                } 
+                }
                 // Update per data stats between MAC unit and local buffer
                 transfer_cycle[data_type_t::INPUT] += num_access_lb*u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
                 transfer_energy[data_type_t::INPUT] += num_access_lb*u_transfer_energy*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
@@ -674,7 +834,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                                     *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
                                                                                     *(parameters[parameter_type_t::INPUT_WIDTH+1])*row_bit)/(double)bitwidth);  // Column pointer
                 transfer_energy[data_type_t::INPUT] += u_transfer_energy*ceil((double)((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*8*sizeof(data_t))/(double)bitwidth) + // Non-zero data
-                                                       u_transfer_energy*ceil((double)((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*row_bit)/(double)bitwidth) + // Row index 
+                                                       u_transfer_energy*ceil((double)((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*row_bit)/(double)bitwidth) + // Row index
                                                        u_transfer_energy*ceil((double)(parameters[parameter_type_t::BATCH_SIZE]
                                                                                       *parameters[parameter_type_t::INPUT_CHANNEL]
                                                                                       /parameters[parameter_type_t::GROUP]
@@ -772,7 +932,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                                     *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
                                                                                     *(parameters[parameter_type_t::INPUT_HEIGHT+1])*column_bit)/(double)bitwidth);  // Row pointer
                 transfer_energy[data_type_t::INPUT] += u_transfer_energy*ceil((double)((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*8*sizeof(data_t))/(double)bitwidth) + // Non-zero data
-                                                       u_transfer_energy*ceil((double)((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*column_bit)/(double)bitwidth) + // Column index 
+                                                       u_transfer_energy*ceil((double)((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*column_bit)/(double)bitwidth) + // Column index
                                                        u_transfer_energy*ceil((double)(parameters[parameter_type_t::BATCH_SIZE]
                                                                                       *parameters[parameter_type_t::INPUT_CHANNEL]
                                                                                       /parameters[parameter_type_t::GROUP]
@@ -783,7 +943,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                 }
             }
         }
-        // Case 5. SparseMap 
+        // Case 5. SparseMap
         else if(m_scheduler->compression_type == compression_type_t::SPARSEMAP) {
             if(!skip_transfer[data_type_t::INPUT]) {
                 num_data_transfer_to_mac[data_type_t::INPUT]++;
@@ -805,7 +965,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                        *u_write_cycle_mac[data_type_t::INPUT]/(sizeof(data_t)*8); // Metadata
                 access_energy_mac[data_type_t::INPUT] += (tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*u_write_energy_mac[data_type_t::INPUT]
                                                        + tile_size_mac[data_type_t::INPUT]*u_write_energy_mac[data_type_t::INPUT]/(sizeof(data_t)*8);
-    
+
                 // Update overlapped cycle between MAC and local buffers
                 cycle_mac_lb[data_type_t::INPUT] += std::max((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                              *u_read_cycle_lb[data_type_t::INPUT] + // Non-zero data
@@ -814,7 +974,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                               (tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                              *u_write_cycle_mac[data_type_t::INPUT] +  // Non-zero data
                                                               tile_size_mac[data_type_t::INPUT]
-                                                             *u_write_cycle_mac[data_type_t::INPUT]/(sizeof(data_t)*8)); // Metadata 
+                                                             *u_write_cycle_mac[data_type_t::INPUT]/(sizeof(data_t)*8)); // Metadata
 
                 // Transfer cycle between MAC unit and local buffer = transfer cycle for data + transfer cycle for index vector.
                 transfer_cycle[data_type_t::INPUT] += u_transfer_cycle*ceil((double)((tile_size_mac[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*8*sizeof(data_t))/(double)bitwidth) +  // Non-zero data
@@ -853,8 +1013,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                           *parameters_mac[parameter_type_t::INPUT_HEIGHT]
                                                                           *parameters_mac[parameter_type_t::INPUT_WIDTH] +
                                                                          c*parameters_mac[parameter_type_t::INPUT_HEIGHT]
-                                                                          *parameters_mac[parameter_type_t::INPUT_WIDTH] + 
-                                                                         h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                          *parameters_mac[parameter_type_t::INPUT_WIDTH] +
+                                                                         h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                          mask_bits_mac[data_type_t::INPUT]) << mask_bits_mac[data_type_t::INPUT]) {
                                 // Update write cost to MAC unit
                                 access_energy_mac[data_type_t::INPUT] += u_write_energy_mac[data_type_t::INPUT];
@@ -866,8 +1026,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                           *parameters_mac[parameter_type_t::INPUT_HEIGHT]
                                                                           *parameters_mac[parameter_type_t::INPUT_WIDTH] +
                                                                          c*parameters_mac[parameter_type_t::INPUT_HEIGHT]
-                                                                          *parameters_mac[parameter_type_t::INPUT_WIDTH] + 
-                                                                         h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                          *parameters_mac[parameter_type_t::INPUT_WIDTH] +
+                                                                         h*parameters_mac[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                          mask_bits_mac[data_type_t::INPUT]) << mask_bits_mac[data_type_t::INPUT];
                             }
                             if(address_lb != ((uint64_t)&input_data_lb[m_scheduler->input_offset_pe.front() +
@@ -875,8 +1035,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                         *parameters_lb[parameter_type_t::INPUT_HEIGHT]
                                                                         *parameters_lb[parameter_type_t::INPUT_WIDTH] +
                                                                        c*parameters_lb[parameter_type_t::INPUT_HEIGHT]
-                                                                        *parameters_lb[parameter_type_t::INPUT_WIDTH] + 
-                                                                       h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                        *parameters_lb[parameter_type_t::INPUT_WIDTH] +
+                                                                       h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                        mask_bits_lb[data_type_t::INPUT]) << mask_bits_lb[data_type_t::INPUT]) {
 
                                 // Update read cost to local buffer.
@@ -885,46 +1045,46 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                 num_access_lb++;
 
                                 // Update local buffer address
-                                address_lb = ((uint64_t)&input_data_lb[m_scheduler->input_offset_pe.front() + 
+                                address_lb = ((uint64_t)&input_data_lb[m_scheduler->input_offset_pe.front() +
                                                                        b*parameters_lb[parameter_type_t::INPUT_CHANNEL]
                                                                         *parameters_lb[parameter_type_t::INPUT_HEIGHT]
                                                                         *parameters_lb[parameter_type_t::INPUT_WIDTH] +
                                                                        c*parameters_lb[parameter_type_t::INPUT_HEIGHT]
-                                                                        *parameters_lb[parameter_type_t::INPUT_WIDTH] + 
-                                                                       h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                        *parameters_lb[parameter_type_t::INPUT_WIDTH] +
+                                                                       h*parameters_lb[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                        mask_bits_lb[data_type_t::INPUT]) << mask_bits_lb[data_type_t::INPUT];
                             }
                         }
                     }
                 }
             }
-            
+
             // Update overlapped cycle at local buffer and MAC units.
 
             unsigned ratio = ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(line_size_mac[data_type_t::INPUT]));
 
             // At the 1, 2, before last, last stages
             double first_stage = u_read_cycle_lb[data_type_t::INPUT];
-            double second_stage = std::max(u_read_cycle_lb[data_type_t::INPUT], 
+            double second_stage = std::max(u_read_cycle_lb[data_type_t::INPUT],
                                              u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
-            double last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::INPUT], 
+            double last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::INPUT],
                                                   u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
             double last_stage = ratio*u_write_cycle_mac[data_type_t::INPUT];
 
             // Remainder stages.
-            double other_stage = std::max(u_read_cycle_lb[data_type_t::INPUT], 
-                                   std::max(ratio*u_write_cycle_mac[data_type_t::INPUT], 
+            double other_stage = std::max(u_read_cycle_lb[data_type_t::INPUT],
+                                   std::max(ratio*u_write_cycle_mac[data_type_t::INPUT],
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
 
             if(num_access_lb == 1) {
-                cycle_mac_lb[data_type_t::INPUT] += u_read_cycle_lb[data_type_t::INPUT] + 
-                                                    u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) + 
+                cycle_mac_lb[data_type_t::INPUT] += u_read_cycle_lb[data_type_t::INPUT] +
+                                                    u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) +
                                                     ratio*u_write_cycle_mac[data_type_t::INPUT];
             } else {
-                cycle_mac_lb[data_type_t::INPUT] += first_stage + second_stage + 
-                                                    (num_access_lb-2)*other_stage + 
+                cycle_mac_lb[data_type_t::INPUT] += first_stage + second_stage +
+                                                    (num_access_lb-2)*other_stage +
                                                     last_before_stage + last_stage;
-            } 
+            }
             // Update per data stats between MAC unit and local buffer
             transfer_cycle[data_type_t::INPUT] += num_access_lb*u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
             transfer_energy[data_type_t::INPUT] += num_access_lb*u_transfer_energy*ceil((double)(line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
@@ -946,15 +1106,15 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
     if(request_to_lb[data_type_t::WEIGHT]) {
 #ifdef FUNCTIONAL
 
-        // Weight data transfer 
+        // Weight data transfer
         m_scheduler->transfer_data(weight_mac, weight_lb, 0, m_scheduler->weight_offset_pe.front(),
-                                   component_type_t::MAC, component_type_t::PE, 
+                                   component_type_t::MAC, component_type_t::PE,
                                    data_type_t::WEIGHT, get_mac_stationary_type(), action_type_t::LOAD);
         // Update for NPUsim ver2
-        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
         //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-        //m_scheduler->transfer_data_ver2(weight_mac, weight_lb, 
-        //                                component_type_t::MAC, component_type_t::PE, 
+        //m_scheduler->transfer_data_ver2(weight_mac, weight_lb,
+        //                                component_type_t::MAC, component_type_t::PE,
         //                                data_type_t::WEIGHT, get_mac_stationary_type(), action_type_t::LOAD, last_component);
 
         // Case 1. Dense data format
@@ -977,8 +1137,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                           *parameters_mac[parameter_type_t::FILTER_HEIGHT]
                                                                           *parameters_mac[parameter_type_t::FILTER_WIDTH] +
                                                                          c*parameters_mac[parameter_type_t::FILTER_HEIGHT]
-                                                                          *parameters_mac[parameter_type_t::FILTER_WIDTH] + 
-                                                                         r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                          *parameters_mac[parameter_type_t::FILTER_WIDTH] +
+                                                                         r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                          mask_bits_mac[data_type_t::WEIGHT]) << mask_bits_mac[data_type_t::WEIGHT]) {
 
                                     // Update MAC cost.
@@ -991,8 +1151,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                           *parameters_mac[parameter_type_t::FILTER_HEIGHT]
                                                                           *parameters_mac[parameter_type_t::FILTER_WIDTH] +
                                                                          c*parameters_mac[parameter_type_t::FILTER_HEIGHT]
-                                                                          *parameters_mac[parameter_type_t::FILTER_WIDTH] + 
-                                                                         r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                          *parameters_mac[parameter_type_t::FILTER_WIDTH] +
+                                                                         r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                          mask_bits_mac[data_type_t::WEIGHT]) << mask_bits_mac[data_type_t::WEIGHT];
                                 }
 
@@ -1001,8 +1161,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                         *parameters_lb[parameter_type_t::FILTER_HEIGHT]
                                                                         *parameters_lb[parameter_type_t::FILTER_WIDTH] +
                                                                        c*parameters_lb[parameter_type_t::FILTER_HEIGHT]
-                                                                        *parameters_lb[parameter_type_t::FILTER_WIDTH] + 
-                                                                       r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                        *parameters_lb[parameter_type_t::FILTER_WIDTH] +
+                                                                       r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                        mask_bits_lb[data_type_t::WEIGHT]) << mask_bits_lb[data_type_t::WEIGHT]) {
 
                                     access_energy_lb[data_type_t::WEIGHT] += u_read_energy_lb[data_type_t::WEIGHT];
@@ -1015,45 +1175,45 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                         *parameters_lb[parameter_type_t::FILTER_HEIGHT]
                                                                         *parameters_lb[parameter_type_t::FILTER_WIDTH] +
                                                                        c*parameters_lb[parameter_type_t::FILTER_HEIGHT]
-                                                                        *parameters_lb[parameter_type_t::FILTER_WIDTH] + 
-                                                                       r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                        *parameters_lb[parameter_type_t::FILTER_WIDTH] +
+                                                                       r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                        mask_bits_lb[data_type_t::WEIGHT]) << mask_bits_lb[data_type_t::WEIGHT];
                                 }
                             }
                         }
                     }
                 }
-                
+
                 // Update overlapped cycle at local buffer and MAC units.
                 unsigned ratio = ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(line_size_mac[data_type_t::WEIGHT]));
 
                 // At the 1, 2, before last, last stages
                 unsigned first_stage = u_read_cycle_lb[data_type_t::WEIGHT];
-                unsigned second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT], 
+                unsigned second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
                                                  u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
-                unsigned last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT], 
+                unsigned last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                                       u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
                 unsigned last_stage = ratio*u_write_cycle_mac[data_type_t::WEIGHT];
 
                 // Remainder stages
                 unsigned other_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
-                                       std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT], 
+                                       std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                                 u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
                 if(num_access_lb == 1) {
-                    cycle_mac_lb[data_type_t::WEIGHT] += u_read_cycle_lb[data_type_t::WEIGHT] + 
+                    cycle_mac_lb[data_type_t::WEIGHT] += u_read_cycle_lb[data_type_t::WEIGHT] +
                                                          u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                          ratio*u_write_cycle_mac[data_type_t::WEIGHT];
                 } else {
-                    cycle_mac_lb[data_type_t::WEIGHT] += first_stage + second_stage + 
-                                                         (num_access_lb-2)*other_stage + 
+                    cycle_mac_lb[data_type_t::WEIGHT] += first_stage + second_stage +
+                                                         (num_access_lb-2)*other_stage +
                                                          last_before_stage + last_stage;
                 }
 
                 // Update per data stats between MAC unit and local buffer
                 transfer_cycle[data_type_t::WEIGHT] += num_access_lb*u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)bitwidth);
                 transfer_energy[data_type_t::WEIGHT] += num_access_lb*u_transfer_energy*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)bitwidth);
-        
+
                 if(pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y - 1 && index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1) {
                     move_front(&m_scheduler->weight_offset_pe);
                 }
@@ -1277,7 +1437,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                                        /parameters[parameter_type_t::GROUP]
                                                                                        *(parameters[parameter_type_t::FILTER_HEIGHT+1])
                                                                                        *column_bit)/(double)bitwidth); // Row pointer
-               
+
                 if(pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y - 1 && index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1) {
                     move_front(&m_scheduler->weight_offset_pe);
                 }
@@ -1305,9 +1465,9 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
                 access_energy_mac[data_type_t::WEIGHT] += (tile_size_mac[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*u_write_energy_mac[data_type_t::WEIGHT]
                                                         + tile_size_mac[data_type_t::WEIGHT]*u_write_energy_mac[data_type_t::WEIGHT]/(sizeof(data_t)*8);
-                
+
                 cycle_mac_lb[data_type_t::WEIGHT] += std::max((tile_size_mac[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*u_read_cycle_lb[data_type_t::WEIGHT]
-                                                                         + tile_size_mac[data_type_t::WEIGHT]*u_read_cycle_lb[data_type_t::WEIGHT]/(sizeof(data_t)*8), 
+                                                                         + tile_size_mac[data_type_t::WEIGHT]*u_read_cycle_lb[data_type_t::WEIGHT]/(sizeof(data_t)*8),
                                                                          (tile_size_mac[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*u_write_cycle_mac[data_type_t::WEIGHT]
                                                                          + tile_size_mac[data_type_t::WEIGHT]*u_write_cycle_mac[data_type_t::WEIGHT]/(sizeof(data_t)*8));
 
@@ -1346,8 +1506,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                       *parameters_mac[parameter_type_t::FILTER_HEIGHT]
                                                                       *parameters_mac[parameter_type_t::FILTER_WIDTH] +
                                                                      c*parameters_mac[parameter_type_t::FILTER_HEIGHT]
-                                                                      *parameters_mac[parameter_type_t::FILTER_WIDTH] + 
-                                                                     r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                      *parameters_mac[parameter_type_t::FILTER_WIDTH] +
+                                                                     r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                      mask_bits_mac[data_type_t::WEIGHT]) << mask_bits_mac[data_type_t::WEIGHT]) {
 
                                 // Update MAC cost.
@@ -1360,8 +1520,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                       *parameters_mac[parameter_type_t::FILTER_HEIGHT]
                                                                       *parameters_mac[parameter_type_t::FILTER_WIDTH] +
                                                                      c*parameters_mac[parameter_type_t::FILTER_HEIGHT]
-                                                                      *parameters_mac[parameter_type_t::FILTER_WIDTH] + 
-                                                                     r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                      *parameters_mac[parameter_type_t::FILTER_WIDTH] +
+                                                                     r*parameters_mac[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                      mask_bits_mac[data_type_t::WEIGHT]) << mask_bits_mac[data_type_t::WEIGHT];
                             }
 
@@ -1370,8 +1530,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                     *parameters_lb[parameter_type_t::FILTER_HEIGHT]
                                                                     *parameters_lb[parameter_type_t::FILTER_WIDTH] +
                                                                    c*parameters_lb[parameter_type_t::FILTER_HEIGHT]
-                                                                    *parameters_lb[parameter_type_t::FILTER_WIDTH] + 
-                                                                   r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                    *parameters_lb[parameter_type_t::FILTER_WIDTH] +
+                                                                   r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                    mask_bits_lb[data_type_t::WEIGHT]) << mask_bits_lb[data_type_t::WEIGHT]) {
 
                                 access_energy_lb[data_type_t::WEIGHT] += u_read_energy_lb[data_type_t::WEIGHT];
@@ -1384,39 +1544,39 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                     *parameters_lb[parameter_type_t::FILTER_HEIGHT]
                                                                     *parameters_lb[parameter_type_t::FILTER_WIDTH] +
                                                                    c*parameters_lb[parameter_type_t::FILTER_HEIGHT]
-                                                                    *parameters_lb[parameter_type_t::FILTER_WIDTH] + 
-                                                                   r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                    *parameters_lb[parameter_type_t::FILTER_WIDTH] +
+                                                                   r*parameters_lb[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                    mask_bits_lb[data_type_t::WEIGHT]) << mask_bits_lb[data_type_t::WEIGHT];
                             }
                         }
                     }
                 }
             }
-            
+
             // Update overlapped cycle at local buffer and MAC units.
 
             unsigned ratio = ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(line_size_mac[data_type_t::WEIGHT]));
 
             // At the 1, 2, before last, last stages
             unsigned first_stage = u_read_cycle_lb[data_type_t::WEIGHT];
-            unsigned second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT], 
+            unsigned second_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
                                              u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
-            unsigned last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT], 
+            unsigned last_before_stage = std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                                   u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
             unsigned last_stage = ratio*u_write_cycle_mac[data_type_t::WEIGHT];
 
             // Remainder stages
             unsigned other_stage = std::max(u_read_cycle_lb[data_type_t::WEIGHT],
-                                   std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT], 
+                                   std::max(ratio*u_write_cycle_mac[data_type_t::WEIGHT],
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
             if(num_access_lb == 1) {
-                cycle_mac_lb[data_type_t::WEIGHT] += u_read_cycle_lb[data_type_t::WEIGHT] + 
+                cycle_mac_lb[data_type_t::WEIGHT] += u_read_cycle_lb[data_type_t::WEIGHT] +
                                                      u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                      ratio*u_write_cycle_mac[data_type_t::WEIGHT];
             } else {
-                cycle_mac_lb[data_type_t::WEIGHT] += first_stage + second_stage + 
-                                                     (num_access_lb-2)*other_stage + 
+                cycle_mac_lb[data_type_t::WEIGHT] += first_stage + second_stage +
+                                                     (num_access_lb-2)*other_stage +
                                                      last_before_stage + last_stage;
             }
 
@@ -1445,15 +1605,15 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
             if(!skip_transfer[data_type_t::OUTPUT]) {
 #ifdef FUNCTIONAL
 
-                // Output data transfer 
+                // Output data transfer
                 m_scheduler->transfer_data(output_data_mac, output_data_lb, 0, m_scheduler->output_offset_pe.front(),
-                                           component_type_t::MAC, component_type_t::PE, 
+                                           component_type_t::MAC, component_type_t::PE,
                                            data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::LOAD);
                 // Update for NPUsim ver2
-                //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+                //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
                 //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-                //m_scheduler->transfer_data_ver2(output_data_mac, output_data_lb, 
-                //                                component_type_t::MAC, component_type_t::PE, 
+                //m_scheduler->transfer_data_ver2(output_data_mac, output_data_lb,
+                //                                component_type_t::MAC, component_type_t::PE,
                 //                                data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::LOAD, last_component);
 #endif
 
@@ -1475,8 +1635,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                                *parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
                                                                                *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
                                                                               k*parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
-                                                                               *parameters_mac[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                              p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                               *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
+                                                                              p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                               mask_bits_mac[data_type_t::OUTPUT]) << mask_bits_mac[data_type_t::OUTPUT]) {
 
                                     // Update write cost of MAC unit.
@@ -1489,8 +1649,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                                *parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
                                                                                *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
                                                                               k*parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
-                                                                               *parameters_mac[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                              p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                               *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
+                                                                              p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                               mask_bits_mac[data_type_t::OUTPUT]) << mask_bits_mac[data_type_t::OUTPUT];
                                 }
 
@@ -1499,8 +1659,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                                                              *parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
                                                                              *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
                                                                             k*parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
-                                                                             *parameters_lb[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                            p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                             *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
+                                                                            p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                             mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT]) {
 
                                     // Update read cost of Local buffer
@@ -1509,13 +1669,13 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                                     num_access_lb++;
 
                                     // Update local buffer address
-                                    address_lb = ((uint64_t)&output_data_lb[m_scheduler->output_offset_pe.front() + 
+                                    address_lb = ((uint64_t)&output_data_lb[m_scheduler->output_offset_pe.front() +
                                                                             b*parameters_lb[parameter_type_t::OUTPUT_CHANNEL]
                                                                              *parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
                                                                              *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
                                                                             k*parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
-                                                                             *parameters_lb[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                            p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                             *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
+                                                                            p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                             mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT];
 
                                 }
@@ -1558,8 +1718,10 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
             if(tile_size_mac[data_type_t::OUTPUT] == tile_size_lb[data_type_t::OUTPUT]) { skip_transfer[data_type_t::OUTPUT] = true;}
             /* Stats */
         }
-        // Initialize the MAC unit
+        // This output has no prior partial sum: start from zero rather than
+        // retaining the accumulator used for the preceding output coordinate.
         else {
+            clear_output_accumulators();
             m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()] = true;
         }
 
@@ -1571,7 +1733,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
     // Execute MAC operation.
     computation(m_scheduler);
-   
+
     // Flush the data in local buffer.
     // When all the data in local buffer are used.
     if(input_index == m_scheduler->offset_size_pe[data_type_t::INPUT].front() &&
@@ -1592,14 +1754,14 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             exist_data_lb[data_type_t::WEIGHT] = false, exist_data_lb[data_type_t::OUTPUT] = false;
 
 #ifdef FUNCTIONAL
-            // Output data transfer 
+            // Output data transfer
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
-                                       component_type_t::PE_Y, component_type_t::PE, 
+                                       component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
-            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
             //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb,
             //                                component_type_t::PE_Y, component_type_t::PE,
             //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
@@ -1620,7 +1782,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT]) {
 
                                 // Update read cost of Local buffer
@@ -1634,7 +1796,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT];
                             }
 
@@ -1644,7 +1806,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT]) {
 
                                 // Update write cost of accumulator in PE array.
@@ -1659,14 +1821,14 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT];
                             }
                         }
                     }
                 }
             }
-            
+
             // Increase flush counter of weight and output data.
             weight_flush_counter++;
             output_flush_counter++;
@@ -1675,7 +1837,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             // PE is in idle state.
             wait_data();
         }
-        // Case 2) Request all data types 
+        // Case 2) Request all data types
         else {
             // Input data, weight, and output data do not exist in local buffer.
             exist_data_lb[data_type_t::INPUT] = false; exist_data_lb[data_type_t::WEIGHT] = false; exist_data_lb[data_type_t::OUTPUT] = false;
@@ -1683,12 +1845,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 #ifdef FUNCTIONAL
             // Write back output data
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
-                                       component_type_t::PE_Y, component_type_t::PE, 
+                                       component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
-            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
             //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb,
             //                                component_type_t::PE_Y, component_type_t::PE,
             //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
@@ -1709,7 +1871,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT]) {
 
                                 // Update read cost of Local buffer
@@ -1723,7 +1885,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT];
                             }
 
@@ -1733,7 +1895,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT]) {
 
                                 // Update write cost of accumulator in PE array.
@@ -1748,7 +1910,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT];
                             }
                         }
@@ -1788,12 +1950,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 #ifdef FUNCTIONAL
             // Write back output data
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
-                                       component_type_t::PE_Y, component_type_t::PE, 
+                                       component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
-            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
             //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb,
             //                                component_type_t::PE_Y, component_type_t::PE,
             //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
@@ -1814,7 +1976,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT]) {
 
                                 // Update read cost of Local buffer
@@ -1828,7 +1990,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT];
                             }
 
@@ -1838,7 +2000,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT]) {
 
                                 // Update write cost of accumulator in PE array.
@@ -1853,7 +2015,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT];
                             }
                         }
@@ -1889,12 +2051,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 #ifdef FUNCTIONAL
             // Write back output data
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
-                                       component_type_t::PE_Y, component_type_t::PE, 
+                                       component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
-            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
             //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb,
             //                                component_type_t::PE_Y, component_type_t::PE,
             //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
@@ -1915,7 +2077,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT]) {
 
                                 // Update read cost of Local buffer
@@ -1929,7 +2091,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT];
                             }
 
@@ -1939,7 +2101,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT]) {
 
                                 // Update write cost of accumulator in PE array.
@@ -1954,7 +2116,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT];
                             }
                         }
@@ -2007,12 +2169,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 #ifdef FUNCTIONAL
             // Write back output data
             m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
-                                       component_type_t::PE_Y, component_type_t::PE, 
+                                       component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
-            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+            //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
             //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
-            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb, 
+            //m_scheduler->transfer_data_ver2(pe_array->output_data, output_data_lb,
             //                                component_type_t::PE_Y, component_type_t::PE,
             //                                data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
 #endif
@@ -2033,7 +2195,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT]) {
 
                                 // Update read cost of Local buffer
@@ -2047,7 +2209,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                         k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
                                                                          *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
-                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                        p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                         mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT];
                             }
 
@@ -2057,7 +2219,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT]) {
 
                                 // Update write cost of accumulator in PE array.
@@ -2072,7 +2234,7 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                      k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
                                                                                       *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
-                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                     p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                      pe_array->mask_bits[data_type_t::OUTPUT]) << pe_array->mask_bits[data_type_t::OUTPUT];
                             }
                         }
@@ -2108,138 +2270,172 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
     //}
 }
 
-void pe_t::mac_operation() {
-#if defined(USER_INTEGER) || defined(USER_FLOAT)
-    for(unsigned i = 0; i < num_active_macs; i++) {
-        output_data_mac[i].value += input_data_mac[i].value*weight_mac[i].value;
+void pe_t::clear_output_accumulators() {
+    std::fill_n(output_data_mac, mac_register_capacity, data_t{});
+}
+
+unsigned pe_t::count_nonzero_mac_operations(scheduler_t *m_scheduler) const {
+    const mac_geometry_t geometry = get_mac_geometry(m_scheduler);
+    validate_mac_geometry(geometry, mac_register_capacity, num_active_macs);
+
+    unsigned nonzero_operations = 0;
+    for(unsigned b = 0; b < geometry.batch; b++) {
+        for(unsigned g = 0; g < geometry.groups; g++) {
+            for(unsigned k = 0; k < geometry.output_channels_per_group; k++) {
+                for(unsigned p = 0; p < geometry.output_height; p++) {
+                    for(unsigned q = 0; q < geometry.output_width; q++) {
+                        for(unsigned c = 0; c < geometry.input_channels_per_group; c++) {
+                            for(unsigned r = 0; r < geometry.filter_height; r++) {
+                                for(unsigned s = 0; s < geometry.filter_width; s++) {
+                                    const size_t input_index = ((((static_cast<size_t>(b)*geometry.groups + g)*geometry.input_channels_per_group + c)*geometry.input_height + p*geometry.stride + r)*geometry.input_width + q*geometry.stride + s);
+                                    const size_t weight_index = ((((static_cast<size_t>(g)*geometry.output_channels_per_group + k)*geometry.input_channels_per_group + c)*geometry.filter_height + r)*geometry.filter_width + s);
+                                    if(data_is_nonzero(input_data_mac[input_index]) &&
+                                       data_is_nonzero(weight_mac[weight_index])) {
+                                        nonzero_operations++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-#else
-    for(unsigned i = 0; i < num_active_macs; i++) {
-        output_data_mac[i] += input_data_mac[i]*weight_mac[i];
+    return nonzero_operations;
+}
+
+void pe_t::mac_operation(scheduler_t *m_scheduler) {
+    const mac_geometry_t geometry = get_mac_geometry(m_scheduler);
+    validate_mac_geometry(geometry, mac_register_capacity, num_active_macs);
+
+    for(unsigned b = 0; b < geometry.batch; b++) {
+        for(unsigned g = 0; g < geometry.groups; g++) {
+            for(unsigned k = 0; k < geometry.output_channels_per_group; k++) {
+                for(unsigned p = 0; p < geometry.output_height; p++) {
+                    for(unsigned q = 0; q < geometry.output_width; q++) {
+                        const size_t output_index = ((((static_cast<size_t>(b)*geometry.groups + g)*geometry.output_channels_per_group + k)*geometry.output_height + p)*geometry.output_width + q);
+                        for(unsigned c = 0; c < geometry.input_channels_per_group; c++) {
+                            for(unsigned r = 0; r < geometry.filter_height; r++) {
+                                for(unsigned s = 0; s < geometry.filter_width; s++) {
+                                    const size_t input_index = ((((static_cast<size_t>(b)*geometry.groups + g)*geometry.input_channels_per_group + c)*geometry.input_height + p*geometry.stride + r)*geometry.input_width + q*geometry.stride + s);
+                                    const size_t weight_index = ((((static_cast<size_t>(g)*geometry.output_channels_per_group + k)*geometry.input_channels_per_group + c)*geometry.filter_height + r)*geometry.filter_width + s);
+                                    data_accumulate_product(output_data_mac[output_index],
+                                                            input_data_mac[input_index],
+                                                            weight_mac[weight_index]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-#endif
 }
 
 void pe_t::activation() {
-#if defined(USER_INTEGER) || defined(USER_FLOAT)
-    for(unsigned i = 0; i < num_active_macs; i++) {
-        output_data_mac[i].value = output_data_mac[i].value > 0.0 ? output_data_mac[i].value : 0.0;
-        //output_data_mac[i] = output_data_mac[i] > 0.0 ? output_data_mac[i] : 0.0;
+    for(size_t i = 0; i < mac_register_capacity; i++) {
+        data_relu(output_data_mac[i]);
     }
-#else
-    for(unsigned i = 0; i < num_active_macs; i++) {
-        output_data_mac[i] = output_data_mac[i] > 0.0 ? output_data_mac[i] : 0.0;
-    }
-#endif
 }
 
-/* TODO */
-void pe_t::max_pooling() {
 
-}
-
-void pe_t::avg_pooling() {
-
-}
-
-            
 // Print out the stats of the PE.
 void pe_t::print_specification() {
 
     std::cout << std::fixed;
     std::cout << "============ MAC specification =============" << std::endl;
-    std::cout << "# of MACs          :" << std::setw(24) 
+    std::cout << "# of MACs          :" << std::setw(24)
                                         << num_macs*mac_width << std::endl;
-    std::cout << "Computation energy :" << std::setw(21) << std::setprecision(2) 
+    std::cout << "Computation energy :" << std::setw(21) << std::setprecision(2)
                                         << u_computation_energy << " pJ" << std::endl;
-    std::cout << "Computation cycle  :" << std::setw(17) << std::setprecision(1) 
+    std::cout << "Computation cycle  :" << std::setw(17) << std::setprecision(1)
                                         << u_computation_cycle << " cycles" << std::endl;
 
     std::cout << "Line size" << std::endl;
-    std::cout << " * Input           :" << std::setw(19) << std::setprecision(0) 
+    std::cout << " * Input           :" << std::setw(19) << std::setprecision(0)
                                         << line_size_mac[data_type_t::INPUT] << " bits" << std::endl;
-    std::cout << " * Weight          :" << std::setw(19) << std::setprecision(0) 
+    std::cout << " * Weight          :" << std::setw(19) << std::setprecision(0)
                                         << line_size_mac[data_type_t::WEIGHT] << " bits" << std::endl;
-    std::cout << " * Output          :" << std::setw(19) << std::setprecision(0) 
+    std::cout << " * Output          :" << std::setw(19) << std::setprecision(0)
                                         << line_size_mac[data_type_t::OUTPUT] << " bits" << std::endl;
 
     std::cout << "Access energy (read/write)" << std::endl;
-    std::cout << " * MAC units       :" << std::setw(16) << std::setprecision(2) 
+    std::cout << " * MAC units       :" << std::setw(16) << std::setprecision(2)
                                         << u_read_energy_mac[data_type_t::INPUT] << "/" << u_write_energy_mac[data_type_t::INPUT] << " pJ" << std::endl;
     std::cout << "Access cycle (read/write)" << std::endl;
-    std::cout << " * MAC units       :" << std::setw(13) << std::setprecision(1) 
+    std::cout << " * MAC units       :" << std::setw(13) << std::setprecision(1)
                                         << u_read_cycle_mac[data_type_t::INPUT] << "/" << u_write_cycle_mac[data_type_t::INPUT] << " cycles" << std::endl;
     std::cout << std::endl;
 
     std::cout << "============= PE specification =============" << std::endl;
     // Print the size of local buffer.
     if(memory_type == memory_type_t::SEPARATE) {
-        std::cout << "Local buffer type  :" << std::setw(24) 
+        std::cout << "Local buffer type  :" << std::setw(24)
                                             << "Separated" << std::endl;
-        std::cout << " * Input           :" << std::setw(19) 
+        std::cout << " * Input           :" << std::setw(19)
                                             << input_size << " Byte" << std::endl;
-        std::cout << " * Weight          :" << std::setw(19) 
+        std::cout << " * Weight          :" << std::setw(19)
                                             << weight_size << " Byte" << std::endl;
-        std::cout << " * Output          :" << std::setw(19) 
+        std::cout << " * Output          :" << std::setw(19)
                                             << output_size << " Byte" << std::endl;
-        
+
         std::cout << "Line size" << std::endl;
-        std::cout << " * Input           :" << std::setw(19) << std::setprecision(0) 
+        std::cout << " * Input           :" << std::setw(19) << std::setprecision(0)
                                             << line_size_lb[data_type_t::INPUT] << " bits" << std::endl;
-        std::cout << " * Weight          :" << std::setw(19) << std::setprecision(0) 
+        std::cout << " * Weight          :" << std::setw(19) << std::setprecision(0)
                                             << line_size_lb[data_type_t::WEIGHT] << " bits" << std::endl;
-        std::cout << " * Output          :" << std::setw(19) << std::setprecision(0) 
+        std::cout << " * Output          :" << std::setw(19) << std::setprecision(0)
                                             << line_size_lb[data_type_t::OUTPUT] << " bits" << std::endl;
     }
     else if(memory_type == memory_type_t::SHARED) {
-        std::cout << "Local buffer type  :" << std::setw(24) 
+        std::cout << "Local buffer type  :" << std::setw(24)
                                             << "Shared" << std::endl;
-        std::cout << "Buffer size        :" << std::setw(19) 
+        std::cout << "Buffer size        :" << std::setw(19)
                                             << input_size + weight_size + output_size << " Byte" << std::endl;
-        std::cout << "Line size          :" << std::setw(19) << std::setprecision(0) 
+        std::cout << "Line size          :" << std::setw(19) << std::setprecision(0)
                                             << line_size_lb[data_type_t::INPUT] << " bits" << std::endl;
     }
     // Print the stationary type.
     if(stationary_type_local_buffer == stationary_type_t::INPUT_STATIONARY) {
-        std::cout << "Stationary type    :" << std::setw(24) 
+        std::cout << "Stationary type    :" << std::setw(24)
                                             << "Input stationary" << std::endl;
     }
     else if(stationary_type_local_buffer == stationary_type_t::WEIGHT_STATIONARY) {
-        std::cout << "Stationary type    :" << std::setw(24) 
+        std::cout << "Stationary type    :" << std::setw(24)
                                             << "Weight stationary" << std::endl;
-    } 
+    }
     else if(stationary_type_local_buffer == stationary_type_t::OUTPUT_STATIONARY) {
-        std::cout << "Stationary type    :" << std::setw(24) 
+        std::cout << "Stationary type    :" << std::setw(24)
                                             << "Output stationary" << std::endl;
     }
     // Print out the bandwidth
-    std::cout << "Bandwidth          :" << std::setw(19) << std::setprecision(0) 
+    std::cout << "Bandwidth          :" << std::setw(19) << std::setprecision(0)
                                         << bandwidth << " GB/s" << std::endl;
-    // Print out unit access cost of the local buffer. 
+    // Print out unit access cost of the local buffer.
     if(memory_type == memory_type_t::SEPARATE) {
         std::cout << "Access energy (read/write)" << std::endl;
-        std::cout << " * Input buffer    :" << std::setw(16) << std::setprecision(2) 
+        std::cout << " * Input buffer    :" << std::setw(16) << std::setprecision(2)
                                             << u_read_energy_lb[data_type_t::INPUT]  << "/" << u_write_energy_lb[data_type_t::INPUT]  << " pJ" << std::endl;
-        std::cout << " * Weight buffer   :" << std::setw(16) << std::setprecision(2) 
+        std::cout << " * Weight buffer   :" << std::setw(16) << std::setprecision(2)
                                             << u_read_energy_lb[data_type_t::WEIGHT] << "/" << u_write_energy_lb[data_type_t::WEIGHT] << " pJ" << std::endl;
-        std::cout << " * Output buffer   :" << std::setw(16) << std::setprecision(2) 
+        std::cout << " * Output buffer   :" << std::setw(16) << std::setprecision(2)
                                             << u_read_energy_lb[data_type_t::OUTPUT] << "/" << u_write_energy_lb[data_type_t::OUTPUT] << " pJ" << std::endl;
 
         std::cout << "Access cycle (read/write)" << std::endl;
-        std::cout << " * Input buffer    :" << std::setw(13) << std::setprecision(1) 
+        std::cout << " * Input buffer    :" << std::setw(13) << std::setprecision(1)
                                             << u_read_cycle_lb[data_type_t::INPUT] << "/" << u_write_cycle_lb[data_type_t::INPUT] << " cycles" << std::endl;
-        std::cout << " * Weight buffer   :" << std::setw(13) << std::setprecision(1) 
+        std::cout << " * Weight buffer   :" << std::setw(13) << std::setprecision(1)
                                             << u_read_cycle_lb[data_type_t::WEIGHT] << "/" << u_write_cycle_lb[data_type_t::WEIGHT] << " cycles" << std::endl;
-        std::cout << " * Output buffer   :" << std::setw(13) << std::setprecision(1) 
+        std::cout << " * Output buffer   :" << std::setw(13) << std::setprecision(1)
                                             << u_read_cycle_lb[data_type_t::OUTPUT] << "/" << u_write_cycle_lb[data_type_t::OUTPUT] << " cycles" << std::endl;
     }
     else if(memory_type == memory_type_t::SHARED) {
         std::cout << "Access energy (read/write)" << std::endl;
-        std::cout << " * Local buffer    :" << std::setw(16) << std::setprecision(2) 
+        std::cout << " * Local buffer    :" << std::setw(16) << std::setprecision(2)
                                             << u_read_energy_lb[data_type_t::INPUT]  << "/" << u_write_energy_lb[data_type_t::INPUT]  << " pJ" << std::endl;
 
         std::cout << "Access cycle (read/write)" << std::endl;
-        std::cout << " * Local buffer    :" << std::setw(13) << std::setprecision(1) 
+        std::cout << " * Local buffer    :" << std::setw(13) << std::setprecision(1)
                                             << u_read_cycle_lb[data_type_t::INPUT] << "/" << u_write_cycle_lb[data_type_t::INPUT] << " cycles" << std::endl;
     }
 	std::cout << std::endl;
@@ -2247,15 +2443,27 @@ void pe_t::print_specification() {
 
 // Reset the stats
 void pe_t::reset() {
-    
-    memset(input_data_mac, 0.0, mac_width*num_macs*sizeof(data_t));
-    memset(weight_mac, 0.0, mac_width*num_macs*sizeof(data_t));
-    memset(output_data_mac, 0.0, num_macs*sizeof(data_t));
 
-    memset(input_data_lb, 0.0, input_size);
-    memset(weight_lb, 0.0, weight_size);
-    memset(output_data_lb, 0.0, output_size);
+    std::fill_n(input_data_mac, mac_register_capacity, data_t{});
+    std::fill_n(weight_mac, mac_register_capacity, data_t{});
+    clear_output_accumulators();
 
+    std::fill_n(input_data_lb, (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+    std::fill_n(weight_lb, (static_cast<size_t>(weight_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+    std::fill_n(output_data_lb, (static_cast<size_t>(output_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+
+    input_index = 0;
+    weight_index = 0;
+    output_index = 0;
+    input_flush_counter = 0;
+    weight_flush_counter = 0;
+    output_flush_counter = 0;
+    exist_data_mac.assign(data_type_t::NUM_DATA_TYPES, false);
+    exist_data_lb.assign(data_type_t::NUM_DATA_TYPES, false);
+    request_to_lb.assign(data_type_t::NUM_DATA_TYPES, true);
+    request_to_pe_array.assign(data_type_t::NUM_DATA_TYPES, false);
+    offsets_mac.assign(data_type_t::NUM_DATA_TYPES, 0);
+    offsets_lb.assign(data_type_t::NUM_DATA_TYPES, 0);
     idle = false;
 
     num_computation = 0;
@@ -2271,7 +2479,7 @@ void pe_t::reset() {
 
     num_request_to_lb.assign(data_type_t::NUM_DATA_TYPES, 0);
     num_data_transfer_to_mac.assign(data_type_t::NUM_DATA_TYPES, 0);
-    
+
     // Reset access cycle and energy of MAC unit.
     access_cycle_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     access_energy_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -2279,13 +2487,13 @@ void pe_t::reset() {
     // Reset access cycle and energy of local buffer.
     access_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     access_energy_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    
+
     transfer_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Reset overlapped cycle between MAC unit and local buffer
     cycle_mac_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    
+
     // Reset static energy of PE.
     static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
@@ -2329,11 +2537,11 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
         // Write back output data
-        m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
-                                   component_type_t::PE, component_type_t::MAC, 
+        m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0,
+                                   component_type_t::PE, component_type_t::MAC,
                                    data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
         // Update for NPUsim ver2
-        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
         //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
         //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
         //                                component_type_t::PE, component_type_t::MAC,
@@ -2375,7 +2583,7 @@ input_stationary_t::~input_stationary_t() {
 
 }
 
-// Execute MAC operation 
+// Execute MAC operation
 void input_stationary_t::computation(scheduler_t *m_scheduler) {
 
     // When all the data exist, execute the MAC operation
@@ -2383,8 +2591,8 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
         if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER ||
            m_scheduler->layer_name == layer_name_t::CONNECTED_LAYER) {
 #ifdef FUNCTIONAL
-            mac_operation();
-            activation();
+            mac_operation(m_scheduler);
+            // Activation is applied only after a completed output reduction.
             // Split active_macs and mac_width
             if(m_scheduler->compression_type == compression_type_t::DENSE) {
                 for(unsigned i = 0; i < num_active_macs; i++) {
@@ -2394,18 +2602,11 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_cycle += u_computation_cycle;
             }
             else {
-                for(unsigned i = 0; i < num_active_macs; i++) {
-                    if(input_data_mac[i] != 0.0 && weight_mac[i] != 0.0) {
-                        num_computation++;
-                        computation_energy += u_computation_energy;
-                    }
-                }
-
-                for(unsigned i = 0; i < num_active_macs; i++) {
-                    if(input_data_mac[i] != 0.0 && weight_mac[i] != 0.0) {
-                        computation_cycle += u_computation_cycle;
-                        break;
-                    }
+                const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
+                num_computation += nonzero_operations;
+                computation_energy += nonzero_operations*u_computation_energy;
+                if(nonzero_operations > 0) {
+                    computation_cycle += u_computation_cycle;
                 }
             }
 #else
@@ -2415,18 +2616,17 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
             }
             computation_cycle += u_computation_cycle;
 #endif
-        } else if(m_scheduler->layer_name == layer_name_t::MAXPOOL_LAYER) {
-            max_pooling();
-        } else if(m_scheduler->layer_name == layer_name_t::AVGPOOL_LAYER) {
-            avg_pooling();
+        } else {
+            std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
+            exit(1);
         }
 #ifdef FUNCTIONAL
         // Write back output data
-        m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
-                                   component_type_t::PE, component_type_t::MAC, 
+        m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0,
+                                   component_type_t::PE, component_type_t::MAC,
                                    data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
         // Update for NPUsim ver2
-        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
         //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
         //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
         //                                component_type_t::PE, component_type_t::MAC,
@@ -2567,11 +2767,11 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
 
     // Execute MAC operation when all DNN data exist in MAC register.
     if(exist_data_mac[data_type_t::INPUT] && exist_data_mac[data_type_t::WEIGHT] && exist_data_mac[data_type_t::OUTPUT]) {
-        if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER || 
+        if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER ||
            m_scheduler->layer_name == layer_name_t::CONNECTED_LAYER) {
 #ifdef FUNCTIONAL
-            mac_operation();
-            activation();
+            mac_operation(m_scheduler);
+            // Activation is applied only after a completed output reduction.
             // Split active_macs and mac_width
             if(m_scheduler->compression_type == compression_type_t::DENSE) {
                 for(unsigned i = 0; i < num_active_macs; i++) {
@@ -2581,21 +2781,14 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_cycle += u_computation_cycle;
             }
             else {
-                for(unsigned i = 0; i < num_active_macs; i++) {
-                    if(input_data_mac[i] != 0.0 && weight_mac[i] != 0.0) {
-                        num_computation++;
-                        computation_energy += u_computation_energy;
-                    }
-                }
-
-                for(unsigned i = 0; i < num_active_macs; i++) {
-                    if(input_data_mac[i] != 0.0 && weight_mac[i] != 0.0) {
-                        computation_cycle += u_computation_cycle;
-                        break;
-                    }
+                const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
+                num_computation += nonzero_operations;
+                computation_energy += nonzero_operations*u_computation_energy;
+                if(nonzero_operations > 0) {
+                    computation_cycle += u_computation_cycle;
                 }
             }
-#else 
+#else
             for(unsigned i = 0; i < num_active_macs; i++) {
                 num_computation++;
                 computation_energy += u_computation_energy;
@@ -2603,20 +2796,18 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
             computation_cycle += u_computation_cycle;
 #endif
         }
-        else if(m_scheduler->layer_name == layer_name_t::MAXPOOL_LAYER) {
-            max_pooling();
-        }
-        else if(m_scheduler->layer_name == layer_name_t::AVGPOOL_LAYER) {
-            avg_pooling();
+        else {
+            std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
+            exit(1);
         }
 
 #ifdef FUNCTIONAL
         // Write back output data
-        m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
-                                   component_type_t::PE, component_type_t::MAC, 
+        m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0,
+                                   component_type_t::PE, component_type_t::MAC,
                                    data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
         // Update for NPUsim ver2
-        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
         //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
         //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
         //                                component_type_t::PE, component_type_t::MAC,
@@ -2638,8 +2829,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                                                                        *parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
                                                                        *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
                                                                       k*parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
-                                                                       *parameters_mac[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                      p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                       *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
+                                                                      p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                       mask_bits_mac[data_type_t::OUTPUT]) << mask_bits_mac[data_type_t::OUTPUT]) {
 
                             // Update write cost of MAC unit.
@@ -2652,8 +2843,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                                                                        *parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
                                                                        *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
                                                                       k*parameters_mac[parameter_type_t::OUTPUT_HEIGHT]
-                                                                       *parameters_mac[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                      p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                       *parameters_mac[parameter_type_t::OUTPUT_WIDTH] +
+                                                                      p*parameters_mac[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                       mask_bits_mac[data_type_t::OUTPUT]) << mask_bits_mac[data_type_t::OUTPUT];
                         }
 
@@ -2662,8 +2853,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                                                                      *parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
                                                                      *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
                                                                     k*parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
-                                                                     *parameters_lb[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                    p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                     *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
+                                                                    p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                     mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT]) {
 
                             // Update read cost of Local buffer
@@ -2672,13 +2863,13 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                             num_access_lb++;
 
                             // Update local buffer address
-                            address_lb = ((uint64_t)&output_data_lb[m_scheduler->output_offset_pe.front() + 
+                            address_lb = ((uint64_t)&output_data_lb[m_scheduler->output_offset_pe.front() +
                                                                     b*parameters_lb[parameter_type_t::OUTPUT_CHANNEL]
                                                                      *parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
                                                                      *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
                                                                     k*parameters_lb[parameter_type_t::OUTPUT_HEIGHT]
-                                                                     *parameters_lb[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                    p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                     *parameters_lb[parameter_type_t::OUTPUT_WIDTH] +
+                                                                    p*parameters_lb[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                     mask_bits_lb[data_type_t::OUTPUT]) << mask_bits_lb[data_type_t::OUTPUT];
 
                         }
@@ -2702,7 +2893,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                                         u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
         if(num_access_lb == 1) {
-            cycle_mac_lb[data_type_t::OUTPUT] += ratio*u_read_cycle_mac[data_type_t::OUTPUT] + 
+            cycle_mac_lb[data_type_t::OUTPUT] += ratio*u_read_cycle_mac[data_type_t::OUTPUT] +
                                                  u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                  u_write_cycle_lb[data_type_t::OUTPUT];
         } else if(num_access_lb == 2) {
@@ -2712,7 +2903,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                                                  (num_access_lb - 2)*other_stage +
                                                  last_before_stage + last_stage;
         }
-        
+
         transfer_energy[data_type_t::OUTPUT] += num_access_mac*u_transfer_energy*ceil((double)(line_size_mac[data_type_t::OUTPUT])/(double)(bitwidth));
         transfer_cycle[data_type_t::OUTPUT] += num_access_mac*u_transfer_cycle*ceil((double)(line_size_mac[data_type_t::OUTPUT])/(double)(bitwidth));
 
@@ -2762,27 +2953,21 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
         if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER ||
            m_scheduler->layer_name == layer_name_t::CONNECTED_LAYER) {
 #ifdef FUNCTIONAL
-            mac_operation();
-            activation();
+            mac_operation(m_scheduler);
+            // Activation is applied only after a completed output reduction.
             if(m_scheduler->compression_type == compression_type_t::DENSE) {
                 for(unsigned i = 0; i < num_active_macs; i++) {
                     num_computation++;
-                    computation_energy += u_computation_cycle;
+                    computation_energy += u_computation_energy;
                 }
+                computation_cycle += u_computation_cycle;
             }
             else {
-                for(unsigned i = 0; i < num_active_macs; i++) {
-                    if(input_data_mac[i] != 0.0 && weight_mac[i] != 0.0) {
-                        num_computation++;
-                        computation_energy += u_computation_cycle;
-                    }
-                }
-
-                for(unsigned i = 0; i < num_active_macs; i++) {
-                    if(input_data_mac[i] != 0.0 && weight_mac[i] != 0.0) {
-                        computation_cycle += u_computation_cycle;
-                        break;
-                    }
+                const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
+                num_computation += nonzero_operations;
+                computation_energy += nonzero_operations*u_computation_energy;
+                if(nonzero_operations > 0) {
+                    computation_cycle += u_computation_cycle;
                 }
             }
 #else
@@ -2791,15 +2976,13 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_energy += u_computation_energy;
             }
             computation_cycle += u_computation_cycle;
-            
+
 #endif
         }
 
-        else if(m_scheduler->layer_name == layer_name_t::MAXPOOL_LAYER) {
-            max_pooling();
-        }
-        else if(m_scheduler->layer_name == layer_name_t::AVGPOOL_LAYER) {
-            avg_pooling();
+        else {
+            std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
+            exit(1);
         }
 
 
@@ -2827,11 +3010,11 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
             // Write back output data
-            m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0, 
-                                       component_type_t::PE, component_type_t::MAC, 
+            m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0,
+                                       component_type_t::PE, component_type_t::MAC,
                                        data_type_t::OUTPUT, get_mac_stationary_type(), action_type_t::STORE);
         // Update for NPUsim ver2
-        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 && 
+        //bool last_component = (index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1 &&
         //                       pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y);
         //m_scheduler->transfer_data_ver2(output_data_lb, output_data_mac,
         //                                component_type_t::PE, component_type_t::MAC,
@@ -2917,7 +3100,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                                             u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
 
             if(num_access_lb == 1) {
-                cycle_mac_lb[data_type_t::OUTPUT] += ratio*u_read_cycle_mac[data_type_t::OUTPUT] + 
+                cycle_mac_lb[data_type_t::OUTPUT] += ratio*u_read_cycle_mac[data_type_t::OUTPUT] +
                                                      u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                      u_write_cycle_lb[data_type_t::OUTPUT];
             } else if(num_access_lb == 2) {
@@ -2927,7 +3110,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                                                      (num_access_lb - 2)*other_stage +
                                                      last_before_stage + last_stage;
             }
-            
+
             transfer_energy[data_type_t::OUTPUT] += num_access_mac*u_transfer_energy*ceil((double)(line_size_mac[data_type_t::OUTPUT])/(double)(bitwidth));
             transfer_cycle[data_type_t::OUTPUT] += num_access_mac*u_transfer_cycle*ceil((double)(line_size_mac[data_type_t::OUTPUT])/(double)(bitwidth));
 
@@ -2938,4 +3121,3 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
         }
     }
 }
-
