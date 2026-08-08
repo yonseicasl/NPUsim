@@ -25,7 +25,7 @@ dramsim3dir=$extdir/DRAMsim3
 modeldir=$npusimdir/models
 
 # Reproducible external dependency revisions (override through the environment if needed).
-NEBULA_COMMIT=${NEBULA_COMMIT:-36d7d9049a76d3dd2c2c2eeca8f8b7e93e9a17d6}
+# NEBULA_COMMIT=${NEBULA_COMMIT:-36d7d9049a76d3dd2c2c2eeca8f8b7e93e9a17d6}
 DRAMSIM3_COMMIT=${DRAMSIM3_COMMIT:-29817593b3389f1337235d63cac515024ab8fd6e}
 
 
@@ -132,6 +132,13 @@ function pin_dependency {
     git -C "$dependency_dir" checkout --detach "$dependency_commit"
 }
 
+function pin_dependency_nebula {
+    local dependency_dir=$1
+    local dependency_branch=$2
+    git -C "$dependency_dir" fetch origin "$dependency_branch"
+    git -C "$dependency_dir" checkout --detach "origin/$dependency_branch"
+}
+
 ##### NPUsim build function #####
 function build_model {
     #echo -e "NPUsim build $1"
@@ -148,7 +155,7 @@ function build_model {
                 echo -e "\n# Install Nebula framework from Github"
                 cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
             fi
-            pin_dependency "$nebuladir" npusim "$NEBULA_COMMIT"
+            pin_dependency_nebula "$nebuladir" npusim
 
             # Build Nebula library
             echo -e "\n# Build Nebula software framework"
@@ -203,7 +210,7 @@ function build_model {
                 echo -e "\n# Install Nebula framework from Github"
                 cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
             fi
-            pin_dependency "$nebuladir" npusim "$NEBULA_COMMIT"
+            pin_dependency_nebula "$nebuladir" npusim
 
             # Build Nebula library
             echo -e "\n# Build Nebula software framework"
@@ -243,7 +250,7 @@ function build_model {
                 echo -e "\n# Install Nebula framework from Github"
                 cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
             fi
-            pin_dependency "$nebuladir" npusim "$NEBULA_COMMIT"
+            pin_dependency_nebula "$nebuladir" npusim
 
             # Build Nebula library
             echo -e "\n# Build Nebula software framework"
