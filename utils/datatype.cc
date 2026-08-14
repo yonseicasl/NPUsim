@@ -40,7 +40,8 @@ const char *config_key(data_type_t type) {
 
 runtime_datatypes_t::runtime_datatypes_t() : formats(data_type_t::NUM_DATA_TYPES,
                                                        scalar(data_format_kind_t::UINT, 8, false, "uint8")),
-                                             accumulator(scalar(data_format_kind_t::FP32, 32, true, "fp32")) {
+                                             accumulator(scalar(data_format_kind_t::FP32, 32, true, "fp32")),
+                                             mxfp_metadata_layout(mxfp_metadata_layout_t::SEPARATE) {
 }
 
 tensor_format_t parse_data_format(const std::string &value) {
@@ -66,6 +67,7 @@ tensor_format_t parse_data_format(const std::string &value) {
 }
 
 void runtime_datatypes_t::configure(section_config_t &section) {
+    mxfp_metadata_layout = mxfp_metadata_layout_t::SEPARATE;
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
         const data_type_t type = static_cast<data_type_t>(i);
         std::string value;
@@ -82,6 +84,26 @@ void runtime_datatypes_t::configure(section_config_t &section) {
             if(!section.exists(config_key(static_cast<data_type_t>(i)))) formats[i] = format;
         }
     }
+
+    std::string layout;
+    if(section.get_setting("mxfp_metadata_layout", &layout)) {
+        const std::string value = normalized(layout);
+        if(value == "separate") mxfp_metadata_layout = mxfp_metadata_layout_t::SEPARATE;
+        else if(value == "interleaved") mxfp_metadata_layout = mxfp_metadata_layout_t::INTERLEAVED;
+        else {
+            std::cerr << "Error: invalid mxfp_metadata_layout '" << layout
+                      << "' (supported: separate, interleaved)" << std::endl;
+            exit(1);
+        }
+    }
+}
+
+mxfp_metadata_layout_t runtime_datatypes_t::metadata_layout() const {
+    return mxfp_metadata_layout;
+}
+
+bool runtime_datatypes_t::metadata_stream_is_separate() const {
+    return mxfp_metadata_layout == mxfp_metadata_layout_t::SEPARATE;
 }
 
 const tensor_format_t &runtime_datatypes_t::format(data_type_t type) const {
@@ -108,7 +130,12 @@ size_t runtime_datatypes_t::payload_bits(data_type_t type, size_t elements) cons
 size_t runtime_datatypes_t::metadata_bits(data_type_t type, size_t elements) const {
     const tensor_format_t &value = format(type);
     if(!value.is_block_scaled() || elements == 0) return 0;
-    return ceil_div(elements, value.block_elements) * value.scale_bits;
+    const size_t blocks = ceil_div(elements, value.block_elements);
+    if(blocks > std::numeric_limits<size_t>::max() / value.scale_bits) {
+        std::cerr << "Error: datatype metadata size overflow" << std::endl;
+        exit(1);
+    }
+    return blocks * value.scale_bits;
 }
 
 size_t runtime_datatypes_t::storage_bits(data_type_t type, size_t elements) const {
@@ -121,8 +148,23 @@ size_t runtime_datatypes_t::storage_bits(data_type_t type, size_t elements) cons
     return payload + metadata;
 }
 
+size_t runtime_datatypes_t::payload_bytes(data_type_t type, size_t elements) const {
+    return ceil_div(payload_bits(type, elements), 8);
+}
+
+size_t runtime_datatypes_t::metadata_bytes(data_type_t type, size_t elements) const {
+    return ceil_div(metadata_bits(type, elements), 8);
+}
+
 size_t runtime_datatypes_t::storage_bytes(data_type_t type, size_t elements) const {
-    return ceil_div(storage_bits(type, elements), 8);
+    if(!metadata_stream_is_separate()) return ceil_div(storage_bits(type, elements), 8);
+    const size_t payload = payload_bytes(type, elements);
+    const size_t metadata = metadata_bytes(type, elements);
+    if(payload > std::numeric_limits<size_t>::max() - metadata) {
+        std::cerr << "Error: datatype storage byte size overflow" << std::endl;
+        exit(1);
+    }
+    return payload + metadata;
 }
 
 std::string runtime_datatypes_t::describe(data_type_t type) const {
@@ -159,5 +201,12 @@ size_t runtime_datatypes_t::storage_transactions(data_type_t type, size_t elemen
         std::cerr << "Error: datatype transaction width must be non-zero" << std::endl;
         exit(1);
     }
-    return ceil_div(storage_bits(type, elements), transaction_bits);
+    if(!metadata_stream_is_separate()) return ceil_div(storage_bits(type, elements), transaction_bits);
+    const size_t payload = payload_transactions(type, elements, transaction_bits);
+    const size_t metadata = metadata_transactions(type, elements, transaction_bits);
+    if(payload > std::numeric_limits<size_t>::max() - metadata) {
+        std::cerr << "Error: datatype transaction count overflow" << std::endl;
+        exit(1);
+    }
+    return payload + metadata;
 }

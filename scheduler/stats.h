@@ -25,6 +25,9 @@ public:
     // Update layer-wise stats.
     void update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<global_buffer_t*> m_global_buffer, multi_chip_t *m_multi_chip, dram_t *m_dram);
 
+    // Serially account for identical temporal tiles at or above the global buffer.
+    void scale_serial_repetitions(unsigned m_repetitions);
+
     // Update network stats.
     void update_network_stats(stats_t *m_source);
 
@@ -42,6 +45,10 @@ public:
     double min_computation_cycle;
     double avg_computation_cycle;
     double computation_energy;                                          // Total computation energy.
+    double mac_busy_cycle;                                              // Sum of scalar-MAC busy cycles.
+    double mac_available_cycle;                                         // Sum of scalar-MAC available cycles.
+    std::vector<double> format_cycle_pe;                                // PE format-IP cycle by tensor type.
+    std::vector<double> format_energy_pe;                               // PE format-IP energy by tensor type.
 
     std::vector<unsigned> num_request_pe;                               // Number of request to local buffer of PE.
     std::vector<unsigned> num_data_transfer_pe;                         // Number of data transfer to MAC unit of PE.
@@ -51,7 +58,7 @@ public:
     std::vector<double> min_access_cycle_mac;
     std::vector<double> avg_access_cycle_mac;
     std::vector<double> access_energy_mac;                              // Total access energy to MAC unit of PE.
-    double utilization_mac;                                             // Utilization of computing units
+    double utilization_mac;                                             // Time-based utilization of physical scalar MACs.
 
     std::vector<double> access_cycle_lb;                                // Total access cycle to local buffer of PE.
     std::vector<double> max_access_cycle_lb;
@@ -63,6 +70,9 @@ public:
 
     std::vector<double> transfer_cycle_pe;                              // Total data transfer cycle between MAC unit and local buffer of PE.
     std::vector<double> transfer_energy_pe;                             // Total data transfer energy between MAC unit and local buffer of PE.
+    std::vector<size_t> payload_link_transactions_pe;
+    std::vector<size_t> metadata_link_transactions_pe;
+    std::vector<size_t> storage_link_transactions_pe;
     std::vector<double> cycle_mac_lb;                                   // Overlapped cycle between computing and local buffer
 
     std::vector<double> static_energy_pe;                               // Static energy of PE
@@ -77,11 +87,18 @@ public:
 
     std::vector<double> transfer_cycle_pe_array;                        // Total data transfer cycle between PE and PE array.
     std::vector<double> transfer_energy_pe_array;                       // Total data transfer energy between PE and PE array.
+    std::vector<size_t> payload_link_transactions_pe_array;
+    std::vector<size_t> metadata_link_transactions_pe_array;
+    std::vector<size_t> storage_link_transactions_pe_array;
 
     /* Global buffer */
     memory_type_t global_buffer_type;
     std::vector<unsigned> num_request_global_buffer;                    // Number of request to global buffer (from PE array).
     std::vector<unsigned> num_data_transfer_global_buffer;              // Number of data transfer from global buffer (to PE array).
+    // Link transactions are reported as logical payload/metadata and physical storage streams.
+    std::vector<size_t> payload_link_transactions_global_buffer;
+    std::vector<size_t> metadata_link_transactions_global_buffer;
+    std::vector<size_t> storage_link_transactions_global_buffer;
 
     std::vector<double> access_cycle_global_buffer;                     // Total access cycle to global buffer.
     std::vector<double> access_energy_global_buffer;                    // Total access energy to global buffer.
@@ -97,6 +114,9 @@ public:
     /* Multi chip */
     std::vector<unsigned> num_request_multi_chip;                       // Number of request to Multi-chip (from global buffer).
     std::vector<unsigned> num_data_transfer_multi_chip;                 // Number of data transfer from Multi-chip (to global buffer).
+    std::vector<size_t> payload_link_transactions_multi_chip;
+    std::vector<size_t> metadata_link_transactions_multi_chip;
+    std::vector<size_t> storage_link_transactions_multi_chip;
 
     std::vector<double> access_cycle_multi_chip;                        // Total access cycle to Multi-chip.
     std::vector<double> access_energy_multi_chip;                       // Total access energy to Multi-chip.
@@ -108,6 +128,9 @@ public:
     /* DRAM */
     std::vector<unsigned> num_request_dram;                             // Number of request to DRAM (from Multi-chip).
     std::vector<unsigned> num_data_transfer_dram;                       // Number of data transfer from DRAM (to Multi-chip).
+    std::vector<size_t> payload_link_transactions_dram;
+    std::vector<size_t> metadata_link_transactions_dram;
+    std::vector<size_t> storage_link_transactions_dram;
 
     std::vector<double> access_cycle_dram;                              // Total access cycle to DRAM.
     std::vector<double> access_energy_dram;                             // Total access energy to DRAM.

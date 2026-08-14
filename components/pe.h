@@ -79,6 +79,7 @@ public:
     // elapsed layer time, not an event counter.
     double modeled_elapsed_cycles() const;
     void update_static_energy(double elapsed_cycles);
+    size_t scalar_mac_capacity() const;
 
     /* PE specifications */
 
@@ -141,6 +142,14 @@ public:
 
     std::vector<double> u_static_energy;
 
+    // Optional format-IP cost per packed payload/metadata transaction.
+    std::vector<double> u_format_payload_cycle;
+    std::vector<double> u_format_payload_energy;
+    std::vector<double> u_format_metadata_cycle;
+    std::vector<double> u_format_metadata_energy;
+    std::vector<double> u_accumulator_spill_cycle;
+    std::vector<double> u_accumulator_spill_energy;
+
 
     /* PE stats */
 
@@ -156,10 +165,18 @@ public:
     std::vector<double> access_energy_mac;                  // Total access energies to MAC unit
 
     std::vector<double> access_cycle_lb;                    // Total access cycles to Local buffer.
+
+    // Dynamic conversion/pack/decode/scale/spill costs by tensor type.
+    std::vector<double> format_cycle;
+    std::vector<double> format_energy;
     std::vector<double> access_energy_lb;                   // Total access energies to Local buffer.
 
     std::vector<double> transfer_cycle;                     // Total transfer cycle between MAC unit and local buffer
     std::vector<double> transfer_energy;                    // Total transfer energy between MAC unit and local buffer
+
+    std::vector<size_t> payload_link_transactions;          // Logical payload transactions on MAC-local-buffer link.
+    std::vector<size_t> metadata_link_transactions;         // Logical datatype metadata transactions.
+    std::vector<size_t> storage_link_transactions;          // Physical serialized transactions.
 
     std::vector<double> cycle_mac_lb;                       // Total cycle between MAC unit and local buffer.
 
@@ -216,6 +233,8 @@ protected:
     void clear_output_accumulators();
     unsigned count_nonzero_mac_operations(scheduler_t *m_scheduler) const;
 
+    void account_format_events(data_type_t type, size_t elements);
+    void account_descriptor_dense_mac_transfer(data_type_t type, size_t elements, bool to_mac);
 };
 
 class undefined_stationary_t : public pe_t {

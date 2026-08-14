@@ -60,6 +60,7 @@ public:
     virtual void data_transfer(scheduler_t *m_scheduler) = 0;
     // Flush data at temporal buffer in PE array.
     void flush_data();
+    void account_descriptor_dense_writeback(pe_t *source_pe, size_t elements);
 
     // Print out the configuration of PE array.
     virtual void print_specification() = 0;
@@ -112,6 +113,10 @@ public:
 
     std::vector<double> cycle_temporal_pe;
 
+    std::vector<size_t> payload_link_transactions;
+    std::vector<size_t> metadata_link_transactions;
+    std::vector<size_t> storage_link_transactions;
+
     double utilization;                                     // Utilization of PE array
 
     double write_back_cycle;                                //
@@ -124,6 +129,8 @@ public:
 protected:
 
     void initialize_temporal_buffer(section_config_t m_section_config);
+    void account_descriptor_dense_distribution(scheduler_t *m_scheduler,
+                                               double link_cycle, double link_energy);
 
     global_buffer_t *global_buffer;                         // Global buffer to connect
 

@@ -71,6 +71,11 @@ public:
 
     std::vector<double> cycle_chip_dram;            // Overlapped cycle between the off-chip memory and chip-level processor
 
+    // Runtime-datatype link transactions. All widths are bits.
+    std::vector<size_t> payload_link_transactions;
+    std::vector<size_t> metadata_link_transactions;
+    std::vector<size_t> storage_link_transactions;
+
     /* Off-chip memory unit stats */
 
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
@@ -92,6 +97,8 @@ public:
     nebula::layer_t *layer;
 
 private:
+    void account_descriptor_dense_load(data_type_t type, size_t elements);
+
     /* DRAM specification */
     float frequency;                                // Frequency of DRAM.
     float bandwidth;                                // Bandwidth between chip-level processor and the off-chip memory

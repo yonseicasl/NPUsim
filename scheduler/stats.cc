@@ -1,6 +1,23 @@
 #include <iomanip>
 #include <fstream>
 #include "stats.h"
+#include <limits>
+#include "pe_lane.h"
+
+namespace {
+void print_transaction_breakdown(std::ofstream &output, const char *title,
+                                 const std::vector<size_t> &payload,
+                                 const std::vector<size_t> &metadata,
+                                 const std::vector<size_t> &storage) {
+    static const char *labels[] = {"Input data", "Weight", "Output data"};
+    output << title << " transactions (payload/metadata/serialized)" << std::endl;
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        output << " * " << std::left << std::setw(19) << labels[i] << std::right << ":"
+               << payload[i] << "/" << metadata[i] << "/" << storage[i] << std::endl;
+    }
+    output << std::endl;
+}
+}
 
 stats_t::stats_t() :
     local_buffer_type(memory_type_t::UNDEFINED_MEMORY),
@@ -10,6 +27,8 @@ stats_t::stats_t() :
     min_computation_cycle(0.0),
     avg_computation_cycle(0.0),
     computation_energy(0.0),
+    mac_busy_cycle(0.0),
+    mac_available_cycle(0.0),
     utilization_mac(0.0),
     total_utilization_local_buffer(0.0),
     utilization_pe_array(0.0),
@@ -94,10 +113,18 @@ void stats_t::init() {
     // Initialize transfer energy between computing unit and local buffers
     transfer_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize static energy at PE
     static_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
+    format_cycle_pe.reserve(data_type_t::NUM_DATA_TYPES);
+    format_cycle_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    format_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
+    format_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     
     /* Initialize PE array stats */
 
@@ -124,6 +151,9 @@ void stats_t::init() {
     // Initialize transfer energy between PE array and PE (Interconnection)
     transfer_energy_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     /* Initialize Global buffer stats */
 
@@ -134,6 +164,9 @@ void stats_t::init() {
     // Initialize the number of data transfer to the PE array
     num_data_transfer_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
+    payload_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
     
     // Initialize access cycle of the global buffer
     access_cycle_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
@@ -172,6 +205,9 @@ void stats_t::init() {
     // Initialize the number of data transfer to the global buffer
     num_data_transfer_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize access cycle of the chip-level processor (if temporal buffer exist)
     access_cycle_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
@@ -197,6 +233,9 @@ void stats_t::init() {
     // Initialize the number of data transfer to chip-level processor
     num_data_transfer_dram.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
+    payload_link_transactions_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize access cycle to the off-chip memory
     access_cycle_dram.reserve(data_type_t::NUM_DATA_TYPES);
@@ -359,16 +398,26 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     // physical PE leaks for the modeled duration of the layer, rather than
     // once per data-transfer callback.
     double pe_elapsed_cycles = 0.0;
+    size_t physical_scalar_macs = 0;
     for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); ++i) {
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); ++j) {
             pe_elapsed_cycles = std::max(pe_elapsed_cycles,
                                          m_pe_array[i]->pes[j]->modeled_elapsed_cycles());
+            const size_t scalar_macs = m_pe_array[i]->pes[j]->scalar_mac_capacity();
+            if(scalar_macs > std::numeric_limits<size_t>::max() - physical_scalar_macs) {
+                std::cerr << "Error: scalar-MAC capacity overflow" << std::endl;
+                exit(1);
+            }
+            physical_scalar_macs += scalar_macs;
         }
     }
     for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); ++i) {
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); ++j) {
             m_pe_array[i]->pes[j]->update_static_energy(pe_elapsed_cycles);
         }
+    }
+    for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
+        m_global_buffer[i]->update_static_energy(pe_elapsed_cycles);
     }
 
     unsigned num_active_pe = 0;
@@ -388,8 +437,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             // Update computation energy
             computation_energy += m_pe_array[i]->pes[j]->computation_energy;
 
-            // Update utilization of computing units
-            utilization_mac = std::max(utilization_mac, m_pe_array[i]->pes[j]->utilization_mac);
+            // Account for scalar-MAC cycles that actually execute operations.
+            mac_busy_cycle += static_cast<double>(m_pe_array[i]->pes[j]->num_computation) *
+                              m_pe_array[i]->pes[j]->u_computation_cycle;
 
             for(unsigned k = 0; k < data_type_t::NUM_DATA_TYPES; k++) {
                 // Update the number of request to local buffer in PE
@@ -421,6 +471,12 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
                 // Update transfer cost between local buffer and computing unit
                 transfer_cycle_pe[k] = std::max(transfer_cycle_pe[k], m_pe_array[i]->pes[j]->transfer_cycle[k]);
                 transfer_energy_pe[k] += m_pe_array[i]->pes[j]->transfer_energy[k];
+                payload_link_transactions_pe[k] += m_pe_array[i]->pes[j]->payload_link_transactions[k];
+                metadata_link_transactions_pe[k] += m_pe_array[i]->pes[j]->metadata_link_transactions[k];
+                storage_link_transactions_pe[k] += m_pe_array[i]->pes[j]->storage_link_transactions[k];
+
+                format_cycle_pe[k] = std::max(format_cycle_pe[k], m_pe_array[i]->pes[j]->format_cycle[k]);
+                format_energy_pe[k] += m_pe_array[i]->pes[j]->format_energy[k];
 
                 // Update overlapped cycle between local buffer and computing unit
                 cycle_mac_lb[k] = std::max(cycle_mac_lb[k], m_pe_array[i]->pes[j]->cycle_mac_lb[k]);
@@ -449,6 +505,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             // Update the number of data transfer from PE array
             num_data_transfer_pe_array[j] += m_pe_array[i]->num_data_transfer[j];
+            payload_link_transactions_pe_array[j] += m_pe_array[i]->payload_link_transactions[j];
+            metadata_link_transactions_pe_array[j] += m_pe_array[i]->metadata_link_transactions[j];
+            storage_link_transactions_pe_array[j] += m_pe_array[i]->storage_link_transactions[j];
 
             // Update access cost of PE array
             access_cycle_pe_array[j] = std::max(access_cycle_pe_array[j], m_pe_array[i]->access_cycle[j]);
@@ -465,6 +524,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             // Update the number of request to the global buffer
             num_request_global_buffer[j] += m_global_buffer[i]->num_request[j];
+            payload_link_transactions_global_buffer[j] += m_global_buffer[i]->payload_link_transactions[j];
+            metadata_link_transactions_global_buffer[j] += m_global_buffer[i]->metadata_link_transactions[j];
+            storage_link_transactions_global_buffer[j] += m_global_buffer[i]->storage_link_transactions[j];
             
             // Update the number of data transfer from the global buffer
             num_data_transfer_global_buffer[j] += m_global_buffer[i]->num_data_transfer[j];
@@ -494,6 +556,14 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         avg_access_cycle_lb[i] /= num_active_pe;
     }
 
+    mac_available_cycle = static_cast<double>(physical_scalar_macs) * pe_elapsed_cycles;
+    utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
+    if(utilization_mac > 1.0 + 1e-9) {
+        std::cerr << "Error: MAC busy cycles exceed physical MAC capacity" << std::endl;
+        exit(1);
+    }
+    utilization_mac = std::min(1.0, utilization_mac);
+
     // Update global buffer static energy
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); i++) {
         for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
@@ -510,6 +580,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
         // Update the number of data transfer from the chip-level processor
         num_data_transfer_multi_chip[i] = m_multi_chip->num_data_transfer[i];
+        payload_link_transactions_multi_chip[i] = m_multi_chip->payload_link_transactions[i];
+        metadata_link_transactions_multi_chip[i] = m_multi_chip->metadata_link_transactions[i];
+        storage_link_transactions_multi_chip[i] = m_multi_chip->storage_link_transactions[i];
 
         // Update access cost of the chip-level processor
         access_cycle_multi_chip[i] = m_multi_chip->access_cycle[i];
@@ -526,6 +599,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
         // Update the number of data transfer from the off-chip memory
         num_data_transfer_dram[i] = m_dram->num_data_transfer[i];
+        payload_link_transactions_dram[i] = m_dram->payload_link_transactions[i];
+        metadata_link_transactions_dram[i] = m_dram->metadata_link_transactions[i];
+        storage_link_transactions_dram[i] = m_dram->storage_link_transactions[i];
 
         // Update access cost of the off-chip memory
         access_cycle_dram[i] = m_dram->access_cycle[i];
@@ -545,6 +621,126 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
 }
 
+namespace {
+
+unsigned scale_counter(unsigned value, unsigned repetitions, const char *label) {
+    if(value != 0 && repetitions > std::numeric_limits<unsigned>::max()/value) {
+        std::cerr << "Error: unsigned overflow while scaling " << label << std::endl;
+        exit(1);
+    }
+    return value * repetitions;
+}
+
+size_t scale_counter(size_t value, unsigned repetitions, const char *label) {
+    if(value != 0 && repetitions > std::numeric_limits<size_t>::max()/value) {
+        std::cerr << "Error: size overflow while scaling " << label << std::endl;
+        exit(1);
+    }
+    return value * repetitions;
+}
+
+void scale_counters(std::vector<size_t> *values, unsigned repetitions, const char *label) {
+    for(unsigned i = 0; i < values->size(); ++i) {
+        values->at(i) = scale_counter(values->at(i), repetitions, label);
+    }
+}
+
+void scale_counters(std::vector<unsigned> *values, unsigned repetitions, const char *label) {
+    for(unsigned i = 0; i < values->size(); ++i) {
+        values->at(i) = scale_counter(values->at(i), repetitions, label);
+    }
+}
+
+void scale_costs(std::vector<double> *values, unsigned repetitions) {
+    for(unsigned i = 0; i < values->size(); ++i) {
+        values->at(i) *= repetitions;
+    }
+}
+
+} // namespace
+
+void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
+    if(m_repetitions == 0) {
+        std::cerr << "Error: temporal repetition count must be non-zero" << std::endl;
+        exit(1);
+    }
+    if(m_repetitions == 1) return;
+
+    num_computation = scale_counter(num_computation, m_repetitions, "computation count");
+    computation_cycle *= m_repetitions;
+    max_computation_cycle *= m_repetitions;
+    min_computation_cycle *= m_repetitions;
+    avg_computation_cycle *= m_repetitions;
+    mac_busy_cycle *= m_repetitions;
+    mac_available_cycle *= m_repetitions;
+    computation_energy *= m_repetitions;
+
+    scale_counters(&num_request_pe, m_repetitions, "PE request count");
+    scale_counters(&num_data_transfer_pe, m_repetitions, "PE transfer count");
+    scale_costs(&format_cycle_pe, m_repetitions);
+    scale_costs(&format_energy_pe, m_repetitions);
+    scale_costs(&access_cycle_mac, m_repetitions);
+    scale_costs(&max_access_cycle_mac, m_repetitions);
+    scale_costs(&min_access_cycle_mac, m_repetitions);
+    scale_costs(&avg_access_cycle_mac, m_repetitions);
+    scale_costs(&access_energy_mac, m_repetitions);
+    scale_costs(&access_cycle_lb, m_repetitions);
+    scale_costs(&max_access_cycle_lb, m_repetitions);
+    scale_costs(&min_access_cycle_lb, m_repetitions);
+    scale_costs(&avg_access_cycle_lb, m_repetitions);
+    scale_costs(&access_energy_lb, m_repetitions);
+    scale_costs(&transfer_cycle_pe, m_repetitions);
+    scale_costs(&transfer_energy_pe, m_repetitions);
+    scale_counters(&payload_link_transactions_pe, m_repetitions, "PE payload transactions");
+    scale_counters(&metadata_link_transactions_pe, m_repetitions, "PE metadata transactions");
+    scale_counters(&storage_link_transactions_pe, m_repetitions, "PE storage transactions");
+    scale_costs(&cycle_mac_lb, m_repetitions);
+    scale_costs(&static_energy_pe, m_repetitions);
+
+    scale_counters(&num_request_pe_array, m_repetitions, "PE-array request count");
+    scale_counters(&num_data_transfer_pe_array, m_repetitions, "PE-array transfer count");
+    scale_counters(&payload_link_transactions_pe_array, m_repetitions, "PE-array payload transactions");
+    scale_counters(&metadata_link_transactions_pe_array, m_repetitions, "PE-array metadata transactions");
+    scale_counters(&storage_link_transactions_pe_array, m_repetitions, "PE-array storage transactions");
+    scale_costs(&access_cycle_pe_array, m_repetitions);
+    scale_costs(&access_energy_pe_array, m_repetitions);
+    scale_costs(&transfer_cycle_pe_array, m_repetitions);
+    scale_costs(&transfer_energy_pe_array, m_repetitions);
+
+    scale_counters(&num_request_global_buffer, m_repetitions, "global-buffer request count");
+    scale_counters(&num_data_transfer_global_buffer, m_repetitions, "global-buffer transfer count");
+    scale_counters(&payload_link_transactions_global_buffer, m_repetitions, "global-buffer payload transactions");
+    scale_counters(&metadata_link_transactions_global_buffer, m_repetitions, "global-buffer metadata transactions");
+    scale_counters(&storage_link_transactions_global_buffer, m_repetitions, "global-buffer storage transactions");
+    scale_costs(&access_cycle_global_buffer, m_repetitions);
+    scale_costs(&access_energy_global_buffer, m_repetitions);
+    scale_costs(&cycle_pe_array_global_buffer, m_repetitions);
+    scale_costs(&transfer_cycle_global_buffer, m_repetitions);
+    scale_costs(&transfer_energy_global_buffer, m_repetitions);
+    scale_costs(&static_energy_global_buffer, m_repetitions);
+
+    scale_counters(&num_request_multi_chip, m_repetitions, "multi-chip request count");
+    scale_counters(&num_data_transfer_multi_chip, m_repetitions, "multi-chip transfer count");
+    scale_counters(&payload_link_transactions_multi_chip, m_repetitions, "multi-chip payload transactions");
+    scale_counters(&metadata_link_transactions_multi_chip, m_repetitions, "multi-chip metadata transactions");
+    scale_counters(&storage_link_transactions_multi_chip, m_repetitions, "multi-chip storage transactions");
+    scale_costs(&access_cycle_multi_chip, m_repetitions);
+    scale_costs(&access_energy_multi_chip, m_repetitions);
+    scale_costs(&transfer_cycle_multi_chip, m_repetitions);
+    scale_costs(&transfer_energy_multi_chip, m_repetitions);
+
+    scale_counters(&num_request_dram, m_repetitions, "DRAM request count");
+    scale_counters(&num_data_transfer_dram, m_repetitions, "DRAM transfer count");
+    scale_counters(&payload_link_transactions_dram, m_repetitions, "DRAM payload transactions");
+    scale_counters(&metadata_link_transactions_dram, m_repetitions, "DRAM metadata transactions");
+    scale_counters(&storage_link_transactions_dram, m_repetitions, "DRAM storage transactions");
+    scale_costs(&access_cycle_dram, m_repetitions);
+    scale_costs(&access_energy_dram, m_repetitions);
+    scale_costs(&cycle_chip_dram, m_repetitions);
+    scale_costs(&transfer_cycle_dram, m_repetitions);
+    scale_costs(&transfer_energy_dram, m_repetitions);
+}
+
 void stats_t::update_network_stats(stats_t *m_source) {
     /* Update PE stats */
     
@@ -557,10 +753,16 @@ void stats_t::update_network_stats(stats_t *m_source) {
     max_computation_cycle += m_source->max_computation_cycle;
     min_computation_cycle += m_source->min_computation_cycle;
     avg_computation_cycle += m_source->avg_computation_cycle;
-
     computation_energy += m_source->computation_energy;
+    mac_busy_cycle += m_source->mac_busy_cycle;
+    mac_available_cycle += m_source->mac_available_cycle;
+    utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
+    if(utilization_mac > 1.0 + 1e-9) {
+        std::cerr << "Error: network MAC busy cycles exceed physical MAC capacity" << std::endl;
+        exit(1);
+    }
+    utilization_mac = std::min(1.0, utilization_mac);
 
-    utilization_mac += m_source->utilization_mac;
 
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
         // Update the number of request to the local buffer
@@ -585,9 +787,15 @@ void stats_t::update_network_stats(stats_t *m_source) {
         min_access_cycle_lb[i] += m_source->min_access_cycle_lb[i];
         avg_access_cycle_lb[i] += m_source->avg_access_cycle_lb[i];
 
+
+        format_cycle_pe[i] += m_source->format_cycle_pe[i];
+        format_energy_pe[i] += m_source->format_energy_pe[i];
         // Update transfer cost between the local buffer and computing units
         transfer_cycle_pe[i] += m_source->transfer_cycle_pe[i];
         transfer_energy_pe[i] += m_source->transfer_energy_pe[i];
+        payload_link_transactions_pe[i] += m_source->payload_link_transactions_pe[i];
+        metadata_link_transactions_pe[i] += m_source->metadata_link_transactions_pe[i];
+        storage_link_transactions_pe[i] += m_source->storage_link_transactions_pe[i];
 
         // Update overlapped cycle between the local buffer and computing units
         cycle_mac_lb[i] += m_source->cycle_mac_lb[i];
@@ -599,7 +807,13 @@ void stats_t::update_network_stats(stats_t *m_source) {
 
         // Update the number of data transfer from the PE array
         num_data_transfer_pe_array[i] += m_source->num_data_transfer_pe_array[i];
+        payload_link_transactions_pe_array[i] += m_source->payload_link_transactions_pe_array[i];
+        metadata_link_transactions_pe_array[i] += m_source->metadata_link_transactions_pe_array[i];
+        storage_link_transactions_pe_array[i] += m_source->storage_link_transactions_pe_array[i];
 
+        payload_link_transactions_global_buffer[i] += m_source->payload_link_transactions_global_buffer[i];
+        metadata_link_transactions_global_buffer[i] += m_source->metadata_link_transactions_global_buffer[i];
+        storage_link_transactions_global_buffer[i] += m_source->storage_link_transactions_global_buffer[i];
         // Update access cost of the PE array
         access_cycle_pe_array[i] += m_source->access_cycle_pe_array[i];
         access_energy_pe_array[i] += m_source->access_energy_pe_array[i];
@@ -634,6 +848,9 @@ void stats_t::update_network_stats(stats_t *m_source) {
 
         // Update the number of data transfer from the chip-level processor
         num_data_transfer_multi_chip[i] += m_source->num_data_transfer_multi_chip[i];
+        payload_link_transactions_multi_chip[i] += m_source->payload_link_transactions_multi_chip[i];
+        metadata_link_transactions_multi_chip[i] += m_source->metadata_link_transactions_multi_chip[i];
+        storage_link_transactions_multi_chip[i] += m_source->storage_link_transactions_multi_chip[i];
 
         // Update access cost of the chip-level processor
         access_cycle_multi_chip[i] += m_source->access_cycle_multi_chip[i];
@@ -650,6 +867,9 @@ void stats_t::update_network_stats(stats_t *m_source) {
 
         // Update the number of data transfer from the off-chip memory
         num_data_transfer_dram[i] += m_source->num_data_transfer_dram[i];
+        payload_link_transactions_dram[i] += m_source->payload_link_transactions_dram[i];
+        metadata_link_transactions_dram[i] += m_source->metadata_link_transactions_dram[i];
+        storage_link_transactions_dram[i] += m_source->storage_link_transactions_dram[i];
 
         // Update access cost of the off-chip memory
         access_cycle_dram[i] += m_source->access_cycle_dram[i];
@@ -727,19 +947,37 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << "Energy" << std::endl;
     m_output_file << "Computation energy    :" << std::setw(15) << std::setprecision(2) 
                                                << computation_energy << " pJ" << std::endl;
+    m_output_file << "Format-IP cycle (payload/metadata/spill)" << std::endl;
+    m_output_file << " * Input               :" << std::setw(11) << std::setprecision(1)
+                  << format_cycle_pe[data_type_t::INPUT] << " cycles" << std::endl;
+    m_output_file << " * Weight              :" << std::setw(11) << std::setprecision(1)
+                  << format_cycle_pe[data_type_t::WEIGHT] << " cycles" << std::endl;
+    m_output_file << " * Output              :" << std::setw(11) << std::setprecision(1)
+                  << format_cycle_pe[data_type_t::OUTPUT] << " cycles" << std::endl;
+    m_output_file << "Format-IP energy" << std::endl;
+    m_output_file << " * Input               :" << std::setw(15) << std::setprecision(2)
+                  << format_energy_pe[data_type_t::INPUT] << " pJ" << std::endl;
+    m_output_file << " * Weight              :" << std::setw(15) << std::setprecision(2)
+                  << format_energy_pe[data_type_t::WEIGHT] << " pJ" << std::endl;
+    m_output_file << " * Output              :" << std::setw(15) << std::setprecision(2)
+                  << format_energy_pe[data_type_t::OUTPUT] << " pJ" << std::endl;
     m_output_file << "Access energy" << std::endl;
     m_output_file << " * Input register     :" << std::setw(15) << std::setprecision(2)
                                                << access_energy_mac[data_type_t::INPUT] << " pJ" << std::endl;
-    m_output_file << " * Weight register    :" << std::setw(15) << std::setprecision(2) 
+    m_output_file << " * Weight register    :" << std::setw(15) << std::setprecision(2)
                                                << access_energy_mac[data_type_t::WEIGHT] << " pJ" << std::endl;
-    m_output_file << " * Output register    :" << std::setw(15) << std::setprecision(2) 
+    m_output_file << " * Output register    :" << std::setw(15) << std::setprecision(2)
                                                << access_energy_mac[data_type_t::OUTPUT] << " pJ" << std::endl;
-    m_output_file << std::endl;                                           
-    
-    // MAC utilization.
+    m_output_file << std::endl;
+
+    // MAC utilization over the PE-modeled layer duration.
     m_output_file << "Utilization" << std::endl;
-    m_output_file << "MAC utilization       :" << std::setw(16) << std::setprecision(1) 
+    m_output_file << "MAC utilization (time):" << std::setw(16) << std::setprecision(1)
                                                << utilization_mac*100 << " %" << std::endl;
+    m_output_file << " * Busy scalar-MAC cycles     :" << std::setw(11) << std::setprecision(1)
+                  << mac_busy_cycle << std::endl;
+    m_output_file << " * Available scalar-MAC cycles:" << std::setw(11) << std::setprecision(1)
+                  << mac_available_cycle << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "============== PE result ================" << std::endl;
@@ -829,6 +1067,11 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << num_data_transfer_pe[data_type_t::WEIGHT] << std::endl;
     m_output_file << " * Output data        :" << std::setw(18) 
                                                << num_data_transfer_pe[data_type_t::OUTPUT] << std::endl;
+    m_output_file << std::endl;
+    print_transaction_breakdown(m_output_file, "MAC <-> local-buffer",
+                                payload_link_transactions_pe,
+                                metadata_link_transactions_pe,
+                                storage_link_transactions_pe);
     m_output_file << "Cycle (MAC-Local buffer)" << std::endl;
     m_output_file << "Transfer cycle" << std::endl;
     m_output_file << " * Input data         :" << std::setw(11) << std::setprecision(1) 
@@ -866,6 +1109,10 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << " * Output data        :" << std::setw(18) 
                                                << num_data_transfer_pe_array[data_type_t::OUTPUT] << std::endl;
     m_output_file << std::endl;
+    print_transaction_breakdown(m_output_file, "PE-array NoC",
+                                payload_link_transactions_pe_array,
+                                metadata_link_transactions_pe_array,
+                                storage_link_transactions_pe_array);
 
     m_output_file << "# of request to Global buffer" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18) 
@@ -910,6 +1157,21 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << num_data_transfer_global_buffer[data_type_t::WEIGHT] << std::endl;
     m_output_file << " * Output data        :" << std::setw(18) 
                                                << num_data_transfer_global_buffer[data_type_t::OUTPUT] << std::endl;
+    m_output_file << std::endl;
+
+    m_output_file << "PE-array <-> GLB transactions (payload/metadata/serialized)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(8)
+                                               << payload_link_transactions_global_buffer[data_type_t::INPUT] << "/"
+                                               << metadata_link_transactions_global_buffer[data_type_t::INPUT] << "/"
+                                               << storage_link_transactions_global_buffer[data_type_t::INPUT] << std::endl;
+    m_output_file << " * Weight             :" << std::setw(8)
+                                               << payload_link_transactions_global_buffer[data_type_t::WEIGHT] << "/"
+                                               << metadata_link_transactions_global_buffer[data_type_t::WEIGHT] << "/"
+                                               << storage_link_transactions_global_buffer[data_type_t::WEIGHT] << std::endl;
+    m_output_file << " * Output data        :" << std::setw(8)
+                                               << payload_link_transactions_global_buffer[data_type_t::OUTPUT] << "/"
+                                               << metadata_link_transactions_global_buffer[data_type_t::OUTPUT] << "/"
+                                               << storage_link_transactions_global_buffer[data_type_t::OUTPUT] << std::endl;
     m_output_file << std::endl;
 
     m_output_file << " # of request to Chip-level processor" << std::endl;
@@ -999,6 +1261,10 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << " * Output data        :" << std::setw(18) 
                                                << num_data_transfer_multi_chip[data_type_t::OUTPUT] << std::endl;
     m_output_file << std::endl;
+    print_transaction_breakdown(m_output_file, "GLB <-> multi-chip NoP",
+                                payload_link_transactions_multi_chip,
+                                metadata_link_transactions_multi_chip,
+                                storage_link_transactions_multi_chip);
 
     m_output_file << "# of request to off-chip memory" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18) 
@@ -1046,6 +1312,10 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << " * Output data        :" << std::setw(18) 
                                                << num_data_transfer_dram[data_type_t::OUTPUT] << std::endl;
     m_output_file << std::endl;
+    print_transaction_breakdown(m_output_file, "Multi-chip <-> DRAM",
+                                payload_link_transactions_dram,
+                                metadata_link_transactions_dram,
+                                storage_link_transactions_dram);
 
     m_output_file << "Cycle" << std::endl;
     m_output_file << "Access cycle" << std::endl;

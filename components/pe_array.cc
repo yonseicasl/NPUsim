@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstring>
 #include "pe_array.h"
+#include "datatype.h"
+#include "interconnect_timing.h"
 
 pe_array_t::pe_array_t(section_config_t /*m_section_config*/) :
     input_data(NULL),
@@ -93,6 +95,104 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
     input_data = new data_t[num_input]();
     weight = new data_t[num_weight]();
     output_data = new data_t[num_output]();
+}
+
+void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
+                                                        double link_cycle, double link_energy) {
+    if(m_scheduler->compression_type != compression_type_t::DENSE) {
+        std::cerr << "Error: timing PE array supports dense descriptor traffic only" << std::endl;
+        exit(1);
+    }
+    const size_t required_input = runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size[data_type_t::INPUT]);
+    const size_t required_weight = runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size[data_type_t::WEIGHT]);
+    const size_t required_output = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    if(required_input > input_size || required_weight > weight_size || required_output > output_size) {
+        std::cerr << "Error: runtime datatype PE-array tile exceeds temporal-buffer capacity" << std::endl;
+        exit(1);
+    }
+    for(unsigned type_index = 0; type_index < data_type_t::NUM_DATA_TYPES; ++type_index) {
+        const data_type_t type = static_cast<data_type_t>(type_index);
+        bool requested = false;
+        for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
+            requested = requested || pes[i]->request_to_pe_array[type];
+        }
+        if(!requested) continue;
+
+        if(!skip_transfer[type] && (type != data_type_t::OUTPUT || global_buffer->transfer_output)) {
+            num_data_transfer[type]++;
+            for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
+                const datatype_transfer_timing_t timing = datatype_transfer_timing(
+                    type, pes[i]->tile_size_lb[type], line_size[type],
+                    pes[i]->line_size_lb[type], bitwidth);
+                payload_link_transactions[type] += timing.payload_link_transactions;
+                metadata_link_transactions[type] += timing.metadata_link_transactions;
+                storage_link_transactions[type] += timing.link_transactions;
+                access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+                access_energy[type] += timing.source_accesses*u_read_energy[type];
+                pes[i]->access_cycle_lb[type] += timing.destination_accesses*pes[i]->u_write_cycle_lb[type];
+                pes[i]->access_energy_lb[type] += timing.destination_accesses*pes[i]->u_write_energy_lb[type];
+                transfer_cycle[type] += timing.link_transactions*link_cycle;
+                transfer_energy[type] += timing.link_transactions*link_energy;
+                if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+                    std::cerr << "Error: PE-array pipeline transaction count overflow" << std::endl;
+                    exit(1);
+                }
+                if(exist_temporal_buffer) {
+                    cycle_temporal_pe[type] += pipelined_transfer_cycles(
+                        static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
+                        std::max(u_read_cycle[type], link_cycle),
+                        std::max(u_read_cycle[type], std::max(link_cycle, pes[i]->u_write_cycle_lb[type])),
+                        std::max(link_cycle, pes[i]->u_write_cycle_lb[type]),
+                        pes[i]->u_write_cycle_lb[type]);
+                }
+                size_t capacity = pes[i]->output_size;
+                if(type == data_type_t::INPUT) capacity = pes[i]->input_size;
+                else if(type == data_type_t::WEIGHT) capacity = pes[i]->weight_size;
+                pes[i]->utilization_local_buffer[type] = std::max(
+                    pes[i]->utilization_local_buffer[type],
+                    static_cast<double>(runtime_datatypes().storage_bytes(type, pes[i]->tile_size_lb[type])) /
+                    static_cast<double>(capacity));
+                pes[i]->skip_transfer[type] = false;
+            }
+        }
+        for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
+            pes[i]->exist_data_lb[type] = true;
+            pes[i]->request_to_pe_array[type] = false;
+        }
+        is_waiting_data[type] = false;
+    }
+    for(unsigned i = 0; i < get_number_of_active_pes(); ++i) pes[i]->fill_data();
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(tile_size[i] == global_buffer->tile_size[i]) skip_transfer[i] = true;
+    }
+}
+
+void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elements) {
+    const datatype_transfer_timing_t timing = datatype_transfer_timing(
+        data_type_t::OUTPUT, elements, source_pe->line_size_lb[data_type_t::OUTPUT],
+        line_size[data_type_t::OUTPUT], bitwidth);
+    payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
+    metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
+    storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
+    source_pe->access_cycle_lb[data_type_t::OUTPUT] += timing.source_accesses*source_pe->u_read_cycle_lb[data_type_t::OUTPUT];
+    source_pe->access_energy_lb[data_type_t::OUTPUT] += timing.source_accesses*source_pe->u_read_energy_lb[data_type_t::OUTPUT];
+    source_pe->write_back_cycle_lb += timing.source_accesses*source_pe->u_read_cycle_lb[data_type_t::OUTPUT];
+    access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
+    access_energy[data_type_t::OUTPUT] += timing.destination_accesses*u_write_energy[data_type_t::OUTPUT];
+    write_back_cycle += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
+    transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*noc_cycle;
+    transfer_energy[data_type_t::OUTPUT] += timing.link_transactions*noc_energy;
+    if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+        std::cerr << "Error: PE-array write-back transaction count overflow" << std::endl;
+        exit(1);
+    }
+    if(exist_temporal_buffer) {
+        cycle_temporal_pe[data_type_t::OUTPUT] += pipelined_transfer_cycles(
+            static_cast<unsigned>(timing.pipeline_transactions), source_pe->u_read_cycle_lb[data_type_t::OUTPUT],
+            std::max(source_pe->u_read_cycle_lb[data_type_t::OUTPUT], noc_cycle),
+            std::max(source_pe->u_read_cycle_lb[data_type_t::OUTPUT], std::max(noc_cycle, u_write_cycle[data_type_t::OUTPUT])),
+            std::max(noc_cycle, u_write_cycle[data_type_t::OUTPUT]), u_write_cycle[data_type_t::OUTPUT]);
+    }
 }
 
 void pe_array_t::connect(global_buffer_t *m_global_buffer) {
@@ -230,18 +330,27 @@ void pe_array_t::request_data() {
 #endif
                 is_waiting_data[data_type_t::OUTPUT] = true;
                 global_buffer->num_request[data_type_t::OUTPUT]++;
+                const datatype_transfer_timing_t timing = datatype_transfer_timing(
+                    data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
+                    global_buffer->line_size[data_type_t::OUTPUT], global_buffer->get_bitwidth());
+                const size_t pe_array_lines = timing.source_accesses;
+                const size_t global_buffer_lines = timing.destination_accesses;
+                const size_t link_transactions = timing.link_transactions;
+                global_buffer->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
+                global_buffer->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
+                global_buffer->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
 
-                access_cycle[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-                write_back_cycle += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-                access_energy[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*u_read_energy[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+                access_cycle[data_type_t::OUTPUT] += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                write_back_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                access_energy[data_type_t::OUTPUT] += pe_array_lines*u_read_energy[data_type_t::OUTPUT];
 
-                global_buffer->access_cycle[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*global_buffer->u_write_cycle[data_type_t::OUTPUT]/(global_buffer->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-                global_buffer->write_back_cycle += tile_size[data_type_t::OUTPUT]*global_buffer->u_write_cycle[data_type_t::OUTPUT]/(global_buffer->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-                global_buffer->access_energy[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*global_buffer->u_write_energy[data_type_t::OUTPUT]/(global_buffer->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+                global_buffer->access_cycle[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
+                global_buffer->write_back_cycle += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
+                global_buffer->access_energy[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_energy[data_type_t::OUTPUT];
 
-                global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*ceil((double)tile_size[data_type_t::OUTPUT]*8*sizeof(data_t)/(double)global_buffer->get_bitwidth());
-                global_buffer->overlapped_transfer_cycle += global_buffer->u_transfer_cycle*ceil((double)tile_size[data_type_t::OUTPUT]*8*sizeof(data_t)/(double)global_buffer->get_bitwidth());
-                global_buffer->transfer_energy[data_type_t::OUTPUT] += global_buffer->u_transfer_energy*ceil((double)tile_size[data_type_t::OUTPUT]*8*sizeof(data_t)/(double)global_buffer->get_bitwidth());
+                global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*link_transactions;
+                global_buffer->overlapped_transfer_cycle += global_buffer->u_transfer_cycle*link_transactions;
+                global_buffer->transfer_energy[data_type_t::OUTPUT] += global_buffer->u_transfer_energy*link_transactions;
                 if(stationary_type == stationary_type_t::OUTPUT_STATIONARY) {
                     if(tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT]) {equal_output_tile = true;}
                 }
@@ -316,5 +425,8 @@ void pe_array_t::reset() {
 
     transfer_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 }
 

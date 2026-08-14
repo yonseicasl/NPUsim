@@ -1,5 +1,6 @@
 #include <iomanip>
 #include "spatial_arch.h"
+#include "interconnect_timing.h"
 
 spatial_arch_t::spatial_arch_t(section_config_t m_section_config) :
     pe_array_t(m_section_config) {
@@ -36,12 +37,12 @@ void spatial_arch_t::init(section_config_t m_section_config) {
 
     // Initialize line size and mask bits of temporal buffer in spatial architecture
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
-    line_size.assign(data_type_t::NUM_DATA_TYPES, sizeof(data_t));
+    line_size.assign(data_type_t::NUM_DATA_TYPES, 8);
     m_section_config.get_vector_setting("line_size", &line_size);
 
     mask_bits.reserve(data_type_t::NUM_DATA_TYPES);
     mask_bits.assign(data_type_t::NUM_DATA_TYPES, 0);
-   
+
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
         while(line_size[i] > 8) {
             line_size[i] /= 2;
@@ -49,6 +50,12 @@ void spatial_arch_t::init(section_config_t m_section_config) {
         }
     }
     m_section_config.get_vector_setting("line_size", &line_size);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(!is_valid_memory_line_bits(line_size[i])) {
+            std::cerr << "Error: PE-array line_size must be a power-of-two bit width of at least 8" << std::endl;
+            exit(1);
+        }
+    }
 
     // Define stationary between PE array and Global buffer.
     std::string array_stationary_str;
@@ -74,6 +81,10 @@ void spatial_arch_t::init(section_config_t m_section_config) {
         noc_type = (noc_type_t)get_type(noc_type_str, noc_str);
     }
 
+    if(!is_supported_spatial_noc(noc_type)) {
+        std::cerr << "Error: spatial_arch has an undefined NoC timing model" << std::endl;
+        exit(1);
+    }
     // Initialize PEs in spatial architecture
 	pe_t* pe;
     std::string pe_stationary_type_str;
@@ -177,29 +188,44 @@ void spatial_arch_t::init(section_config_t m_section_config) {
     cycle_temporal_pe.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_temporal_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+
 }
 
 void spatial_arch_t::update_tile_size(scheduler_t *m_scheduler) {
     num_active_pe_x = m_scheduler->num_active_pe_x;
     num_active_pe_y = m_scheduler->num_active_pe_y;
+    if(!has_valid_active_shape(height, width, num_active_pe_y, num_active_pe_x)) {
+        std::cerr << "Error: active PE shape exceeds spatial_arch physical shape" << std::endl;
+        exit(1);
+    }
     utilization = (double)(get_number_of_active_pes())/(double)(get_number_of_pes());
-    
+    m_scheduler->read_tile_granular_pe_input.assign(m_scheduler->read_tile_granular_pe_input.size(), false);
+    m_scheduler->read_tile_granular_pe_weight.assign(m_scheduler->read_tile_granular_pe_weight.size(), false);
+    m_scheduler->read_tile_granular_pe_output.assign(m_scheduler->read_tile_granular_pe_output.size(), false);
+
     // Update PE array tile size.
     tile_size = m_scheduler->tile_size[component_type_t::PE_Y];
 
     // Update PEs' tile size.
     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
         pes[i]->update_tile_size(m_scheduler);
-        pes[i]->check_tile_size();
     }
 
 }
 
 void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
-    // Update scattering energy
-    if(noc_type == noc_type_t::MESH) {
+    const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
+    const double topology_cycle = noc_cycle*topology_cost.latency_multiplier;
+    const double topology_energy = noc_energy*topology_cost.energy_multiplier;
+#ifndef FUNCTIONAL
+    account_descriptor_dense_distribution(m_scheduler, topology_cycle, topology_energy);
+    return;
+#endif
 
-    } else if(noc_type == noc_type_t::BUS) {
+    if(is_supported_spatial_noc(noc_type)) {
 
         bool request_to_pe_array_input = false;
         for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
@@ -225,14 +251,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
                         uint64_t address_pe = 0, address_pe_array = 0;
-                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
 
                         for(unsigned b = 0; b < parameters_pe[parameter_type_t::BATCH_SIZE]; b++) {
@@ -242,10 +268,10 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                         if(address_pe != ((uint64_t)&pes[i]->input_data_lb[b*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                             *parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
+                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] +
                                                                                            c*parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
-                                                                                           h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] +
+                                                                                           h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                                            pes[i]->mask_bits_lb[data_type_t::INPUT]) << pes[i]->mask_bits_lb[data_type_t::INPUT]) {
 
                                             // Update local buffer cost in PEs
@@ -257,23 +283,23 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                             // Update local buffer address of PEs
                                             address_pe = ((uint64_t)&pes[i]->input_data_lb[b*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                             *parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
+                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] +
                                                                                            c*parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
-                                                                                           h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                                            *parameters_pe[parameter_type_t::INPUT_WIDTH] +
+                                                                                           h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                                            pes[i]->mask_bits_lb[data_type_t::INPUT]) << pes[i]->mask_bits_lb[data_type_t::INPUT];
                                         }
 
                                         // Check address of temporal buffer in PE array
-                                        if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] && 
-                                           address_pe_array != ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] + 
+                                        if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] &&
+                                           address_pe_array != ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] +
                                                                                       b*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                        *parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
+                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
                                                                                       c*parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
-                                                                                      h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >> 
-                                                                                      mask_bits[data_type_t::INPUT]) << mask_bits[data_type_t::INPUT]) { 
+                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
+                                                                                      h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >>
+                                                                                      mask_bits[data_type_t::INPUT]) << mask_bits[data_type_t::INPUT]) {
 
                                             // Update temporal buffer cost in PE array
                                             access_cycle[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT];
@@ -282,13 +308,13 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                             // Update address of temporal buffer in PE array
                                             m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] = true;
-                                            address_pe_array = ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] + 
+                                            address_pe_array = ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] +
                                                                                       b*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                        *parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
+                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
                                                                                       c*parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
-                                                                                      h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                                       *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
+                                                                                      h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                                       mask_bits[data_type_t::INPUT]) << mask_bits[data_type_t::INPUT];
                                         }
                                     }
@@ -299,33 +325,33 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     }
 
                     // Update transfer cycle and energy
-                    transfer_energy[data_type_t::INPUT] += num_access_pe*noc_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
-                    transfer_cycle[data_type_t::INPUT] += num_access_pe_array*noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
+                    transfer_energy[data_type_t::INPUT] += num_access_pe*topology_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
+                    transfer_cycle[data_type_t::INPUT] += num_access_pe*topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
 
                     // At the 1, 2, before last, and last stages
                     double first_stage = u_read_cycle[data_type_t::INPUT];
                     double second_stage = std::max(u_read_cycle[data_type_t::INPUT],
-                                                   noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
+                                                   topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
 
-                    double last_before_stage = std::max(pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT], 
-                                                        noc_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
+                    double last_before_stage = std::max(pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT],
+                                                        topology_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
                     double last_stage = pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT];
 
                     double other_stage = std::max(u_read_cycle[data_type_t::INPUT],
                                          std::max(pes[0]->u_write_cycle_lb[data_type_t::INPUT],
-                                                  noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
+                                                  topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
 
                     // if temporal buffer is exist at the PE array
                     if(exist_temporal_buffer) {
                         // Update overlapped cycle of Scattering
-                        if(num_access_pe_array == 1) {
-                            cycle_temporal_pe[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] + 
-                                                                     noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) + 
+                        if(num_access_pe_array == 0) { } else if(num_access_pe_array == 1) {
+                            cycle_temporal_pe[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] +
+                                                                     topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) +
                                                                      pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT];
                        } else {
                            cycle_temporal_pe[data_type_t::INPUT] += first_stage + second_stage +
-                                                                    (num_access_pe_array-2)*other_stage + 
-                                                                    last_before_stage + last_stage; 
+                                                                    (num_access_pe_array-2)*other_stage +
+                                                                    last_before_stage + last_stage;
                        }
                     }
                 }
@@ -347,14 +373,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
 
                         // Transfer data from the PE array to the local buffer
-                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
 
                         if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()]) {
@@ -382,7 +408,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                 /(sizeof(data_t)*8/row_bit); // Column pointer
                             m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] = true;
 
-                            transfer_cycle[data_type_t::INPUT] += noc_cycle
+                            transfer_cycle[data_type_t::INPUT] += topology_cycle
                                                                  *ceil((double)(pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                                  *8*sizeof(data_t)
                                                                  /(double)bitwidth) + // Non-zero data
@@ -419,7 +445,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                        *pes[i]->u_write_energy_lb[data_type_t::INPUT]
                                                                        /(sizeof(data_t)*8/row_bit); // Column pointer
 
-                        transfer_energy[data_type_t::INPUT] += noc_energy
+                        transfer_energy[data_type_t::INPUT] += topology_energy
                                                              *ceil((double)(pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                              *8*sizeof(data_t)
                                                              /(double)bitwidth) + // Non-zero data
@@ -435,7 +461,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                         unsigned data_size = (pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                             *sizeof(data_t) +
                                              (pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                            *row_bit/8 + 
+                                            *row_bit/8 +
                                              parameters[parameter_type_t::BATCH_SIZE]
                                             *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
                                             *(parameters[parameter_type_t::INPUT_HEIGHT]+1)*row_bit/8;
@@ -461,14 +487,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
 
                         // Transfer data from the PE array to the local buffer
-                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
 
                         if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()]) {
@@ -496,7 +522,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                 /(sizeof(data_t)*8/column_bit); // Row pointer
                             m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] = true;
 
-                            transfer_cycle[data_type_t::INPUT] += noc_cycle
+                            transfer_cycle[data_type_t::INPUT] += topology_cycle
                                                                  *ceil((double)(pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                                  *8*sizeof(data_t)
                                                                  /(double)bitwidth) + // Non-zero data
@@ -533,7 +559,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                        *pes[i]->u_write_energy_lb[data_type_t::INPUT]
                                                                        /(sizeof(data_t)*8/column_bit); // Row pointer
 
-                        transfer_energy[data_type_t::INPUT] += noc_energy
+                        transfer_energy[data_type_t::INPUT] += topology_energy
                                                              *ceil((double)(pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                              *8*sizeof(data_t)
                                                              /(double)bitwidth) + // Non-zero data
@@ -568,14 +594,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
                         // Transfer data from the PE array to the local buffer
-                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->input_data_lb, input_data, 0, m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->input_data_lb, input_data,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::INPUT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
                         if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()]) {
                             // Update access cost of PE array
@@ -584,7 +610,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                 pes[i]->tile_size_lb[data_type_t::INPUT]
                                                                *u_read_cycle[data_type_t::INPUT]
                                                                /(sizeof(data_t)*8); // Metadata
-                        
+
                             access_energy[data_type_t::INPUT] += (pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                                 *u_read_energy[data_type_t::INPUT] + // Non-zero data
                                                                  pes[i]->tile_size_lb[data_type_t::INPUT]
@@ -594,11 +620,11 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                             m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] = true;
 
                             // Update transfer cycle between the chip-level processor and the global buffer
-                            transfer_cycle[data_type_t::INPUT] += noc_cycle
+                            transfer_cycle[data_type_t::INPUT] += topology_cycle
                                                                  *ceil((double)((pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                                  *8*sizeof(data_t))
                                                                  /(double)bitwidth) +  // Non-zero data
-                                                                  noc_cycle 
+                                                                  noc_cycle
                                                                  *ceil((double)(pes[i]->tile_size_lb[data_type_t::INPUT])/(double)bitwidth);
                         }
 
@@ -608,14 +634,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                        pes[i]->tile_size_lb[data_type_t::INPUT]
                                                                       *pes[i]->u_write_cycle_lb[data_type_t::INPUT]
                                                                       /(sizeof(data_t)*8);  // Metadata
-                       
+
                         pes[i]->access_energy_lb[data_type_t::INPUT] += (pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                                        *pes[i]->u_write_energy_lb[data_type_t::INPUT] + // Non-zero data
                                                                         pes[i]->tile_size_lb[data_type_t::INPUT]
                                                                        *pes[i]->u_write_energy_lb[data_type_t::INPUT]
                                                                        /(sizeof(data_t)*8); // Metadata
 
-                        transfer_energy[data_type_t::INPUT] += noc_energy
+                        transfer_energy[data_type_t::INPUT] += topology_energy
                                                               *ceil((double)((pes[i]->tile_size_lb[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
                                                               *8*sizeof(data_t))/(double)bitwidth) + // Non-zero data
                                                                noc_energy
@@ -628,7 +654,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                         pes[i]->utilization_local_buffer[data_type_t::INPUT] = (double)data_size/(double)pes[i]->input_size;
 
                         pes[i]->skip_transfer[data_type_t::INPUT] = false;
-                    }    
+                    }
                 }
             }
             else {
@@ -657,10 +683,10 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                     if(address_pe != ((uint64_t)&pes[i]->input_data_lb[b*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                         *parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
+                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] +
                                                                                        c*parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
-                                                                                       h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] +
+                                                                                       h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                                        pes[i]->mask_bits_lb[data_type_t::INPUT]) << pes[i]->mask_bits_lb[data_type_t::INPUT]) {
 
                                         // Update local buffer cost in PEs
@@ -672,23 +698,23 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                         // Update local buffer address of PEs
                                         address_pe = ((uint64_t)&pes[i]->input_data_lb[b*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                         *parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
+                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] +
                                                                                        c*parameters_pe[parameter_type_t::INPUT_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] + 
-                                                                                       h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                                        *parameters_pe[parameter_type_t::INPUT_WIDTH] +
+                                                                                       h*parameters_pe[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                                        pes[i]->mask_bits_lb[data_type_t::INPUT]) << pes[i]->mask_bits_lb[data_type_t::INPUT];
                                     }
 
                                     // Check address of temporal buffer in PE array
-                                    if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] && 
-                                       address_pe_array != ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] + 
+                                    if(!m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] &&
+                                       address_pe_array != ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] +
                                                                                   b*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                    *parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
+                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
                                                                                   c*parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
-                                                                                  h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >> 
-                                                                                  mask_bits[data_type_t::INPUT]) << mask_bits[data_type_t::INPUT]) { 
+                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
+                                                                                  h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >>
+                                                                                  mask_bits[data_type_t::INPUT]) << mask_bits[data_type_t::INPUT]) {
 
                                         // Update temporal buffer cost in PE array
                                         access_cycle[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT];
@@ -697,13 +723,13 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                         // Update address of temporal buffer in PE array
                                         m_scheduler->read_tile_granular_pe_input[i%m_scheduler->input_offset_pe_array.size()] = true;
-                                        address_pe_array = ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] + 
+                                        address_pe_array = ((uint64_t)&input_data[m_scheduler->input_offset_pe_array[i%m_scheduler->input_offset_pe_array.size()] +
                                                                                   b*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                    *parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
+                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
                                                                                   c*parameters_pe_array[parameter_type_t::INPUT_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] + 
-                                                                                  h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >> 
+                                                                                   *parameters_pe_array[parameter_type_t::INPUT_WIDTH] +
+                                                                                  h*parameters_pe_array[parameter_type_t::INPUT_WIDTH] + w] >>
                                                                                   mask_bits[data_type_t::INPUT]) << mask_bits[data_type_t::INPUT];
                                     }
                                 }
@@ -714,33 +740,33 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                 }
 
                 // Update transfer cycle and energy
-                transfer_energy[data_type_t::INPUT] += num_access_pe*noc_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
-                transfer_cycle[data_type_t::INPUT] += num_access_pe_array*noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
+                transfer_energy[data_type_t::INPUT] += num_access_pe*topology_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
+                transfer_cycle[data_type_t::INPUT] += num_access_pe*topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth));
 
                 // At the 1, 2, before last, and last stages
                 double first_stage = u_read_cycle[data_type_t::INPUT];
                 double second_stage = std::max(u_read_cycle[data_type_t::INPUT],
-                                               noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
+                                               topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
 
-                double last_before_stage = std::max(pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT], 
-                                                    noc_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
+                double last_before_stage = std::max(pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT],
+                                                    topology_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)));
                 double last_stage = pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT];
 
                 double other_stage = std::max(u_read_cycle[data_type_t::INPUT],
                                      std::max(pes[0]->u_write_cycle_lb[data_type_t::INPUT],
-                                              noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
+                                              topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth))));
 
                 // if temporal buffer is exist at the PE array
                 if(exist_temporal_buffer) {
                     // Update overlapped cycle of Scattering
-                    if(num_access_pe_array == 1) {
-                        cycle_temporal_pe[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] + 
-                                                                 noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) + 
+                    if(num_access_pe_array == 0) { } else if(num_access_pe_array == 1) {
+                        cycle_temporal_pe[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] +
+                                                                 topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::INPUT])/(double)(bitwidth)) +
                                                                  pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::INPUT];
                     } else {
                         cycle_temporal_pe[data_type_t::INPUT] += first_stage + second_stage +
-                                                                 (num_access_pe_array-2)*other_stage + 
-                                                                 last_before_stage + last_stage; 
+                                                                 (num_access_pe_array-2)*other_stage +
+                                                                 last_before_stage + last_stage;
                     }
                 }
             }
@@ -758,7 +784,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                 break;
             }
         }
-            
+
         if(request_to_pe_array_weight) {
 #ifdef FUNCTIONAL
             if(m_scheduler->compression_type == compression_type_t::DENSE) {
@@ -775,14 +801,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
                         // Transfer data from the PE array to the local buffer
-                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
                         uint64_t address_pe = 0, address_pe_array = 0;
                         for(unsigned k = 0; k < parameters_pe[parameter_type_t::OUTPUT_CHANNEL]; k++) {
@@ -792,10 +818,10 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                         if(address_pe != ((uint64_t)&pes[i]->weight_lb[k*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                         *parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
+                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] +
                                                                                        c*parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
-                                                                                       r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] +
+                                                                                       r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                                        pes[i]->mask_bits_lb[data_type_t::WEIGHT]) << pes[i]->mask_bits_lb[data_type_t::WEIGHT]) {
 
                                             // Update cost of local buffer in PEs
@@ -806,23 +832,23 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                             // Update address of local buffer in PEs
                                             address_pe = ((uint64_t)&pes[i]->weight_lb[k*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                         *parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
+                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] +
                                                                                        c*parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
-                                                                                       r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                                        *parameters_pe[parameter_type_t::FILTER_WIDTH] +
+                                                                                       r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                                        pes[i]->mask_bits_lb[data_type_t::WEIGHT]) << pes[i]->mask_bits_lb[data_type_t::WEIGHT];
                                         }
 
                                         // Check address of temporal buffer in PE array
                                         if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()] &&
-                                           address_pe_array != ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] + 
+                                           address_pe_array != ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] +
                                                                                   k*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                    *parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
+                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
                                                                                   c*parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
-                                                                                  r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >> 
-                                                                                  mask_bits[data_type_t::WEIGHT]) << mask_bits[data_type_t::WEIGHT]) { 
+                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
+                                                                                  r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >>
+                                                                                  mask_bits[data_type_t::WEIGHT]) << mask_bits[data_type_t::WEIGHT]) {
 
                                             // Update cost of temporal buffer in PE array
                                             access_cycle[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT];
@@ -831,13 +857,13 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                             // Update address of temporal buffer in PE array
                                             m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()] = true;
-                                            address_pe_array = ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] + 
+                                            address_pe_array = ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] +
                                                                                   k*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                    *parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
+                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
                                                                                   c*parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
-                                                                                  r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                                   *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
+                                                                                  r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                                   mask_bits[data_type_t::WEIGHT]) << mask_bits[data_type_t::WEIGHT];
                                         }
                                     }
@@ -846,29 +872,29 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                         }
                         pes[i]->skip_transfer[data_type_t::WEIGHT] = false;
                     }
-                        
+
                     // Update transfer cycle and energy
-                    transfer_cycle[data_type_t::WEIGHT] += num_access_pe_array*noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
-                    transfer_energy[data_type_t::WEIGHT] += num_access_pe*noc_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
+                    transfer_cycle[data_type_t::WEIGHT] += num_access_pe*topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
+                    transfer_energy[data_type_t::WEIGHT] += num_access_pe*topology_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
 
                     double first_stage = u_read_cycle[data_type_t::WEIGHT];
                     double second_stage = std::max(u_read_cycle[data_type_t::WEIGHT],
-                                                   noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
+                                                   topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
 
                     double last_before_stage = std::max(pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::WEIGHT],
-                                                        noc_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
+                                                        topology_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
                     double last_stage = pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::WEIGHT];
 
                     double other_stage = std::max(u_read_cycle[data_type_t::WEIGHT],
                                          std::max(pes[0]->u_write_cycle_lb[data_type_t::WEIGHT],
-                                                  noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
+                                                  topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
                     // if temporal buffer is exist at the PE array
                     if(exist_temporal_buffer) {
                         // Update overlapped cycle of Scattering
-                        if(num_access_pe_array == 1) {
+                        if(num_access_pe_array == 0) { } else if(num_access_pe_array == 1) {
                             cycle_temporal_pe[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT] +
-                                                                     noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
+                                                                     topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                                      pes[0]->u_write_cycle_lb[data_type_t::WEIGHT];
                        } else {
                            cycle_temporal_pe[data_type_t::WEIGHT] += first_stage + second_stage +
@@ -895,14 +921,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
 
                         // Transfer data from the PE array to the local buffer
-                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
 
                         if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()]) {
@@ -932,7 +958,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                             m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()] = true;
 
                             // Update transfer cycle between PE array and local buffer
-                            transfer_cycle[data_type_t::WEIGHT] += noc_cycle
+                            transfer_cycle[data_type_t::WEIGHT] += topology_cycle
                                                                  *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                                  *8*sizeof(data_t)
                                                                  /(double)bitwidth) + // Non-zero data
@@ -970,7 +996,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                         /(sizeof(data_t)*8/row_bit); // Column pointer
 
                         // Update transfer energy between PE array and local buffer
-                        transfer_energy[data_type_t::WEIGHT] += noc_energy
+                        transfer_energy[data_type_t::WEIGHT] += topology_energy
                                                              *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                              *8*sizeof(data_t)
                                                              /(double)bitwidth) + // Non-zero data
@@ -1012,14 +1038,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
 
                         // Transfer data from the PE array to the local buffer
-                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
 
                         if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()]) {
@@ -1049,7 +1075,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                             m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()] = true;
 
                             // Update transfer cycle between PE array and local buffer
-                            transfer_cycle[data_type_t::WEIGHT] += noc_cycle
+                            transfer_cycle[data_type_t::WEIGHT] += topology_cycle
                                                                  *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                                  *8*sizeof(data_t)
                                                                  /(double)bitwidth) + // Non-zero data
@@ -1087,7 +1113,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                         /(sizeof(data_t)*8/column_bit); // Row pointer
 
                         // Update transfer energy between PE array and local buffer
-                        transfer_energy[data_type_t::WEIGHT] += noc_energy
+                        transfer_energy[data_type_t::WEIGHT] += topology_energy
                                                              *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                              *8*sizeof(data_t)
                                                              /(double)bitwidth) + // Non-zero data
@@ -1122,14 +1148,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
 
                         // Transfer data from the PE array to the local buffer
-                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->weight_lb, weight,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
 
                         if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()]) {
@@ -1139,7 +1165,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                  pes[i]->tile_size_lb[data_type_t::WEIGHT]
                                                                 *u_read_cycle[data_type_t::WEIGHT]
                                                                 /(sizeof(data_t)*8); // Metadata
-                            
+
                             access_energy[data_type_t::WEIGHT] += (pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                                  *u_read_energy[data_type_t::WEIGHT] + // Non-zero data
                                                                   pes[i]->tile_size_lb[data_type_t::WEIGHT]
@@ -1149,11 +1175,11 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                             m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()] = true;
 
                             // Update transfer cycle between the chip-level processor and the global buffer
-                            transfer_cycle[data_type_t::WEIGHT] += noc_cycle
+                            transfer_cycle[data_type_t::WEIGHT] += topology_cycle
                                                                  *ceil((double)((pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                                  *8*sizeof(data_t))
                                                                  /(double)bitwidth) +  // Non-zero data
-                                                                  noc_cycle 
+                                                                  noc_cycle
                                                                  *ceil((double)(pes[i]->tile_size_lb[data_type_t::WEIGHT])/(double)bitwidth);
                         }
 
@@ -1169,7 +1195,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                                                         *pes[i]->u_write_energy_lb[data_type_t::WEIGHT]
                                                                         /(sizeof(data_t)*8); // Meta data
 
-                        transfer_energy[data_type_t::WEIGHT] += noc_energy
+                        transfer_energy[data_type_t::WEIGHT] += topology_energy
                                                                *ceil((double)((pes[i]->tile_size_lb[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
                                                                *8*sizeof(data_t))/(double)bitwidth) + // Non-zero data
                                                                 noc_energy
@@ -1209,10 +1235,10 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                     if(address_pe != ((uint64_t)&pes[i]->weight_lb[k*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                     *parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
+                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] +
                                                                                    c*parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
-                                                                                   r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] +
+                                                                                   r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                                    pes[i]->mask_bits_lb[data_type_t::WEIGHT]) << pes[i]->mask_bits_lb[data_type_t::WEIGHT]) {
 
                                         // Update cost of local buffer in PEs
@@ -1223,23 +1249,23 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                         // Update address of local buffer in PEs
                                         address_pe = ((uint64_t)&pes[i]->weight_lb[k*parameters_pe[parameter_type_t::INPUT_CHANNEL]
                                                                                     *parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
+                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] +
                                                                                    c*parameters_pe[parameter_type_t::FILTER_HEIGHT]
-                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] + 
-                                                                                   r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                                    *parameters_pe[parameter_type_t::FILTER_WIDTH] +
+                                                                                   r*parameters_pe[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                                    pes[i]->mask_bits_lb[data_type_t::WEIGHT]) << pes[i]->mask_bits_lb[data_type_t::WEIGHT];
                                     }
 
                                     // Check address of temporal buffer in PE array
                                     if(!m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()] &&
-                                       address_pe_array != ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] + 
+                                       address_pe_array != ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] +
                                                                               k*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                *parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
+                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
                                                                               c*parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
-                                                                              r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >> 
-                                                                              mask_bits[data_type_t::WEIGHT]) << mask_bits[data_type_t::WEIGHT]) { 
+                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
+                                                                              r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >>
+                                                                              mask_bits[data_type_t::WEIGHT]) << mask_bits[data_type_t::WEIGHT]) {
 
                                         // Update cost of temporal buffer in PE array
                                         access_cycle[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT];
@@ -1248,13 +1274,13 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                         // Update address of temporal buffer in PE array
                                         m_scheduler->read_tile_granular_pe_weight[i%m_scheduler->weight_offset_pe_array.size()] = true;
-                                        address_pe_array = ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] + 
+                                        address_pe_array = ((uint64_t)&weight[m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()] +
                                                                               k*parameters_pe_array[parameter_type_t::INPUT_CHANNEL]
                                                                                *parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
+                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
                                                                               c*parameters_pe_array[parameter_type_t::FILTER_HEIGHT]
-                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] + 
-                                                                              r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >> 
+                                                                               *parameters_pe_array[parameter_type_t::FILTER_WIDTH] +
+                                                                              r*parameters_pe_array[parameter_type_t::FILTER_WIDTH] + s] >>
                                                                               mask_bits[data_type_t::WEIGHT]) << mask_bits[data_type_t::WEIGHT];
                                     }
                                 }
@@ -1263,29 +1289,29 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     }
                     pes[i]->skip_transfer[data_type_t::WEIGHT] = false;
                 }
-                    
+
                 // Update transfer cycle and energy
-                transfer_cycle[data_type_t::WEIGHT] += num_access_pe_array*noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
-                transfer_energy[data_type_t::WEIGHT] += num_access_pe*noc_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
+                transfer_cycle[data_type_t::WEIGHT] += num_access_pe*topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
+                transfer_energy[data_type_t::WEIGHT] += num_access_pe*topology_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
 
                 double first_stage = u_read_cycle[data_type_t::WEIGHT];
                 double second_stage = std::max(u_read_cycle[data_type_t::WEIGHT],
-                                               noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
+                                               topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
 
                 double last_before_stage = std::max(pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::WEIGHT],
-                                                    noc_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
+                                                    topology_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)));
                 double last_stage = pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::WEIGHT];
 
                 double other_stage = std::max(u_read_cycle[data_type_t::WEIGHT],
                                      std::max(pes[0]->u_write_cycle_lb[data_type_t::WEIGHT],
-                                              noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
+                                              topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth))));
 
                 // if temporal buffer is exist at the PE array
                 if(exist_temporal_buffer) {
                     // Update overlapped cycle of Scattering
-                    if(num_access_pe_array == 1) {
+                    if(num_access_pe_array == 0) { } else if(num_access_pe_array == 1) {
                         cycle_temporal_pe[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT] +
-                                                                 noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
+                                                                 topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                                  pes[0]->u_write_cycle_lb[data_type_t::WEIGHT];
                    } else {
                        cycle_temporal_pe[data_type_t::WEIGHT] += first_stage + second_stage +
@@ -1301,7 +1327,7 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
             is_waiting_data[data_type_t::WEIGHT] = false;
         }
 
-        
+
         bool request_to_pe_array_output = false;
         for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
             if(pes[i]->request_to_pe_array[data_type_t::OUTPUT]) {
@@ -1327,14 +1353,14 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                     for(unsigned i = 0 ; i < get_number_of_active_pes(); i++) {
 #ifdef FUNCTIONAL
                         // Transfer weight from temporal weight buffer of PE array to PE.
-                        m_scheduler->transfer_data(pes[i]->output_data_lb, output_data, 0, m_scheduler->output_offset_pe_array[i%m_scheduler->output_offset_pe_array.size()], 
-                                                   component_type_t::PE, component_type_t::PE_Y, 
+                        m_scheduler->transfer_data(pes[i]->output_data_lb, output_data, 0, m_scheduler->output_offset_pe_array[i%m_scheduler->output_offset_pe_array.size()],
+                                                   component_type_t::PE, component_type_t::PE_Y,
                                                    data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
                         //bool last_component = index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y;
-                        //m_scheduler->transfer_data_network_on_chip(pes[i]->output_data_lb, output_data, 
+                        //m_scheduler->transfer_data_network_on_chip(pes[i]->output_data_lb, output_data,
                         //                                           component_type_t::PE, component_type_t::PE_Y,
-                        //                                           data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(), 
+                        //                                           data_type_t::OUTPUT, pes[i]->get_local_buffer_stationary_type(),
                         //                                           action_type_t::LOAD, last_component);
 #endif
                         uint64_t address_pe = 0, address_pe_array = 0;
@@ -1346,10 +1372,10 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                         // Check address of local buffer in PEs
                                         if(address_pe != ((uint64_t)&pes[i]->output_data_lb[b*parameters_pe[parameter_type_t::OUTPUT_CHANNEL]
                                                                                              *parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] + 
+                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                                             k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                            p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
+                                                                                            p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                             pes[i]->mask_bits_lb[data_type_t::OUTPUT]) << pes[i]->mask_bits_lb[data_type_t::OUTPUT]) {
 
                                             // Update cost of local buffer in PEs
@@ -1360,23 +1386,23 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                                             // Update address of local buffer in PEs
                                             address_pe = ((uint64_t)&pes[i]->output_data_lb[b*parameters_pe[parameter_type_t::OUTPUT_CHANNEL]
                                                                                              *parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] + 
+                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
                                                                                             k*parameters_pe[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                            p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                             *parameters_pe[parameter_type_t::OUTPUT_WIDTH] +
+                                                                                            p*parameters_pe[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                             pes[i]->mask_bits_lb[data_type_t::OUTPUT]) << pes[i]->mask_bits_lb[data_type_t::OUTPUT];
                                         }
 
                                         // Check address of temporal buffer in PE array
                                         if(!m_scheduler->read_tile_granular_pe_output[i%m_scheduler->output_offset_pe_array.size()] &&
-                                           address_pe_array != ((uint64_t)&output_data[m_scheduler->output_offset_pe_array[i%m_scheduler->output_offset_pe_array.size()] + 
+                                           address_pe_array != ((uint64_t)&output_data[m_scheduler->output_offset_pe_array[i%m_scheduler->output_offset_pe_array.size()] +
                                                                                        b*parameters_pe_array[parameter_type_t::OUTPUT_CHANNEL]
                                                                                         *parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + 
+                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                        k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                       p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                       mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT]) { 
+                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
+                                                                                       p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
+                                                                                       mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT]) {
 
                                             // Update cost of temporal buffer in PE array
                                             access_cycle[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT];
@@ -1385,13 +1411,13 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 
                                             // Update address of temporal buffer in PE array
                                             m_scheduler->read_tile_granular_pe_output[i%m_scheduler->output_offset_pe_array.size()] = true;
-                                            address_pe_array = ((uint64_t)&output_data[m_scheduler->output_offset_pe_array[i%m_scheduler->output_offset_pe_array.size()] + 
+                                            address_pe_array = ((uint64_t)&output_data[m_scheduler->output_offset_pe_array[i%m_scheduler->output_offset_pe_array.size()] +
                                                                                        b*parameters_pe_array[parameter_type_t::OUTPUT_CHANNEL]
                                                                                         *parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + 
+                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
                                                                                        k*parameters_pe_array[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                       p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >> 
+                                                                                        *parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] +
+                                                                                       p*parameters_pe_array[parameter_type_t::OUTPUT_WIDTH] + q] >>
                                                                                        mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT];
                                         }
                                     }
@@ -1400,26 +1426,26 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
                         }
                         pes[i]->skip_transfer[data_type_t::OUTPUT] = false;
                     }
-                    transfer_cycle[data_type_t::OUTPUT] += num_access_pe_array*noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth));
-                    transfer_energy[data_type_t::OUTPUT] += num_access_pe*noc_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth));
+                    transfer_cycle[data_type_t::OUTPUT] += num_access_pe*topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth));
+                    transfer_energy[data_type_t::OUTPUT] += num_access_pe*topology_energy*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth));
 
                     double first_stage = u_read_cycle[data_type_t::OUTPUT];
                     double second_stage = std::max(u_read_cycle[data_type_t::OUTPUT],
-                                                   noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
+                                                   topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
                     double last_before_stage = std::max(pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::OUTPUT],
-                                                        noc_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
+                                                        topology_cycle*ceil((double)(pes[get_number_of_active_pes()-1]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)));
                     double last_stage = pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::OUTPUT];
 
 
                     double other_stage = std::max(u_read_cycle[data_type_t::OUTPUT],
                                          std::max(pes[0]->u_write_cycle_lb[data_type_t::OUTPUT],
-                                                  noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
+                                                  topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth))));
                     // if temporal buffer is exist at the PE array
                     if(exist_temporal_buffer) {
                         // Update overlapped cycle of Scattering
-                        if(num_access_pe_array == 1) {
+                        if(num_access_pe_array == 0) { } else if(num_access_pe_array == 1) {
                             cycle_temporal_pe[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT] +
-                                                                     noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
+                                                                     topology_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                                      pes[get_number_of_active_pes()-1]->u_write_cycle_lb[data_type_t::OUTPUT];
                        } else {
                            cycle_temporal_pe[data_type_t::OUTPUT] += first_stage + second_stage +
@@ -1463,27 +1489,27 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
 // Print out the specification of PE array.
 void spatial_arch_t::print_specification() {
 	pes[0]->print_specification();
-    
+
     std::cout << "========== PE array specification ==========" << std::endl;
 
-    std::cout << "PE array type      :" << std::setw(24) 
+    std::cout << "PE array type      :" << std::setw(24)
                                         << "Spatial Arch" << std::endl;
-    std::cout << "Array height       :" << std::setw(24) 
+    std::cout << "Array height       :" << std::setw(24)
                                         << height << std::endl;
-    std::cout << "Array width        :" << std::setw(24) 
+    std::cout << "Array width        :" << std::setw(24)
                                         << width  << std::endl;
 
     // Print the stationary type between the PE array and Global buffer.
     if(stationary_type == stationary_type_t::INPUT_STATIONARY) {
-        std::cout << "Stationary type    :" << std::setw(24) 
+        std::cout << "Stationary type    :" << std::setw(24)
                                             << "Input stationary" << std::endl;
     }
     else if(stationary_type == stationary_type_t::WEIGHT_STATIONARY) {
-        std::cout << "Stationary type    :" << std::setw(24) 
+        std::cout << "Stationary type    :" << std::setw(24)
                                             << "Weight stationary" << std::endl;
-    } 
+    }
     else {
-        std::cout << "Stationary type    :" << std::setw(24) 
+        std::cout << "Stationary type    :" << std::setw(24)
                                             << "Output stationary" << std::endl;
     }
     std::cout << "Bandwidth          :" << std::setw(19) << std::setprecision(0)
@@ -1491,20 +1517,20 @@ void spatial_arch_t::print_specification() {
 
     // Print out the NoC type.
     if(noc_type == MESH) {
-        std::cout << "NoC type           :" << std::setw(24) 
+        std::cout << "NoC type           :" << std::setw(24)
                                             << "Mesh" << std::endl;
     }
     else if(noc_type == BUS) {
-        std::cout << "NoC type           :" << std::setw(24) 
+        std::cout << "NoC type           :" << std::setw(24)
                                             << "Bus" << std::endl;
     }
     else if(noc_type == CROSSBAR) {
-        std::cout << "NoC type           :" << std::setw(24) 
+        std::cout << "NoC type           :" << std::setw(24)
                                             << "Crossbar" << std::endl;
     }
-    std::cout << "NoC cycle          :" << std::setw(17) 
+    std::cout << "NoC cycle          :" << std::setw(17)
                                         << noc_cycle << " cycles" << std::endl;
-    std::cout << "NoC energy         :" << std::setw(21) 
+    std::cout << "NoC energy         :" << std::setw(21)
                                         << noc_energy << " pJ" << std::endl;
 	std::cout << std::endl;
 }

@@ -2,6 +2,7 @@
 #define __GLOBAL_BUFFER_H__
 
 #include "def.h"
+#include <cstddef>
 #include "scheduler.h"
 #include "pe_array.h"
 #include "multi_chip.h"
@@ -61,11 +62,15 @@ public:
     void request_data();
     // Transfer the data to PE array.
     void data_transfer(scheduler_t *m_scheduler);
+    // Account a dense transfer using runtime datatype transactions.
+    void account_descriptor_dense_transfer(data_type_t type);
     // Flush the data 
     void flush_data(scheduler_t *m_scheduler);
 
     // Print out the configuration of the Global buffer.
     virtual void print_specification() = 0;
+    // Accumulate leakage energy once for the modeled layer duration.
+    void update_static_energy(double elapsed_cycles);
 
     void reset();
 
@@ -106,6 +111,10 @@ public:
 
     std::vector<unsigned> num_request;                      // The number of data request from the PE array to global buffer
     std::vector<unsigned> num_data_transfer;                // The number of data transfer from the global buffer to PE array
+    // Logical payload/metadata and physical link transactions, all in bit-width units.
+    std::vector<size_t> payload_link_transactions;
+    std::vector<size_t> metadata_link_transactions;
+    std::vector<size_t> storage_link_transactions;
 
     std::vector<double> access_cycle;                       // Total access cycles to the global buffer
     std::vector<double> access_energy;                      // Total access energies to the global buffer

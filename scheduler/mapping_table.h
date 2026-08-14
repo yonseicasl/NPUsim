@@ -31,8 +31,9 @@ public:
 	void print();
 
 private:
-	std::vector<std::vector<unsigned>> mapping_table;   // The mapping table of neural layer.
+    std::vector<std::vector<unsigned>> mapping_table;   // The mapping table of neural layer.
+    // Legacy GLB factors are retained for temporal accounting only.
+    std::vector<unsigned> legacy_global_buffer_mapping;
 
 };
-
 #endif

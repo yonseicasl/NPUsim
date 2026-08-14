@@ -112,6 +112,10 @@ public:
 
     std::vector<double> cycle_temporal_chips;
 
+    std::vector<size_t> payload_link_transactions;
+    std::vector<size_t> metadata_link_transactions;
+    std::vector<size_t> storage_link_transactions;
+
     double utilization;                         // Utilization of chip-level processor
 
     double write_back_cycle;                    // 
@@ -121,6 +125,8 @@ public:
     std::vector<unsigned> mask_bits;            // Mask bits of temporal buffer
 
 protected:
+    void account_descriptor_dense_distribution(data_type_t type);
+
 
     std::vector<global_buffer_t*> chips;        // Global buffers to connect
 

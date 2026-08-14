@@ -166,34 +166,6 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     std::cout << "# Initialize neural network model ..." << std::endl;
 	network = new nebula::convolutional_t();
 	network->init(m_network_config);
-#ifdef Pytorch
-    PyObject *pName, *pModule;
-	Py_Initialize();
-    PyRun_SimpleString("import sys");
-    PyRun_SimpleString("sys.path.append(\".\")");
-
-    
-    pName = PyUnicode_FromString("main");
-    pModule = PyImport_Import(pName);
-
-    if(pModule) {
-
-        PyObject *pFunc, *pArgs, *pValue;
-        pFunc = PyObject_GetAttrString(pModule, "build_network");
-        
-        char *t_network_config = const_cast<char*>(m_network_config.c_str());
-       
-        // Produce arguments pass to PyThon.
-        pArgs = PyTuple_Pack(1, PyUnicode_FromString(t_network_config));
-        if(pFunc) { 
-            pValue = PyObject_CallObject(pFunc, pArgs);
-        }
-    }
-
-	PyRun_SimpleString("print('Done')");
-
-	Py_Finalize();
-#endif
     std::cout << "  Done!" << std::endl;
 
 	/* Initialize the mapping table. */
@@ -331,6 +303,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 dram->connect_layer(layer);
 
                 scheduler = schedulers[index];
+                const unsigned global_buffer_repetitions = scheduler->mapping_table->calculate_active_component(component_type_t::GLOBAL_BUFFER);
                 
                 print_network_configuration(index);
                 reset();
@@ -357,6 +330,8 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     // Request data from PEs to PE array.
                     request_to_pe_array();
                 }
+                layer_stats[index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
+                layer_stats[index]->scale_serial_repetitions(global_buffer_repetitions);
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
                 //dram->disconnect_layer();
 			}
@@ -502,10 +477,8 @@ void npu_t::print_layerwise_results(const std::string m_accelerator_config, cons
 
     std::ofstream output_file;
     output_file.open(output_file_name, std::ios::out);
-
     layer_stats[m_index]->print_stats(output_file);
 
-    layer_stats[m_index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
     layer_stats[m_index]->print_results(output_file);
 
 #ifdef DRAMSIM3

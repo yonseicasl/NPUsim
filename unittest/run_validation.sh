@@ -17,7 +17,9 @@ fi
     "$repo_dir/utils/config.cc" \
     "$repo_dir/utils/utils.cc" \
     "$repo_dir/utils/datatype.cc" \
+    "$repo_dir/utils/interconnect_timing.cc" \
     "$repo_dir/scheduler/mapping_table.cc" \
+    "$repo_dir/utils/pe_lane.cc" \
     -o "$test_dir/validation_test"
 
 mapfile -d '' config_files < <(
@@ -77,5 +79,7 @@ if grep -q 'schduler' "$repo_dir/library/Makefile"; then
     echo "Scheduler dependency typo reappeared" >&2
     exit 1
 fi
+
+python3 -m unittest discover -s "$repo_dir/unittest/python" -p 'test_*.py' -v
 
 echo "NPUsim validation checks passed"

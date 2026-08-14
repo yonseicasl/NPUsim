@@ -18,6 +18,11 @@ enum class data_format_kind_t {
     MXFP
 };
 
+
+enum class mxfp_metadata_layout_t {
+    SEPARATE,
+    INTERLEAVED
+};
 struct tensor_format_t {
     data_format_kind_t kind;
     unsigned payload_bits;
@@ -39,6 +44,12 @@ public:
     size_t payload_bits(data_type_t type, size_t elements) const;
     size_t metadata_bits(data_type_t type, size_t elements) const;
     size_t storage_bits(data_type_t type, size_t elements) const;
+    // Payload and format metadata occupy independent streams. Keep their
+    // byte alignment separate so an MX scale cannot share a payload tail.
+    size_t payload_bytes(data_type_t type, size_t elements) const;
+    mxfp_metadata_layout_t metadata_layout() const;
+    bool metadata_stream_is_separate() const;
+    size_t metadata_bytes(data_type_t type, size_t elements) const;
     size_t storage_bytes(data_type_t type, size_t elements) const;
     size_t payload_transactions(data_type_t type, size_t elements, size_t transaction_bits) const;
     size_t metadata_transactions(data_type_t type, size_t elements, size_t transaction_bits) const;
@@ -48,6 +59,7 @@ public:
 private:
     std::vector<tensor_format_t> formats;
     tensor_format_t accumulator;
+    mxfp_metadata_layout_t mxfp_metadata_layout;
 };
 
 runtime_datatypes_t &runtime_datatypes();

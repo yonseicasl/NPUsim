@@ -2,6 +2,9 @@
 #include <cmath>
 #include <cstring>
 #include "multi_chip.h"
+#include "datatype.h"
+#include <limits>
+#include "interconnect_timing.h"
 
 multi_chip_t::multi_chip_t(section_config_t m_section_config) :
     data(NULL),
@@ -48,6 +51,10 @@ void multi_chip_t::init(section_config_t m_section_config) {
     // Initialize X and Y dimension of chip-level processors
     m_section_config.get_setting("height", &height);
     m_section_config.get_setting("width", &width);
+    if(height == 0 || width == 0 || height > std::numeric_limits<unsigned>::max()/width) {
+        std::cerr << "Error: multi_chip height and width must define a non-zero non-overflowing grid" << std::endl;
+        exit(1);
+    }
     num_chips = height * width;
 
     // Initialize frequency and bandwidth of chip-level processors.
@@ -55,13 +62,17 @@ void multi_chip_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("bandwidth", &bandwidth);
     bitwidth = 8*bandwidth/frequency;
     m_section_config.get_setting("bitwidth", &bitwidth);
+    if(frequency <= 0.0f || bandwidth < 0.0f || bitwidth == 0) {
+        std::cerr << "Error: multi_chip frequency and bitwidth must be positive, and bandwidth non-negative" << std::endl;
+        exit(1);
+    }
 
     // Initialize global buffer type (double buffer or single buffer)
     m_section_config.get_setting("double_buffer", &double_buffer);
 
     // Initialize line size and mask bits of temporal buffer
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
-    line_size.assign(data_type_t::NUM_DATA_TYPES, sizeof(data_t));
+    line_size.assign(data_type_t::NUM_DATA_TYPES, 8);
 
     mask_bits.reserve(data_type_t::NUM_DATA_TYPES);
     mask_bits.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -75,6 +86,12 @@ void multi_chip_t::init(section_config_t m_section_config) {
         }
     }
     m_section_config.get_vector_setting("line_size", &line_size);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(!is_valid_memory_line_bits(line_size[i])) {
+            std::cerr << "Error: multi_chip line_size must be a power-of-two bit width of at least 8" << std::endl;
+            exit(1);
+        }
+    }
 
     // Initialize stationary type at the chip-level processor.
     std::string stationary_str;
@@ -119,8 +136,17 @@ void multi_chip_t::init(section_config_t m_section_config) {
     data = new data_t[num_entry](); 
 
     std::string nop_str;
-    if(m_section_config.get_setting("nop", &nop_str)) {
+    // Existing accelerator configurations name the package-level interconnect
+    // "noc". Keep "nop" as the explicit NoP spelling for newer configs.
+    if(!m_section_config.get_setting("nop", &nop_str)) {
+        m_section_config.get_setting("noc", &nop_str);
+    }
+    if(!nop_str.empty()) {
         nop_type = (noc_type_t)get_type(noc_type_str, nop_str);
+    }
+    if(!is_supported_multi_chip_nop(nop_type)) {
+        std::cerr << "Error: multi_chip supports only bus NoP timing model" << std::endl;
+        exit(1);
     }
 
     // Initialize skip transfer signal
@@ -200,6 +226,10 @@ void multi_chip_t::init(section_config_t m_section_config) {
     // Initialize overlapped cycle between the chip-level processor and the global buffer
     cycle_temporal_chips.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_temporal_chips.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 }
 
 // Connect the chip-level processor and the global buffer
@@ -217,10 +247,29 @@ void multi_chip_t::update_tile_size(scheduler_t *m_scheduler) {
     // Update active number of chip-level processors
     num_active_chips_x = m_scheduler->num_active_chips_x;
     num_active_chips_y = m_scheduler->num_active_chips_y;
+    if(!has_valid_active_shape(height, width, num_active_chips_y, num_active_chips_x)) {
+        std::cerr << "Error: active multi_chip shape exceeds physical chip grid" << std::endl;
+        exit(1);
+    }
     utilization = (double)(get_number_of_active_chips())/(double)(get_number_of_chips());
 
     // Update tile size of chip-level processor
     tile_size = m_scheduler->tile_size[component_type_t::CHIPS_Y];
+
+    const size_t required_input = runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size[data_type_t::INPUT]);
+    const size_t required_weight = runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size[data_type_t::WEIGHT]);
+    const size_t required_output = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    bool capacity_overflow = false;
+    if(memory_type == memory_type_t::SHARED) {
+        capacity_overflow = required_input > memory_size || required_weight > memory_size - required_input ||
+                            required_output > memory_size - required_input - required_weight;
+    } else {
+        capacity_overflow = required_input > input_size || required_weight > weight_size || required_output > output_size;
+    }
+    if(capacity_overflow) {
+        std::cerr << "Error: runtime datatype multi-chip tile exceeds temporal-buffer capacity" << std::endl;
+        exit(1);
+    }
 
     // Update data offset stored in chip-level processor 
     update_offset();
@@ -335,6 +384,38 @@ void multi_chip_t::fill_data() {
     }
 }
 
+void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
+    num_data_transfer[type]++;
+    for(unsigned i = 0; i < get_number_of_active_chips(); ++i) {
+        const datatype_transfer_timing_t timing = datatype_transfer_timing(
+            type, chips[i]->tile_size[type], line_size[type], chips[i]->line_size[type], bitwidth);
+        payload_link_transactions[type] += timing.payload_link_transactions;
+        metadata_link_transactions[type] += timing.metadata_link_transactions;
+        storage_link_transactions[type] += timing.link_transactions;
+        access_energy[type] += timing.source_accesses*u_read_energy[type];
+        chips[i]->access_energy[type] += timing.destination_accesses*chips[i]->u_write_energy[type];
+        if(!chips[i]->double_buffer) {
+            access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+            chips[i]->access_cycle[type] += timing.destination_accesses*chips[i]->u_write_cycle[type];
+        }
+        transfer_cycle[type] += timing.link_transactions*nop_cycle;
+        transfer_energy[type] += timing.link_transactions*nop_energy;
+        if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+            std::cerr << "Error: multi_chip pipeline transaction count overflow" << std::endl;
+            exit(1);
+        }
+        if(exist_temporal_buffer) {
+            cycle_temporal_chips[type] += pipelined_transfer_cycles(
+                static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
+                std::max(u_read_cycle[type], nop_cycle),
+                std::max(u_read_cycle[type], std::max(nop_cycle, chips[i]->u_write_cycle[type])),
+                std::max(nop_cycle, chips[i]->u_write_cycle[type]),
+                chips[i]->u_write_cycle[type]);
+        }
+        chips[i]->skip_transfer[type] = false;
+    }
+}
+
 void multi_chip_t::request_data() {
     // Request input data to the off-chip memory
     for(unsigned i = 0; i < get_number_of_active_chips(); i++) {
@@ -387,20 +468,19 @@ void multi_chip_t::request_data() {
 
             dram->num_request[data_type_t::OUTPUT]++;
 
-            // Update access cost of chip-level processor
-            access_cycle[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            access_energy[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*u_read_energy[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-
-            // Update access cost of the off-chip memory
-            dram->access_cycle[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*dram->u_write_cycle[data_type_t::OUTPUT]/(dram->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            dram->access_energy[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*dram->u_write_energy[data_type_t::OUTPUT]/(dram->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-
-            // Update overlapped cycle between the off-chip memory and chip-level processor
-            dram->cycle_chip_dram[data_type_t::OUTPUT] += tile_size[data_type_t::OUTPUT]*dram->u_write_cycle[data_type_t::OUTPUT]/(dram->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-
-            // Update transfer cycle between the off-chip memory and chip-level processor
-            dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*ceil((float)tile_size[data_type_t::OUTPUT]*sizeof(data_t)*8/(float)dram->get_bitwidth());
-            dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy;
+            const datatype_transfer_timing_t timing = datatype_transfer_timing(
+                data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
+                dram->line_size[data_type_t::OUTPUT], dram->get_bitwidth());
+            access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+            access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
+            dram->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
+            dram->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_energy[data_type_t::OUTPUT];
+            dram->cycle_chip_dram[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
+            dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
+            dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
+            dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
+            dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
+            dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
 
             break;
         }
@@ -408,6 +488,12 @@ void multi_chip_t::request_data() {
 }
 
 void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
+#ifndef FUNCTIONAL
+    if(m_scheduler->compression_type != compression_type_t::DENSE) {
+        std::cerr << "Error: timing multi_chip supports dense descriptor traffic only" << std::endl;
+        exit(1);
+    }
+#endif
 
     bool request_to_multi_chip_input = false;
     for(unsigned i = 0; i < get_number_of_active_chips(); i++) {
@@ -418,6 +504,11 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
     }
 
     if(request_to_multi_chip_input) {
+#ifndef FUNCTIONAL
+        if(!skip_transfer[data_type_t::INPUT]) {
+            account_descriptor_dense_distribution(data_type_t::INPUT);
+        }
+#endif
 #ifdef FUNCTIONAL
         // Case 1. Dense data format
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
@@ -507,7 +598,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
 
                 // Update transfer cycle and energy
                 transfer_cycle[data_type_t::INPUT] += num_access_multi_chip*nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth));
-                transfer_energy[data_type_t::INPUT] += num_access_global_buffer*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth));
+                transfer_energy[data_type_t::INPUT] += num_access_multi_chip*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth));
 
                 // At the 1, 2, before last, and last stages
                 double first_stage = u_read_cycle[data_type_t::INPUT];
@@ -525,7 +616,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
 
                 // If temporal buffer is exist at the chip-level processors.
                 if(exist_temporal_buffer) {
-                    if(num_access_multi_chip == 1) {
+                    if(num_access_multi_chip == 0) { } else if(num_access_multi_chip == 1) {
                         cycle_temporal_chips[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] +
                                                                     nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth)) + 
                                                                     chips[0]->u_write_cycle[data_type_t::INPUT];
@@ -820,7 +911,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                 }
             }
         }
-#else
+#elif defined(NPUSIM_LEGACY_ADDRESS_TIMING)
         if(!skip_transfer[data_type_t::INPUT]) {
             num_data_transfer[data_type_t::INPUT]++;
 
@@ -898,7 +989,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
 
             // Update transfer cycle and energy
             transfer_cycle[data_type_t::INPUT] += num_access_multi_chip*nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth));
-            transfer_energy[data_type_t::INPUT] += num_access_global_buffer*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth));
+            transfer_energy[data_type_t::INPUT] += num_access_multi_chip*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth));
 
             // At the 1, 2, before last, and last stages
             double first_stage = u_read_cycle[data_type_t::INPUT];
@@ -916,7 +1007,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
 
             // If temporal buffer is exist at the chip-level processors.
             if(exist_temporal_buffer) {
-                if(num_access_multi_chip == 1) {
+                if(num_access_multi_chip == 0) { } else if(num_access_multi_chip == 1) {
                     cycle_temporal_chips[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] +
                                                                 nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::INPUT])/(double)(bitwidth)) + 
                                                                 chips[0]->u_write_cycle[data_type_t::INPUT];
@@ -943,6 +1034,11 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
     }
 
     if(request_to_multi_chip_weight) {
+#ifndef FUNCTIONAL
+        if(!skip_transfer[data_type_t::WEIGHT]) {
+            account_descriptor_dense_distribution(data_type_t::WEIGHT);
+        }
+#endif
 #ifdef FUNCTIONAL
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
             if(!skip_transfer[data_type_t::WEIGHT]) {
@@ -1033,7 +1129,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                 }
 
                 transfer_cycle[data_type_t::WEIGHT] += num_access_multi_chip*nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth));
-                transfer_energy[data_type_t::WEIGHT] += num_access_global_buffer*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth));
+                transfer_energy[data_type_t::WEIGHT] += num_access_multi_chip*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth));
 
                 double first_stage = u_read_cycle[data_type_t::WEIGHT];
                 double second_stage = std::max(u_read_cycle[data_type_t::WEIGHT], 
@@ -1048,7 +1144,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                               nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth))));
                 
                 if(exist_temporal_buffer) {
-                    if(num_access_multi_chip == 1) {
+                    if(num_access_multi_chip == 0) { } else if(num_access_multi_chip == 1) {
                         cycle_temporal_chips[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT] + 
                                                                      nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth)) + 
                                                                      chips[0]->u_write_cycle[data_type_t::WEIGHT];
@@ -1339,7 +1435,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
             std::cerr << "Undefined data format" << std::endl;
             exit(1);
         }
-#else
+#elif defined(NPUSIM_LEGACY_ADDRESS_TIMING)
         if(!skip_transfer[data_type_t::WEIGHT]) {
             num_data_transfer[data_type_t::WEIGHT]++;
 
@@ -1418,7 +1514,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
             }
 
             transfer_cycle[data_type_t::WEIGHT] += num_access_multi_chip*nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth));
-            transfer_energy[data_type_t::WEIGHT] += num_access_global_buffer*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth));
+            transfer_energy[data_type_t::WEIGHT] += num_access_multi_chip*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth));
 
             double first_stage = u_read_cycle[data_type_t::WEIGHT];
             double second_stage = std::max(u_read_cycle[data_type_t::WEIGHT], 
@@ -1433,7 +1529,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                           nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth))));
             
             if(exist_temporal_buffer) {
-                if(num_access_multi_chip == 1) {
+                if(num_access_multi_chip == 0) { } else if(num_access_multi_chip == 1) {
                     cycle_temporal_chips[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT] + 
                                                                  nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::WEIGHT])/(double)(bitwidth)) + 
                                                                  chips[0]->u_write_cycle[data_type_t::WEIGHT];
@@ -1476,6 +1572,11 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
             }
 #endif
 
+#ifndef FUNCTIONAL
+            if(dram->transfer_output) {
+                account_descriptor_dense_distribution(data_type_t::OUTPUT);
+            }
+#else
             if(dram->transfer_output) {
                 num_data_transfer[data_type_t::OUTPUT]++;
 
@@ -1555,7 +1656,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
    
                 // Update transfer cycle and energy
                 transfer_cycle[data_type_t::OUTPUT] += num_access_multi_chip*nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::OUTPUT])/(double)(bitwidth));
-                transfer_energy[data_type_t::OUTPUT] += num_access_global_buffer*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::OUTPUT])/(double)(bitwidth));
+                transfer_energy[data_type_t::OUTPUT] += num_access_multi_chip*nop_energy*ceil((double)(chips[0]->line_size[data_type_t::OUTPUT])/(double)(bitwidth));
 
                 // Overlapped cycle at 1, 2, before last, and last stages
                 double first_stage = u_read_cycle[data_type_t::OUTPUT];
@@ -1572,7 +1673,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                               nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::OUTPUT])/(double)(bitwidth))));
 
                 if(exist_temporal_buffer) {
-                    if(num_access_multi_chip == 1) {
+                    if(num_access_multi_chip == 0) { } else if(num_access_multi_chip == 1) {
                         cycle_temporal_chips[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT] +
                                                                      nop_cycle*ceil((double)(chips[0]->line_size[data_type_t::OUTPUT])/(double)(bitwidth)) + 
                                                                      chips[0]->u_write_cycle[data_type_t::OUTPUT];
@@ -1583,6 +1684,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                     }
                 }
             }
+#endif
         }
         for(unsigned i = 0; i < get_number_of_active_chips(); i++) {
             chips[i]->exist_data[data_type_t::OUTPUT] = true, chips[i]->request_to_multi_chip[data_type_t::OUTPUT] = false;
@@ -1591,12 +1693,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
     }
     for(unsigned i = 0; i < get_number_of_active_chips(); i++) {
         chips[i]->fill_data();
-    }
-
-    for(unsigned i  = num_active_chips_x*num_active_chips_y; i < num_chips; i++) {
-        chips[i]->static_energy[data_type_t::INPUT] += chips[i]->u_static_energy[data_type_t::INPUT];
-        chips[i]->static_energy[data_type_t::WEIGHT] += chips[i]->u_static_energy[data_type_t::WEIGHT];
-        chips[i]->static_energy[data_type_t::OUTPUT] += chips[i]->u_static_energy[data_type_t::OUTPUT];
     }
 
     if(tile_size[data_type_t::INPUT] == dram->tile_size[data_type_t::INPUT]) {skip_transfer[data_type_t::INPUT] = true;}
@@ -1684,5 +1780,8 @@ void multi_chip_t::reset() {
 
     transfer_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 }
 

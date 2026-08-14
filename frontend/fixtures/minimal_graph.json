@@ -1,0 +1,15 @@
+{
+  "schema_version": "npusim.graph.v1",
+  "producer": {"name": "fixture", "version": "1"},
+  "model": {"name": "linear-fixture", "structure_sha256": "fixture"},
+  "inputs": ["input"],
+  "outputs": ["output"],
+  "tensors": [
+    {"id": "input", "shape": [1, 4], "dtype": "float32", "layout": "contiguous", "kind": "input", "logical_bytes": 16},
+    {"id": "weight", "shape": [4, 2], "dtype": "float32", "layout": "contiguous", "kind": "parameter", "logical_bytes": 32},
+    {"id": "output", "shape": [1, 2], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 8}
+  ],
+  "nodes": [
+    {"id": "linear", "op": "aten.linear.default", "inputs": ["input", "weight"], "outputs": ["output"], "attributes": {"fx_op": "call_function"}}
+  ]
+}

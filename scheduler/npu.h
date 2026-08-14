@@ -7,9 +7,6 @@
 #include <cstring>
 #include <fstream>
 
-#ifdef Pytorch
-    #include <Python.h>
-#endif
 
 #include "convolutional.h"
 #include "fully_connected.h"

@@ -42,19 +42,24 @@ void mapping_table_t::init(section_config_t m_section_config) {
 
 	mapping_table.reserve(component_type_t::NUM_COMPONENT_TYPES);
 
-	std::vector<unsigned> parameters(parameter_type_t::NUM_PARAMETER_TYPES, 1);
+    std::vector<unsigned> parameters(parameter_type_t::NUM_PARAMETER_TYPES, 1);
+    legacy_global_buffer_mapping.assign(parameters.size(), 1);
 
     // Convert mapping values from string.
-	for(unsigned i = 0; i < component_type_str.size() - 1; i++) {
-		parameters.assign(parameters.size(), 1);
-		if(m_section_config.exists(component_type_str[i])) {
-			parameters = get_value(m_section_config, component_type_str[i]);
-		}
-		mapping_table.emplace_back(parameters);
-	}
+    for(unsigned i = 0; i < component_type_str.size() - 1; i++) {
+        parameters.assign(parameters.size(), 1);
+        if(m_section_config.exists(component_type_str[i])) {
+            parameters = get_value(m_section_config, component_type_str[i]);
+        }
+        // Legacy mapping files use "GLB" for an outer temporal repetition
+        // factor.  Retain it for accounting without changing the historical
+        // lower-level tile scheduler, which expects "global_buffer".
+        else if(i == component_type_t::GLOBAL_BUFFER && m_section_config.exists("glb")) {
+            legacy_global_buffer_mapping = get_value(m_section_config, "glb");
+        }
+        mapping_table.emplace_back(parameters);
+    }
 }
-
-// Read parameters and fill values to mapping table.
 std::vector<unsigned> mapping_table_t::get_value(section_config_t m_section_config, std::string m_name) {
     std::string line;
     if(!m_section_config.get_setting(m_name, &line)) {
@@ -154,15 +159,19 @@ void mapping_table_t::calculate_num_tile_granular_data(component_type_t m_compon
 
 // Calculate the number of active components (i.e., MAC, PE, Chips)
 unsigned mapping_table_t::calculate_active_component(component_type_t m_component_type) {
+    const std::vector<unsigned> &component_mapping =
+        (m_component_type == component_type_t::GLOBAL_BUFFER)
+            ? legacy_global_buffer_mapping
+            : mapping_table[m_component_type];
     uint64_t num_comp = 1;
     for(unsigned i = 0; i < 7; i++) {
-        num_comp *= mapping_table[m_component_type][i];
+        num_comp *= component_mapping[i];
         if(num_comp > std::numeric_limits<unsigned>::max()) {
             std::cerr << "Error: unsigned overflow while calculating active components" << std::endl;
             exit(1);
         }
     }
-    const unsigned group = mapping_table[m_component_type][parameter_type_t::GROUP];
+    const unsigned group = component_mapping[parameter_type_t::GROUP];
     if(group == 0) {
         std::cerr << "Error: mapping GROUP must be non-zero" << std::endl;
         exit(1);
@@ -173,12 +182,10 @@ unsigned mapping_table_t::calculate_active_component(component_type_t m_componen
 // Print out the value of mapping table.
 // For Debugging.
 void mapping_table_t::print() {
-
-	for(unsigned i = 0; i < mapping_table.size(); i++) {
-		for(unsigned j = 0; j < mapping_table[i].size(); j++) {
-			std::cout << mapping_table[i][j] << " ";
-		}
-		std::cout << std::endl;
-	}
+    for(unsigned i = 0; i < mapping_table.size(); i++) {
+        for(unsigned j = 0; j < mapping_table[i].size(); j++) {
+            std::cout << mapping_table[i][j] << " ";
+        }
+        std::cout << std::endl;
+    }
 }
-

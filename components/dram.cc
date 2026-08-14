@@ -1,6 +1,9 @@
 #include <cstring>
 #include <cmath>
 #include "dram.h"
+#include "datatype.h"
+#include "interconnect_timing.h"
+#include <limits>
 
 
 dram_t::dram_t(section_config_t m_section_config) :
@@ -41,7 +44,7 @@ void dram_t::init(section_config_t m_section_config) {
 
     // Initialize off-chip memory line size.
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
-    line_size.assign(data_type_t::NUM_DATA_TYPES, sizeof(data_t));
+    line_size.assign(data_type_t::NUM_DATA_TYPES, 8);
     m_section_config.get_vector_setting("line_size", &line_size);
     mask_bits.reserve(data_type_t::NUM_DATA_TYPES);
     mask_bits.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -52,6 +55,12 @@ void dram_t::init(section_config_t m_section_config) {
         }
     }
     m_section_config.get_vector_setting("line_size", &line_size);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(!is_valid_memory_line_bits(line_size[i])) {
+            std::cerr << "Error: DRAM line_size must be a power-of-two bit width of at least 8" << std::endl;
+            exit(1);
+        }
+    }
 
     // Initialize the tile size
     tile_size.reserve(data_type_t::NUM_DATA_TYPES);
@@ -88,6 +97,10 @@ void dram_t::init(section_config_t m_section_config) {
     // Initialize total cycles at the off-chip memory.
     cycle_chip_dram.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_chip_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     /* The unit stats */ 
     // Initialize DRAM transfer cycle and energy
@@ -150,8 +163,48 @@ bool dram_t::is_idle() {
     return done;
 }
 
+void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
+    const datatype_transfer_timing_t timing = datatype_transfer_timing(
+        type, elements, line_size[type], multi_chip->line_size[type], bitwidth);
+
+    num_data_transfer[type]++;
+    payload_link_transactions[type] += timing.payload_link_transactions;
+    metadata_link_transactions[type] += timing.metadata_link_transactions;
+    storage_link_transactions[type] += timing.link_transactions;
+    access_energy[type] += timing.source_accesses*u_read_energy[type];
+    multi_chip->access_energy[type] += timing.destination_accesses*multi_chip->u_write_energy[type];
+    if(!multi_chip->double_buffer) {
+        access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+        multi_chip->access_cycle[type] += timing.destination_accesses*multi_chip->u_write_cycle[type];
+    }
+    transfer_cycle[type] += timing.link_transactions*u_transfer_cycle;
+    transfer_energy[type] += timing.link_transactions*u_transfer_energy;
+    if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+        std::cerr << "Error: DRAM pipeline transaction count overflow" << std::endl;
+        exit(1);
+    }
+    if(multi_chip->exist_temporal_buffer) {
+        cycle_chip_dram[type] += pipelined_transfer_cycles(
+            static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
+            std::max(u_read_cycle[type], u_transfer_cycle),
+            std::max(u_read_cycle[type], std::max(u_transfer_cycle, multi_chip->u_write_cycle[type])),
+            std::max(u_transfer_cycle, multi_chip->u_write_cycle[type]),
+            multi_chip->u_write_cycle[type]);
+    }
+    multi_chip->skip_transfer[type] = false;
+}
+
 void dram_t::data_transfer(scheduler_t *m_scheduler) {
     if(multi_chip->request_to_dram[data_type_t::INPUT]) {
+#ifndef FUNCTIONAL
+        if(m_scheduler->compression_type != compression_type_t::DENSE) {
+            std::cerr << "Error: timing DRAM supports dense descriptor traffic only" << std::endl;
+            exit(1);
+        }
+        if(!skip_transfer[data_type_t::INPUT]) {
+            account_descriptor_dense_load(data_type_t::INPUT, multi_chip->tile_size[data_type_t::INPUT]);
+        }
+#endif
 #ifdef DRAMSIM3
         send_request((data_t*)layer->input_data, m_scheduler->mapping_table, m_scheduler->input_offset_dram.front(), data_type_t::INPUT, action_type_t::LOAD);
 #endif
@@ -510,7 +563,7 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         }
         move_front(&m_scheduler->input_offset_dram);
 
-#else
+#elif defined(NPUSIM_LEGACY_ADDRESS_TIMING)
         if(!skip_transfer[data_type_t::INPUT]) {
             num_data_transfer[data_type_t::INPUT]++;
 
@@ -626,6 +679,15 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         if(multi_chip->tile_size[data_type_t::INPUT] == tile_size[data_type_t::INPUT]) { skip_transfer[data_type_t::INPUT] = true;}
     }
     if(multi_chip->request_to_dram[data_type_t::WEIGHT]) {
+#ifndef FUNCTIONAL
+        if(m_scheduler->compression_type != compression_type_t::DENSE) {
+            std::cerr << "Error: timing DRAM supports dense descriptor traffic only" << std::endl;
+            exit(1);
+        }
+        if(!skip_transfer[data_type_t::WEIGHT]) {
+            account_descriptor_dense_load(data_type_t::WEIGHT, multi_chip->tile_size[data_type_t::WEIGHT]);
+        }
+#endif
 
 #ifdef DRAMSIM3
         send_request((data_t*)layer->weight, m_scheduler->mapping_table, m_scheduler->weight_offset_dram.front(), data_type_t::WEIGHT, action_type_t::LOAD);
@@ -1032,7 +1094,7 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
             exit(1);
         }
 
-#else
+#elif defined(NPUSIM_LEGACY_ADDRESS_TIMING)
         if(!skip_transfer[data_type_t::WEIGHT]) {
             num_data_transfer[data_type_t::WEIGHT]++;
 
@@ -1166,6 +1228,12 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
                 //                                action_type_t::LOAD, true);
 
 #endif
+#ifndef FUNCTIONAL
+                account_descriptor_dense_load(data_type_t::OUTPUT, multi_chip->tile_size[data_type_t::OUTPUT]);
+                multi_chip->equal_output_tile = false;
+                transfer_output = true;
+            }
+#else
                 /* Stats */
                 num_data_transfer[data_type_t::OUTPUT]++;
                 std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1273,6 +1341,7 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
                 multi_chip->equal_output_tile = false;
                 transfer_output = true;
             }
+#endif
         }
         else {
             transfer_output = false;
@@ -1352,6 +1421,9 @@ void dram_t::reset() {
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     cycle_chip_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 }
 
 #ifdef DRAMSIM3

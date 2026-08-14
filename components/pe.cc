@@ -7,6 +7,8 @@
 #include <limits>
 #include "pe.h"
 #include "datatype.h"
+#include "interconnect_timing.h"
+#include "pe_lane.h"
 
 namespace {
 
@@ -409,6 +411,20 @@ void pe_t::init(section_config_t m_section_config) {
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
 
+    // Optional format-IP unit costs. Each value is per packed transaction.
+    u_format_payload_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    u_format_payload_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    u_format_metadata_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    u_format_metadata_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    u_accumulator_spill_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    u_accumulator_spill_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("format_payload_cycle", &u_format_payload_cycle);
+    m_section_config.get_vector_setting("format_payload_energy", &u_format_payload_energy);
+    m_section_config.get_vector_setting("format_metadata_cycle", &u_format_metadata_cycle);
+    m_section_config.get_vector_setting("format_metadata_energy", &u_format_metadata_energy);
+    m_section_config.get_vector_setting("accumulator_spill_cycle", &u_accumulator_spill_cycle);
+    m_section_config.get_vector_setting("accumulator_spill_energy", &u_accumulator_spill_energy);
+
     /* Initialize PE stats */
 
     // Total number of data request to local buffer
@@ -442,6 +458,9 @@ void pe_t::init(section_config_t m_section_config) {
     // Total transfer energies between MAC unit and local buffer
     transfer_energy.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Overlapped cycle between MAC units and local buffer
     cycle_mac_lb.reserve(data_type_t::NUM_DATA_TYPES);
@@ -450,6 +469,9 @@ void pe_t::init(section_config_t m_section_config) {
     // Total static energy of PE.
     static_energy.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
+    format_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    format_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     utilization_local_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     utilization_local_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -465,18 +487,15 @@ void pe_t::connect(pe_array_t *m_pe_array) {
 void pe_t::update_tile_size(scheduler_t *m_scheduler) {
 
     num_active_macs = m_scheduler->num_active_mac;
-    if(num_active_macs == 0 || num_active_macs > mac_register_capacity) {
+    const mac_lane_state_t lane_state = calculate_mac_lane_state(num_macs, mac_width, num_active_macs);
+    if(!lane_state.valid || lane_state.scalar_capacity != mac_register_capacity) {
         std::cerr << "The number of Active macs : " << num_active_macs
                   << " is bigger than the scalar FMA lane capacity : " << mac_register_capacity << std::endl;
         exit(1);
     }
-    // Mapping's MAC factor denotes scalar FMA lanes. num_macs is the number
-    // of independent accumulators and mac_width is the number of lanes each
-    // accumulator can issue in one computation step.
-    active_mac_units = (num_active_macs + mac_width - 1)/mac_width;
-    active_mac_width = num_active_macs - (active_mac_units - 1)*mac_width;
-    utilization_mac = static_cast<double>(num_active_macs)/
-                      static_cast<double>(mac_register_capacity);
+    active_mac_units = lane_state.active_accumulator_units;
+    active_mac_width = lane_state.final_accumulator_lanes;
+    utilization_mac = lane_state.utilization;
     // Update tile sizes.
     tile_size_mac = m_scheduler->tile_size[component_type_t::MAC];
     tile_size_lb = m_scheduler->tile_size[component_type_t::PE];
@@ -518,22 +537,21 @@ void pe_t::check_tile_size() {
         }
     }
     else if(memory_type == memory_type_t::SHARED) {
-        unsigned data_size = tile_size_lb[data_type_t::INPUT] + tile_size_lb[data_type_t::WEIGHT] + tile_size_lb[data_type_t::OUTPUT];
-        if(bypass[data_type_t::INPUT]) {
-            data_size -= tile_size_lb[data_type_t::INPUT];
-        }
-        if(bypass[data_type_t::WEIGHT]) {
-            data_size -= tile_size_lb[data_type_t::WEIGHT];
-        }
-        if(bypass[data_type_t::OUTPUT]) {
-            data_size -= tile_size_lb[data_type_t::OUTPUT];
+        size_t data_size = 0;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+            const data_type_t type = static_cast<data_type_t>(i);
+            if(!bypass[type]) {
+                data_size += runtime_datatypes().storage_bytes(type, tile_size_lb[type]);
+            }
         }
 
-        if(data_size*sizeof(data_t) > input_size + weight_size + output_size) {
+        const size_t buffer_size = static_cast<size_t>(input_size) + weight_size + output_size;
+        if(data_size > buffer_size) {
             std::cerr << "The data size is bigger than local buffer size\n"
-                      << "Data : " << data_size*sizeof(data_t)
-                      << " Buffer : " << input_size + weight_size + output_size << std::endl;
-         }
+                      << "Data : " << data_size
+                      << " Buffer : " << buffer_size << std::endl;
+            exit(1);
+        }
     }
 }
 
@@ -622,6 +640,47 @@ void pe_t::request_data() {
     }
 }
 
+void pe_t::account_descriptor_dense_mac_transfer(data_type_t type, size_t elements, bool to_mac) {
+    const unsigned source_line = to_mac ? line_size_lb[type] : line_size_mac[type];
+    const unsigned destination_line = to_mac ? line_size_mac[type] : line_size_lb[type];
+    const datatype_transfer_timing_t timing = datatype_transfer_timing(
+        type, elements, source_line, destination_line, bitwidth);
+
+    payload_link_transactions[type] += timing.payload_link_transactions;
+    metadata_link_transactions[type] += timing.metadata_link_transactions;
+    storage_link_transactions[type] += timing.link_transactions;
+
+    const double source_cycle = to_mac ? u_read_cycle_lb[type] : u_read_cycle_mac[type];
+    const double source_energy = to_mac ? u_read_energy_lb[type] : u_read_energy_mac[type];
+    const double destination_cycle = to_mac ? u_write_cycle_mac[type] : u_write_cycle_lb[type];
+    const double destination_energy = to_mac ? u_write_energy_mac[type] : u_write_energy_lb[type];
+    if(to_mac) {
+        access_cycle_lb[type] += timing.source_accesses*source_cycle;
+        access_energy_lb[type] += timing.source_accesses*source_energy;
+        access_cycle_mac[type] += timing.destination_accesses*destination_cycle;
+        access_energy_mac[type] += timing.destination_accesses*destination_energy;
+    } else {
+        access_cycle_mac[type] += timing.source_accesses*source_cycle;
+        access_energy_mac[type] += timing.source_accesses*source_energy;
+        access_cycle_lb[type] += timing.destination_accesses*destination_cycle;
+        access_energy_lb[type] += timing.destination_accesses*destination_energy;
+        write_back_cycle_mac += timing.source_accesses*source_cycle;
+        write_back_cycle_lb += timing.destination_accesses*destination_cycle;
+        overlapped_transfer_cycle += timing.link_transactions*u_transfer_cycle;
+    }
+    transfer_cycle[type] += timing.link_transactions*u_transfer_cycle;
+    transfer_energy[type] += timing.link_transactions*u_transfer_energy;
+    if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+        std::cerr << "Error: PE pipeline transaction count overflow" << std::endl;
+        exit(1);
+    }
+    cycle_mac_lb[type] += pipelined_transfer_cycles(
+        static_cast<unsigned>(timing.pipeline_transactions), source_cycle,
+        std::max(source_cycle, u_transfer_cycle),
+        std::max(source_cycle, std::max(u_transfer_cycle, destination_cycle)),
+        std::max(u_transfer_cycle, destination_cycle), destination_cycle);
+}
+
 // Transfer data from local buffer to MAC unit.
 // And execute MAC operation.
 void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
@@ -636,7 +695,64 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
     if(!bypass[data_type_t::OUTPUT]) {
         utilization_local_buffer[data_type_t::OUTPUT] = (float)(runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]))/(float)(output_size);
     }
+#ifndef FUNCTIONAL
+    if(m_scheduler->compression_type != compression_type_t::DENSE) {
+        std::cerr << "Error: timing PE supports dense descriptor traffic only" << std::endl;
+        exit(1);
+    }
+    const bool last_pe = pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y - 1 &&
+                         index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1;
     if(request_to_lb[data_type_t::INPUT]) {
+        account_format_events(data_type_t::INPUT, tile_size_mac[data_type_t::INPUT]);
+        if(!skip_transfer[data_type_t::INPUT]) {
+            num_data_transfer_to_mac[data_type_t::INPUT]++;
+            account_descriptor_dense_mac_transfer(data_type_t::INPUT, tile_size_mac[data_type_t::INPUT], true);
+            if(last_pe) move_front(&m_scheduler->input_offset_pe);
+        }
+        input_index++;
+        exist_data_mac[data_type_t::INPUT] = true;
+        request_to_lb[data_type_t::INPUT] = false;
+        if(tile_size_mac[data_type_t::INPUT] == tile_size_lb[data_type_t::INPUT]) skip_transfer[data_type_t::INPUT] = true;
+    }
+    if(request_to_lb[data_type_t::WEIGHT]) {
+        account_format_events(data_type_t::WEIGHT, tile_size_mac[data_type_t::WEIGHT]);
+        if(!skip_transfer[data_type_t::WEIGHT]) {
+            num_data_transfer_to_mac[data_type_t::WEIGHT]++;
+            account_descriptor_dense_mac_transfer(data_type_t::WEIGHT, tile_size_mac[data_type_t::WEIGHT], true);
+            if(last_pe) move_front(&m_scheduler->weight_offset_pe);
+        }
+        weight_index++;
+        exist_data_mac[data_type_t::WEIGHT] = true;
+        request_to_lb[data_type_t::WEIGHT] = false;
+        if(tile_size_mac[data_type_t::WEIGHT] == tile_size_lb[data_type_t::WEIGHT]) skip_transfer[data_type_t::WEIGHT] = true;
+    }
+    if(request_to_lb[data_type_t::OUTPUT]) {
+        account_format_events(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT]);
+        if(m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()]) {
+            if(!skip_transfer[data_type_t::OUTPUT]) {
+                num_data_transfer_to_mac[data_type_t::OUTPUT]++;
+                account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], true);
+            }
+            if(tile_size_mac[data_type_t::OUTPUT] == tile_size_lb[data_type_t::OUTPUT]) skip_transfer[data_type_t::OUTPUT] = true;
+        } else {
+            clear_output_accumulators();
+            m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()] = true;
+        }
+        output_index++;
+        exist_data_mac[data_type_t::OUTPUT] = true;
+        request_to_lb[data_type_t::OUTPUT] = false;
+    }
+
+    computation(m_scheduler);
+    if(input_index == m_scheduler->offset_size_pe[data_type_t::INPUT].front() &&
+       weight_index == m_scheduler->offset_size_pe[data_type_t::WEIGHT].front() &&
+       output_index == m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+        flush_data(m_scheduler);
+    }
+    return;
+#endif
+    if(request_to_lb[data_type_t::INPUT]) {
+        account_format_events(data_type_t::INPUT, tile_size_mac[data_type_t::INPUT]);
 #ifdef FUNCTIONAL
         // Input data transfer
         m_scheduler->transfer_data(input_data_mac, input_data_lb, 0, m_scheduler->input_offset_pe.front(),
@@ -1116,6 +1232,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
     }
     // Transfer weight from local buffer to MAC unit.
     if(request_to_lb[data_type_t::WEIGHT]) {
+        account_format_events(data_type_t::WEIGHT, tile_size_mac[data_type_t::WEIGHT]);
 #ifdef FUNCTIONAL
 
         // Weight data transfer
@@ -1616,6 +1733,7 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
     }
     // Transfer output data from local buffer to MAC unit.
     if(request_to_lb[data_type_t::OUTPUT]) {
+        account_format_events(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT]);
         // Load output data from local buffer to MAC unit.
         if(m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()]) {
             if(!skip_transfer[data_type_t::OUTPUT]) {
@@ -1763,6 +1881,70 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
 // Flush the data in local buffer.
 void pe_t::flush_data(scheduler_t *m_scheduler) {
+#ifndef FUNCTIONAL
+    if(m_scheduler->compression_type != compression_type_t::DENSE) {
+        std::cerr << "Error: timing PE flush supports dense descriptor traffic only" << std::endl;
+        exit(1);
+    }
+    bool write_output = false;
+    if(stationary_type_local_buffer == stationary_type_t::INPUT_STATIONARY) {
+        write_output = true;
+        if(weight_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::WEIGHT].front() - 1 &&
+           output_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::OUTPUT].front() - 1) {
+            exist_data_lb[data_type_t::WEIGHT] = false;
+            exist_data_lb[data_type_t::OUTPUT] = false;
+            weight_flush_counter++;
+            output_flush_counter++;
+        } else {
+            exist_data_lb[data_type_t::INPUT] = false;
+            exist_data_lb[data_type_t::WEIGHT] = false;
+            exist_data_lb[data_type_t::OUTPUT] = false;
+            weight_flush_counter = 0;
+            output_flush_counter = 0;
+        }
+    } else if(stationary_type_local_buffer == stationary_type_t::WEIGHT_STATIONARY) {
+        write_output = true;
+        if(input_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::INPUT].front() - 1 &&
+           output_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::OUTPUT].front() - 1) {
+            exist_data_lb[data_type_t::INPUT] = false;
+            exist_data_lb[data_type_t::OUTPUT] = false;
+            input_flush_counter++;
+            output_flush_counter++;
+        } else {
+            exist_data_lb[data_type_t::INPUT] = false;
+            exist_data_lb[data_type_t::WEIGHT] = false;
+            exist_data_lb[data_type_t::OUTPUT] = false;
+            input_flush_counter = 0;
+            output_flush_counter = 0;
+        }
+    } else if(stationary_type_local_buffer == stationary_type_t::OUTPUT_STATIONARY) {
+        if(input_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::INPUT].front() - 1 &&
+           weight_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::WEIGHT].front() - 1) {
+            exist_data_lb[data_type_t::INPUT] = false;
+            exist_data_lb[data_type_t::WEIGHT] = false;
+            input_flush_counter++;
+            weight_flush_counter++;
+        } else {
+            exist_data_lb[data_type_t::INPUT] = false;
+            exist_data_lb[data_type_t::WEIGHT] = false;
+            exist_data_lb[data_type_t::OUTPUT] = false;
+            input_flush_counter = 0;
+            weight_flush_counter = 0;
+            write_output = true;
+        }
+    } else {
+        exist_data_lb[data_type_t::INPUT] = false;
+        exist_data_lb[data_type_t::WEIGHT] = false;
+        exist_data_lb[data_type_t::OUTPUT] = false;
+        write_output = true;
+    }
+    if(write_output) pe_array->account_descriptor_dense_writeback(this, tile_size_lb[data_type_t::OUTPUT]);
+    wait_data();
+    input_index = 0;
+    weight_index = 0;
+    output_index = 0;
+    return;
+#endif
     // Case 1. Input stationary
     if(stationary_type_local_buffer == stationary_type_t::INPUT_STATIONARY) {
         // Case 1) Reuse input data && Request weight and output data
@@ -1943,9 +2125,9 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
-            pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->write_back_cycle += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->access_energy[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_energy[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            pe_array->access_cycle[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->access_energy[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_energy[data_type_t::OUTPUT];
             // Update data transfer cycle between PE and PE array.
             */
 
@@ -2051,9 +2233,9 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
-            pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->write_back_cycle += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->access_energy[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_energy[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            pe_array->access_cycle[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->access_energy[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_energy[data_type_t::OUTPUT];
             // Update data transfer cycle between PE and PE array.
 
             // Increase flush counter of input data and output data.
@@ -2153,9 +2335,9 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
-            pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->write_back_cycle += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->access_energy[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_energy[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            pe_array->access_cycle[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->access_energy[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_energy[data_type_t::OUTPUT];
             */
 
             // Set flush counter of input data and output data as zero.
@@ -2271,9 +2453,9 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             access_energy_lb[data_type_t::OUTPUT] += output_lines_lb*u_read_energy_lb[data_type_t::OUTPUT];
 
             // Update PE array write cycle and energy.
-            pe_array->access_cycle[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->write_back_cycle += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_cycle[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            pe_array->access_energy[data_type_t::OUTPUT] += tile_size_lb[data_type_t::OUTPUT]*pe_array->u_write_energy[data_type_t::OUTPUT]/(pe_array->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            pe_array->access_cycle[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_cycle[data_type_t::OUTPUT];
+            pe_array->access_energy[data_type_t::OUTPUT] += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT], pe_array->line_size[data_type_t::OUTPUT])*pe_array->u_write_energy[data_type_t::OUTPUT];
             */
 
             // Set flush counter of input data and weight to zero.
@@ -2463,6 +2645,21 @@ void pe_t::print_specification() {
 	std::cout << std::endl;
 }
 
+void pe_t::account_format_events(data_type_t type, size_t elements) {
+    const size_t payload = runtime_datatypes().payload_transactions(type, elements, bitwidth);
+    const size_t metadata = runtime_datatypes().metadata_transactions(type, elements, bitwidth);
+    const size_t storage = runtime_datatypes().storage_transactions(type, elements, bitwidth);
+
+    format_cycle[type] += payload*u_format_payload_cycle[type] +
+                          metadata*u_format_metadata_cycle[type];
+    format_energy[type] += payload*u_format_payload_energy[type] +
+                           metadata*u_format_metadata_energy[type];
+    if(type == data_type_t::OUTPUT) {
+        format_cycle[type] += storage*u_accumulator_spill_cycle[type];
+        format_energy[type] += storage*u_accumulator_spill_energy[type];
+    }
+}
+
 double pe_t::modeled_elapsed_cycles() const {
     double elapsed = std::max(computation_cycle,
                               std::max(write_back_cycle_mac, write_back_cycle_lb));
@@ -2472,8 +2669,13 @@ double pe_t::modeled_elapsed_cycles() const {
         elapsed = std::max(elapsed, access_cycle_lb[type]);
         elapsed = std::max(elapsed, transfer_cycle[type]);
         elapsed = std::max(elapsed, cycle_mac_lb[type]);
+        elapsed = std::max(elapsed, format_cycle[type]);
     }
     return elapsed;
+}
+
+size_t pe_t::scalar_mac_capacity() const {
+    return mac_register_capacity;
 }
 
 void pe_t::update_static_energy(double elapsed_cycles) {
@@ -2518,6 +2720,8 @@ void pe_t::reset() {
 
     computation_cycle = 0;
     computation_energy = 0;
+    format_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    format_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     write_back_cycle_mac  = 0.0;
     write_back_cycle_lb = 0.0;
@@ -2538,6 +2742,9 @@ void pe_t::reset() {
 
     transfer_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Reset overlapped cycle between MAC unit and local buffer
     cycle_mac_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -2569,7 +2776,7 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
 #endif
 
         num_computation++;
-        computation_cycle += u_computation_cycle;
+        computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
         computation_energy += u_computation_energy;
 
         exist_data_mac[data_type_t::INPUT] = false, request_to_lb[data_type_t::INPUT] = true;
@@ -2596,23 +2803,8 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
         //                                data_type_t::OUTPUT, get_mac_stationary_type()), action_type_t::STORE);
 #endif
         /* Stats */
-        const size_t output_mac_lines = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], line_size_mac[data_type_t::OUTPUT]);
-        const size_t output_link_transactions = runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], bitwidth);
-
-        // Update MAC read cycle and energy.
-        access_cycle_mac[data_type_t::OUTPUT] += output_mac_lines*u_read_cycle_mac[data_type_t::OUTPUT];
-        write_back_cycle_mac += output_mac_lines*u_read_cycle_mac[data_type_t::OUTPUT];
-        access_energy_mac[data_type_t::OUTPUT] += output_mac_lines*u_read_energy_mac[data_type_t::OUTPUT];
-
-        // Update local buffer write cycle and energy.
-        access_cycle_lb[data_type_t::OUTPUT] += output_mac_lines*u_write_cycle_lb[data_type_t::OUTPUT];
-        write_back_cycle_lb += output_mac_lines*u_write_cycle_lb[data_type_t::OUTPUT];
-        access_energy_lb[data_type_t::OUTPUT] += output_mac_lines*u_write_energy_lb[data_type_t::OUTPUT];
-
-        // Update data transfer cycle and energy between MAC and local buffer.
-        transfer_cycle[data_type_t::OUTPUT] += u_transfer_cycle*output_link_transactions;
-        overlapped_transfer_cycle += u_transfer_cycle*output_link_transactions;
-        transfer_energy[data_type_t::OUTPUT] += u_transfer_energy*output_link_transactions;
+        account_descriptor_dense_mac_transfer(
+            data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
         /* Stats */
 
 
@@ -2650,14 +2842,14 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                     num_computation++;
                     computation_energy += u_computation_energy;
                 }
-                computation_cycle += u_computation_cycle;
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
                 num_computation += nonzero_operations;
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
-                    computation_cycle += u_computation_cycle;
+                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
                 }
             }
 #else
@@ -2665,12 +2857,32 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 num_computation++;
                 computation_energy += u_computation_energy;
             }
-            computation_cycle += u_computation_cycle;
+            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
 #endif
         } else {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
             exit(1);
         }
+#ifndef FUNCTIONAL
+        account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
+        exist_data_mac[data_type_t::WEIGHT] = false;
+        request_to_lb[data_type_t::WEIGHT] = true;
+        exist_data_mac[data_type_t::OUTPUT] = false;
+        request_to_lb[data_type_t::OUTPUT] = true;
+        num_request_to_lb[data_type_t::WEIGHT]++;
+        num_request_to_lb[data_type_t::OUTPUT]++;
+        if(weight_index == m_scheduler->offset_size_pe[data_type_t::WEIGHT].front() &&
+           output_index == m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+            exist_data_mac[data_type_t::INPUT] = false;
+            request_to_lb[data_type_t::INPUT] = true;
+            num_request_to_lb[data_type_t::INPUT]++;
+            if(input_index < m_scheduler->offset_size_pe[data_type_t::INPUT].front()) {
+                weight_index = 0;
+                output_index = 0;
+            }
+        }
+        return;
+#endif
 #ifdef FUNCTIONAL
         // Write back output data
         m_scheduler->transfer_data(output_data_lb, output_data_mac, m_scheduler->output_offset_pe.front(), 0,
@@ -2831,14 +3043,14 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                     num_computation++;
                     computation_energy += u_computation_energy;
                 }
-                computation_cycle += u_computation_cycle;
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
                 num_computation += nonzero_operations;
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
-                    computation_cycle += u_computation_cycle;
+                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
                 }
             }
 #else
@@ -2846,13 +3058,33 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 num_computation++;
                 computation_energy += u_computation_energy;
             }
-            computation_cycle += u_computation_cycle;
+            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
 #endif
         }
         else {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
             exit(1);
         }
+#ifndef FUNCTIONAL
+        account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
+        exist_data_mac[data_type_t::INPUT] = false;
+        request_to_lb[data_type_t::INPUT] = true;
+        exist_data_mac[data_type_t::OUTPUT] = false;
+        request_to_lb[data_type_t::OUTPUT] = true;
+        num_request_to_lb[data_type_t::INPUT]++;
+        num_request_to_lb[data_type_t::OUTPUT]++;
+        if(input_index == m_scheduler->offset_size_pe[data_type_t::INPUT].front() &&
+           output_index == m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+            exist_data_mac[data_type_t::WEIGHT] = false;
+            request_to_lb[data_type_t::WEIGHT] = true;
+            num_request_to_lb[data_type_t::WEIGHT]++;
+            if(weight_index < m_scheduler->offset_size_pe[data_type_t::WEIGHT].front()) {
+                input_index = 0;
+                output_index = 0;
+            }
+        }
+        return;
+#endif
 
 #ifdef FUNCTIONAL
         // Write back output data
@@ -3015,14 +3247,14 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                     num_computation++;
                     computation_energy += u_computation_energy;
                 }
-                computation_cycle += u_computation_cycle;
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
                 num_computation += nonzero_operations;
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
-                    computation_cycle += u_computation_cycle;
+                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
                 }
             }
 #else
@@ -3030,7 +3262,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 num_computation++;
                 computation_energy += u_computation_energy;
             }
-            computation_cycle += u_computation_cycle;
+            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
 
 #endif
         }
@@ -3039,6 +3271,26 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
             exit(1);
         }
+#ifndef FUNCTIONAL
+        exist_data_mac[data_type_t::INPUT] = false;
+        request_to_lb[data_type_t::INPUT] = true;
+        exist_data_mac[data_type_t::WEIGHT] = false;
+        request_to_lb[data_type_t::WEIGHT] = true;
+        num_request_to_lb[data_type_t::INPUT]++;
+        num_request_to_lb[data_type_t::WEIGHT]++;
+        if(input_index == m_scheduler->offset_size_pe[data_type_t::INPUT].front() &&
+           weight_index == m_scheduler->offset_size_pe[data_type_t::WEIGHT].front()) {
+            exist_data_mac[data_type_t::OUTPUT] = false;
+            request_to_lb[data_type_t::OUTPUT] = true;
+            num_request_to_lb[data_type_t::OUTPUT]++;
+            account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
+            if(output_index < m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+                input_index = 0;
+                weight_index = 0;
+            }
+        }
+        return;
+#endif
 
 
         // After computation.

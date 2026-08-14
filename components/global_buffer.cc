@@ -1,8 +1,29 @@
 #include <iomanip>
+#include <limits>
 #include <cmath>
 #include <cstring>
 #include "global_buffer.h"
+#include "datatype.h"
+#include "interconnect_timing.h"
 
+
+namespace {
+
+void validate_global_buffer_widths(unsigned link_bits, const std::vector<unsigned> &line_bits) {
+    if(link_bits == 0) {
+        std::cerr << "Error: global buffer bitwidth must be non-zero" << std::endl;
+        exit(1);
+    }
+    for(unsigned i = 0; i < line_bits.size(); ++i) {
+        const unsigned width = line_bits[i];
+        if(width < 8 || (width & (width - 1)) != 0) {
+            std::cerr << "Error: global buffer line_size must be a power-of-two bit width of at least 8" << std::endl;
+            exit(1);
+        }
+    }
+}
+
+} // namespace
 global_buffer_t::global_buffer_t(section_config_t /*m_section_config*/) :
     multi_chip(NULL),
     data(NULL),
@@ -120,24 +141,59 @@ void global_buffer_t::request_data() {
     }
 }
 
+void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
+    const datatype_transfer_timing_t timing = datatype_transfer_timing(
+        type, pe_array->tile_size[type], line_size[type], pe_array->line_size[type], bitwidth);
+
+    num_data_transfer[type]++;
+    payload_link_transactions[type] += timing.payload_link_transactions;
+    metadata_link_transactions[type] += timing.metadata_link_transactions;
+    storage_link_transactions[type] += timing.link_transactions;
+    access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+    access_energy[type] += timing.source_accesses*u_read_energy[type];
+    pe_array->access_cycle[type] += timing.destination_accesses*pe_array->u_write_cycle[type];
+    pe_array->access_energy[type] += timing.destination_accesses*pe_array->u_write_energy[type];
+    transfer_cycle[type] += timing.link_transactions*u_transfer_cycle;
+    transfer_energy[type] += timing.link_transactions*u_transfer_energy;
+    if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+        std::cerr << "Error: global buffer pipeline transaction count overflow" << std::endl;
+        exit(1);
+    }
+    cycle_pe_array_global_buffer[type] += pipelined_transfer_cycles(
+        static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
+        std::max(u_read_cycle[type], u_transfer_cycle),
+        std::max(u_read_cycle[type], std::max(u_transfer_cycle, pe_array->u_write_cycle[type])),
+        std::max(u_transfer_cycle, pe_array->u_write_cycle[type]),
+        pe_array->u_write_cycle[type]);
+    pe_array->skip_transfer[type] = false;
+}
+
 // Transfer the data to temporal buffer of PE array.
 void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
-
-    if(!bypass[data_type_t::INPUT]) {
-        utilization[data_type_t::INPUT] = (float)(tile_size[data_type_t::INPUT]*sizeof(data_t))/(float)(size);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        const data_type_t type = static_cast<data_type_t>(i);
+        if(!bypass[type]) {
+            utilization[type] = static_cast<double>(runtime_datatypes().storage_bytes(type, tile_size[type])) /
+                                static_cast<double>(size);
+        }
     }
-    if(bypass[data_type_t::WEIGHT]) {
-        utilization[data_type_t::WEIGHT] = (float)(tile_size[data_type_t::WEIGHT]*sizeof(data_t))/(float)(size);
+#ifndef FUNCTIONAL
+    if(m_scheduler->compression_type != compression_type_t::DENSE) {
+        std::cerr << "Error: timing Global Buffer supports dense descriptor traffic only; sparse metadata timing is not modeled" << std::endl;
+        exit(1);
     }
-    if(bypass[data_type_t::OUTPUT]) {
-        utilization[data_type_t::OUTPUT] = (float)(tile_size[data_type_t::OUTPUT]*sizeof(data_t))/(float)(size);
-    }
+#endif
     //std::cout << tile_size[data_type_t::INPUT] << " " << tile_size[data_type_t::WEIGHT] << " " << tile_size[data_type_t::OUTPUT] << " " << size << std::endl;
     //std::cout << utilization[data_type_t::INPUT] << utilization[data_type_t::WEIGHT] << utilization[data_type_t::OUTPUT] << std::endl;
 
 
     // Transfer input data from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::INPUT]) {
+#ifndef FUNCTIONAL
+        if(m_scheduler->compression_type == compression_type_t::DENSE && !skip_transfer[data_type_t::INPUT]) {
+            account_descriptor_dense_transfer(data_type_t::INPUT);
+        }
+#endif
 #ifdef FUNCTIONAL
         // Input data transfer
         m_scheduler->transfer_data(pe_array->input_data, data, 0, offsets[data_type_t::INPUT] + m_scheduler->input_offset_global_buffer.front(), 
@@ -240,7 +296,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                                        std::max(u_transfer_cycle*ceil((double)(line_size[data_type_t::INPUT])/(double)(bitwidth)),
                                                 ratio*pe_array->u_write_cycle[data_type_t::INPUT]));
 
-                if(num_access_global_buffer == 1) {
+                if(num_access_global_buffer == 0) { } else if(num_access_global_buffer == 1) {
                     cycle_pe_array_global_buffer[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] + 
                                                                         u_transfer_cycle*ceil((double)(line_size[data_type_t::INPUT])/(double)(bitwidth)) +
                                                                         pe_array->u_write_cycle[data_type_t::INPUT];
@@ -510,7 +566,8 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
             move_front(&m_scheduler->input_offset_dram);
         }
 #else
-        /* Stats */
+#if 0
+        /* Legacy host-address timing path: replaced by descriptor accounting above. */
         if(!skip_transfer[data_type_t::INPUT]) {
             // Update PE array write cycle and energy.
             num_data_transfer[data_type_t::INPUT]++;
@@ -599,7 +656,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                                    std::max(u_transfer_cycle*ceil((double)(line_size[data_type_t::INPUT])/(double)(bitwidth)),
                                             ratio*pe_array->u_write_cycle[data_type_t::INPUT]));
 
-            if(num_access_global_buffer == 1) {
+            if(num_access_global_buffer == 0) { } else if(num_access_global_buffer == 1) {
                 cycle_pe_array_global_buffer[data_type_t::INPUT] += u_read_cycle[data_type_t::INPUT] + 
                                                                     u_transfer_cycle*ceil((double)(line_size[data_type_t::INPUT])/(double)(bitwidth)) +
                                                                     pe_array->u_write_cycle[data_type_t::INPUT];
@@ -621,6 +678,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
             }
         }
 #endif
+#endif
 
         // Increment the input index that finds the offset of input data in Global buffer.
         input_index++;
@@ -631,6 +689,11 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     }
     // Transfer weight from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::WEIGHT]) {
+#ifndef FUNCTIONAL
+        if(m_scheduler->compression_type == compression_type_t::DENSE && !skip_transfer[data_type_t::WEIGHT]) {
+            account_descriptor_dense_transfer(data_type_t::WEIGHT);
+        }
+#endif
 #ifdef FUNCTIONAL
         // Weight transfer
         m_scheduler->transfer_data(pe_array->weight, data, 0, offsets[data_type_t::WEIGHT] + m_scheduler->weight_offset_global_buffer.front(),
@@ -732,7 +795,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                                        std::max(u_transfer_cycle*ceil((double)(line_size[data_type_t::WEIGHT])/(double)(bitwidth)),
                                                 ratio*pe_array->u_write_cycle[data_type_t::WEIGHT]));
 
-                if(num_access_global_buffer == 1) {
+                if(num_access_global_buffer == 0) { } else if(num_access_global_buffer == 1) {
                     cycle_pe_array_global_buffer[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT] +   
                                                                          u_transfer_cycle*ceil((double)(line_size[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                                          ratio*pe_array->u_write_cycle[data_type_t::WEIGHT];
@@ -1094,7 +1157,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                                    std::max(u_transfer_cycle*ceil((double)(line_size[data_type_t::WEIGHT])/(double)(bitwidth)),
                                             ratio*pe_array->u_write_cycle[data_type_t::WEIGHT]));
 
-            if(num_access_global_buffer == 1) {
+            if(num_access_global_buffer == 0) { } else if(num_access_global_buffer == 1) {
                 cycle_pe_array_global_buffer[data_type_t::WEIGHT] += u_read_cycle[data_type_t::WEIGHT] +   
                                                                      u_transfer_cycle*ceil((double)(line_size[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                                      ratio*pe_array->u_write_cycle[data_type_t::WEIGHT];
@@ -1141,6 +1204,13 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
             //                                component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, 
             //                                data_type_t::OUTPUT, pe_array->get_stationary_type(), action_type_t::LOAD, true);
 #endif
+#ifndef FUNCTIONAL
+            if(!skip_transfer[data_type_t::OUTPUT]) {
+                account_descriptor_dense_transfer(data_type_t::OUTPUT);
+                pe_array->equal_output_tile = false;
+                transfer_output = true;
+            }
+#else
             if(!skip_transfer[data_type_t::OUTPUT]) {
                 num_data_transfer[data_type_t::OUTPUT]++;
 
@@ -1227,7 +1297,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                                        std::max(u_transfer_cycle*ceil((double)(line_size[data_type_t::OUTPUT])/(double)(bitwidth)),
                                                 ratio*pe_array->u_write_cycle[data_type_t::OUTPUT]));
 
-                if(num_access_global_buffer == 1) {
+                if(num_access_global_buffer == 0) { } else if(num_access_global_buffer == 1) {
                     cycle_pe_array_global_buffer[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT] +
                                                                          u_transfer_cycle*ceil((double)(line_size[data_type_t::OUTPUT])/(double)(bitwidth)) +
                                                                          ratio*pe_array->u_write_cycle[data_type_t::OUTPUT];
@@ -1248,6 +1318,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                 pe_array->equal_output_tile = false;
                 transfer_output = true;
             }
+#endif
             if(pe_array->tile_size[data_type_t::OUTPUT] == tile_size[data_type_t::OUTPUT]) {skip_transfer[data_type_t::OUTPUT] = true;}
         }
         else {
@@ -1424,10 +1495,8 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
             */
 
             /*
-            // Update Global buffer read cycle and energy.
-            write_back_cycle += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            // Update DRAM write cycle and energy.
-            multi_chip->write_back_cycle += tile_size[data_type_t::OUTPUT]*multi_chip->u_write_cycle[data_type_t::OUTPUT]/(multi_chip->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
+            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
             */
 
             // Increase flush counter of weight and output data
@@ -1520,10 +1589,8 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
             }
 
             /*
-            // Update Global buffer read cycle and energy.
-            write_back_cycle += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            // Update DRAM write cycle and energy.
-            multi_chip->write_back_cycle += tile_size[data_type_t::OUTPUT]*multi_chip->u_write_cycle[data_type_t::OUTPUT]/(multi_chip->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
+            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
             */
 
             weight_flush_counter = 0; 
@@ -1619,10 +1686,8 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
             }
 
             /*
-            // Update Global buffer read cycle and energy.
-            write_back_cycle += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            // Update DRAM write cycle and energy.
-            multi_chip->write_back_cycle += tile_size[data_type_t::OUTPUT]*multi_chip->u_write_cycle[data_type_t::OUTPUT]/(multi_chip->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
+            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
             */
             
             input_flush_counter++;
@@ -1715,10 +1780,8 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
             }
 
             /*
-            // Update Global buffer read cycle and energy.
-            write_back_cycle += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t))];
-            // Update DRAM write cycle and energy.
-            multi_chip->write_back_cycle += tile_size[data_type_t::OUTPUT]*multi_chip->u_write_cycle[data_type_t::OUTPUT]/(multi_chip->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
+            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
             */
          
             input_flush_counter = 0;
@@ -1826,10 +1889,8 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
             }
 
             /*
-            // Update Global buffer read cycle and energy.
-            write_back_cycle += tile_size[data_type_t::OUTPUT]*u_read_cycle[data_type_t::OUTPUT]/(line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
-            // Update DRAM write cycle and energy.
-            multi_chip->write_back_cycle += tile_size[data_type_t::OUTPUT]*multi_chip->u_write_cycle[data_type_t::OUTPUT]/(multi_chip->line_size[data_type_t::OUTPUT]/8/sizeof(data_t));
+            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
+            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
             */
 
             // Reset flush counter of input data and weight
@@ -1845,6 +1906,20 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
     input_index = 0, weight_index = 0, output_index = 0;
 }
 
+void global_buffer_t::update_static_energy(double elapsed_cycles) {
+    if(elapsed_cycles < 0.0) {
+        std::cerr << "Error: global buffer elapsed cycles must be non-negative" << std::endl;
+        exit(1);
+    }
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(u_static_energy[i] < 0.0) {
+            std::cerr << "Error: global buffer static_energy must be a non-negative pJ/cycle value" << std::endl;
+            exit(1);
+        }
+        static_energy[i] = static_energy_for_cycles(u_static_energy[i], elapsed_cycles);
+    }
+}
+
 void global_buffer_t::reset() {
     std::fill_n(data, ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
     
@@ -1858,6 +1933,9 @@ void global_buffer_t::reset() {
 
     num_request.assign(data_type_t::NUM_DATA_TYPES, 0);
     num_data_transfer.assign(data_type_t::NUM_DATA_TYPES, 0);
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     access_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     access_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -1917,12 +1995,13 @@ void separate_buffer_t::init(section_config_t m_section_config) {
 
     // Initialize line size and mask bits of the global buffer
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
-    line_size.assign(data_type_t::NUM_DATA_TYPES, sizeof(data_t));
+    line_size.assign(data_type_t::NUM_DATA_TYPES, 8); // bits
 
     mask_bits.reserve(data_type_t::NUM_DATA_TYPES);
     mask_bits.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     m_section_config.get_vector_setting("line_size", &line_size);
+    validate_global_buffer_widths(bitwidth, line_size);
 
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
         while(line_size[i] > 8) {
@@ -1997,6 +2076,9 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("transfer_energy", &u_transfer_energy);
 
     /* Initialize stats of the global buffer */
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize the number of request to Global buffer
     num_request.reserve(data_type_t::NUM_DATA_TYPES);
@@ -2041,24 +2123,25 @@ void separate_buffer_t::update_offset() {
 }
 
 void separate_buffer_t::check_tile_size() {
-    
-    if(tile_size[data_type_t::INPUT]*sizeof(data_t) > input_size && !bypass[data_type_t::INPUT]) {
-        std::cerr << "Input data size : " << tile_size[data_type_t::INPUT]*sizeof(data_t)
+    const size_t input_bytes = runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size[data_type_t::INPUT]);
+    const size_t weight_bytes = runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size[data_type_t::WEIGHT]);
+    const size_t output_bytes = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    if(input_bytes > input_size && !bypass[data_type_t::INPUT]) {
+        std::cerr << "Input data size : " << input_bytes
                   << " is bigger than input buffer size : " << input_size << std::endl;
         exit(1);
     }
-    if(tile_size[data_type_t::WEIGHT]*sizeof(data_t) > weight_size && !bypass[data_type_t::WEIGHT]) {
-        std::cerr << "Weight data size : " << tile_size[data_type_t::WEIGHT]*sizeof(data_t)
+    if(weight_bytes > weight_size && !bypass[data_type_t::WEIGHT]) {
+        std::cerr << "Weight data size : " << weight_bytes
                   << " is bigger than weight buffer size : " << weight_size << std::endl;
         exit(1);
     }
-    if(tile_size[data_type_t::OUTPUT]*sizeof(data_t) > output_size && !bypass[data_type_t::OUTPUT]) {
-        std::cerr << "Output data size : " << tile_size[data_type_t::OUTPUT]*sizeof(data_t)
+    if(output_bytes > output_size && !bypass[data_type_t::OUTPUT]) {
+        std::cerr << "Output data size : " << output_bytes
                   << " is bigger than output buffer size : " << output_size << std::endl;
         exit(1);
     }
 }
-
 // Print out the stat of separate Global buffer.
 void separate_buffer_t::print_specification() {
     std::cout << "============== Global buffer ===============" << std::endl;
@@ -2153,12 +2236,13 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     
     // Initialize line size and mask bits of the global buffer
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
-    line_size.assign(data_type_t::NUM_DATA_TYPES, sizeof(data_t));
+    line_size.assign(data_type_t::NUM_DATA_TYPES, 8); // bits
 
     mask_bits.reserve(data_type_t::NUM_DATA_TYPES);
     mask_bits.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     m_section_config.get_vector_setting("line_size", &line_size);
+    validate_global_buffer_widths(bitwidth, line_size);
 
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
         while(line_size[i] > 8) {
@@ -2229,6 +2313,9 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
 
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     m_section_config.get_setting("transfer_cycle", &u_transfer_cycle);
     m_section_config.get_setting("transfer_energy", &u_transfer_energy);
 
@@ -2274,28 +2361,20 @@ void shared_buffer_t::update_offset() {
     offsets[data_type_t::OUTPUT] = tile_size[data_type_t::INPUT] + tile_size[data_type_t::WEIGHT];
 }
 
-
 void shared_buffer_t::check_tile_size() {
-    unsigned data_size = tile_size[data_type_t::INPUT] + tile_size[data_type_t::WEIGHT] + tile_size[data_type_t::OUTPUT];
-
-    if(bypass[data_type_t::INPUT]) {
-        data_size -= tile_size[data_type_t::INPUT];
-    }
-    if(bypass[data_type_t::WEIGHT]) {
-        data_size -= tile_size[data_type_t::WEIGHT];
-    }
-    if(bypass[data_type_t::OUTPUT]) {
-        data_size -= tile_size[data_type_t::OUTPUT];
+    size_t data_size = 0;
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        const data_type_t type = static_cast<data_type_t>(i);
+        if(!bypass[type]) data_size += runtime_datatypes().storage_bytes(type, tile_size[type]);
     }
 
-    if(data_size*sizeof(data_t) > size) {
+    if(data_size > size) {
         std::cout << "The data size is bigger than Global buffer size\n"
-                  << "Data : " << data_size*sizeof(data_t)
+                  << "Data : " << data_size
                   << " Buffer : " << size << std::endl;
         exit(1);
     }
 }
-
 
 // Print out the stat of shared Global buffer.
 void shared_buffer_t::print_specification() {

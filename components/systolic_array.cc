@@ -1,5 +1,7 @@
 #include <iomanip>
 #include "systolic_array.h"
+#include "interconnect_timing.h"
+#include "datatype.h"
 
 systolic_array_t::systolic_array_t(section_config_t m_section_config) :
     pe_array_t(m_section_config) {
@@ -36,7 +38,7 @@ void systolic_array_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("bitwidth", &bitwidth);
 
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
-    line_size.assign(data_type_t::NUM_DATA_TYPES, sizeof(data_t));
+    line_size.assign(data_type_t::NUM_DATA_TYPES, 8);
     m_section_config.get_vector_setting("line_size", &line_size);
 
     mask_bits.reserve(data_type_t::NUM_DATA_TYPES);
@@ -49,6 +51,12 @@ void systolic_array_t::init(section_config_t m_section_config) {
         }
     }
     m_section_config.get_vector_setting("line_size", &line_size);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(!is_valid_memory_line_bits(line_size[i])) {
+            std::cerr << "Error: PE-array line_size must be a power-of-two bit width of at least 8" << std::endl;
+            exit(1);
+        }
+    }
 
     // Define stationary between PE array and Global buffer.
     std::string array_stationary_str;
@@ -172,6 +180,11 @@ void systolic_array_t::init(section_config_t m_section_config) {
 
     transfer_energy.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
+    cycle_temporal_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+    storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 }
 
 void systolic_array_t::update_tile_size(scheduler_t *m_scheduler) {
@@ -191,6 +204,10 @@ void systolic_array_t::update_tile_size(scheduler_t *m_scheduler) {
 }
 
 void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
+#ifndef FUNCTIONAL
+    account_descriptor_dense_distribution(m_scheduler, noc_cycle, noc_energy);
+    return;
+#endif
 
         bool request_to_pe_array_input = false;
         for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
@@ -788,7 +805,11 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
         }
 
         for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
-            pes[i]->utilization_local_buffer[data_type_t::OUTPUT] = std::max(pes[i]->utilization_local_buffer[data_type_t::OUTPUT], (double)(pes[i]->tile_size_lb[data_type_t::OUTPUT]*sizeof(data_t))/(double)(pes[i]->output_size));
+            pes[i]->utilization_local_buffer[data_type_t::OUTPUT] = std::max(
+                pes[i]->utilization_local_buffer[data_type_t::OUTPUT],
+                static_cast<double>(runtime_datatypes().storage_bytes(
+                    data_type_t::OUTPUT, pes[i]->tile_size_lb[data_type_t::OUTPUT])) /
+                    static_cast<double>(pes[i]->output_size));
             pes[i]->fill_data();
         }
 
