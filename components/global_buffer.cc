@@ -176,15 +176,16 @@ void global_buffer_t::account_output_writeback_link() {
         data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
         multi_chip->line_size[data_type_t::OUTPUT], multi_chip->get_bitwidth());
 
-    // GLB read (source) access.
-    access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+    // GB3: buffer access cycles are hidden when the destination (multi-chip temporal
+    // buffer) is double-buffered, matching the load-path convention. Energy always charged.
+    if(!multi_chip->double_buffer) {
+        access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+        write_back_cycle += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+        multi_chip->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
+        multi_chip->write_back_cycle += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
+    }
     access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
-    write_back_cycle += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
-
-    // Multi-chip temporal-buffer write (destination) access.
-    multi_chip->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
     multi_chip->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_energy[data_type_t::OUTPUT];
-    multi_chip->write_back_cycle += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
 
     // Serialized NoP link transfer over the GLB<->multi-chip fabric.
     multi_chip->transfer_cycle[data_type_t::OUTPUT] += multi_chip->u_transfer_cycle*timing.link_transactions;
@@ -200,8 +201,13 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
         const data_type_t type = static_cast<data_type_t>(i);
         if(!bypass[type]) {
-            utilization[type] = static_cast<double>(runtime_datatypes().storage_bytes(type, tile_size[type])) /
-                                static_cast<double>(size);
+            // GB4: a separate buffer's per-type occupancy is over its own partition,
+            // not the summed capacity of all three partitions (capacity_per_type is the
+            // partition for separate buffers and the total size for shared buffers).
+            const double capacity = capacity_per_type[type];
+            utilization[type] = (capacity > 0.0)
+                ? static_cast<double>(runtime_datatypes().storage_bytes(type, tile_size[type]))/capacity
+                : 0.0;
         }
     }
 #ifndef FUNCTIONAL
@@ -1637,6 +1643,12 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     input_size *= 1024, weight_size *= 1024, output_size *= 1024;
     size = input_size + weight_size + output_size;
 
+    // GB4: per-type utilization denominators are the partitions, not the summed size.
+    capacity_per_type.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    capacity_per_type[data_type_t::INPUT] = input_size;
+    capacity_per_type[data_type_t::WEIGHT] = weight_size;
+    capacity_per_type[data_type_t::OUTPUT] = output_size;
+
     unsigned num_entry = ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t);
     data = new data_t[num_entry]();
 
@@ -1788,9 +1800,12 @@ void separate_buffer_t::update_offset() {
 }
 
 void separate_buffer_t::check_tile_size() {
-    const size_t input_bytes = runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size[data_type_t::INPUT]);
-    const size_t weight_bytes = runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size[data_type_t::WEIGHT]);
-    const size_t output_bytes = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    // GB3: a double-buffered SRAM must hold two live tile copies (fill one half while
+    // the other is consumed), so the capacity check doubles the required bytes.
+    const size_t copies = double_buffer ? 2 : 1;
+    const size_t input_bytes = copies*runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size[data_type_t::INPUT]);
+    const size_t weight_bytes = copies*runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size[data_type_t::WEIGHT]);
+    const size_t output_bytes = copies*runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
     if(input_bytes > input_size && !bypass[data_type_t::INPUT]) {
         std::cerr << "Input data size : " << input_bytes
                   << " is bigger than input buffer size : " << input_size << std::endl;
@@ -1883,6 +1898,10 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("memory_size", &size);
     // KB -> Byte
     size *= 1024;
+
+    // A shared buffer holds every type in the same SRAM, so each type's utilization
+    // denominator is the full capacity.
+    capacity_per_type.assign(data_type_t::NUM_DATA_TYPES, size);
 
     unsigned num_entry = ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t);
     data = new data_t[num_entry]();
@@ -2036,6 +2055,8 @@ void shared_buffer_t::check_tile_size() {
         const data_type_t type = static_cast<data_type_t>(i);
         if(!bypass[type]) data_size += runtime_datatypes().storage_bytes(type, tile_size[type]);
     }
+    // GB3: double buffering needs two live copies of the working set.
+    if(double_buffer) data_size *= 2;
 
     if(data_size > size) {
         std::cout << "The data size is bigger than Global buffer size\n"

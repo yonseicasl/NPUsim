@@ -15,6 +15,12 @@ mac_lane_state_t calculate_mac_lane_state(unsigned number_of_macs, unsigned mac_
                                           unsigned active_scalar_lanes);
 double accumulate_issue_cycles(size_t issue_steps, double unit_cycle);
 
+// A3/PE1: latency of the lane->accumulator reduction. `mac_width` scalar FMA lanes
+// feed one accumulator through a ceil(log2(width))-stage adder tree; the tree is
+// pipelined, so it adds fill latency per issue step without changing throughput or
+// per-FMA energy. Width 1 has no reduction.
+double lane_reduction_fill_cycles(unsigned mac_width, double unit_cycle);
+
 double calculate_time_based_mac_utilization(double busy_scalar_mac_cycles,
                                             double available_scalar_mac_cycles);
 

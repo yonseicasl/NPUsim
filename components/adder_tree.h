@@ -19,6 +19,10 @@ public:
     // Transfer data to the local buffers in PE.
     void data_transfer(scheduler_t *m_scheduler);
 
+    // OUTPUT write-back through the reduction tree: base gather accounting plus the
+    // internal adder/link cost of combining partial sums.
+    void account_descriptor_dense_writeback(pe_t *source_pe, size_t elements);
+
 	// print out the configuration of PE array.
 	void print_specification();
 

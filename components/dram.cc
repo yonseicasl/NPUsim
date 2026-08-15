@@ -1210,7 +1210,16 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         if(multi_chip->tile_size[data_type_t::WEIGHT] == tile_size[data_type_t::WEIGHT]) {skip_transfer[data_type_t::WEIGHT] =true;}
     }
     if(multi_chip->request_to_dram[data_type_t::OUTPUT]) {
-        // Check whether the output data should be read 
+#ifndef FUNCTIONAL
+        // DR1: reject sparse on the OUTPUT path too -- otherwise an OUTPUT-only reload
+        // (input/weight resident) would bypass the INPUT/WEIGHT guards and silently
+        // price sparse output traffic as dense.
+        if(m_scheduler->compression_type != compression_type_t::DENSE) {
+            std::cerr << "Error: timing DRAM supports dense descriptor traffic only" << std::endl;
+            exit(1);
+        }
+#endif
+        // Check whether the output data should be read
         // or does not have to be transferred but just be initialized.
         if(m_scheduler->output_read_dram[m_scheduler->output_offset_dram.front()]) {
             if(!skip_transfer[data_type_t::OUTPUT]) {

@@ -20,6 +20,12 @@ void print_transaction_breakdown(std::ofstream &output, const char *title,
 }
 
 stats_t::stats_t() :
+    layer_latency(0.0),
+    busy_cycle_pe(0.0),
+    busy_cycle_pe_array(0.0),
+    busy_cycle_global_buffer(0.0),
+    busy_cycle_multi_chip(0.0),
+    busy_cycle_dram(0.0),
     local_buffer_type(memory_type_t::UNDEFINED_MEMORY),
     num_computation(0),
     computation_cycle(0.0),
@@ -122,6 +128,8 @@ void stats_t::init() {
     static_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     static_energy_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    utilization_pe_array_buffer.reserve(data_type_t::NUM_DATA_TYPES);
+    utilization_pe_array_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     format_cycle_pe.reserve(data_type_t::NUM_DATA_TYPES);
     format_cycle_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -421,29 +429,57 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         }
     }
 
-    // Layer wall-clock proxy for leakage: the longest-running component across the
-    // hierarchy. Without a global timeline this max-of-components bound still captures
-    // the memory time that the PE-only window dropped.
-    double layer_elapsed_cycles = pe_elapsed_cycles;
+    // A1 (global cycle / compute-memory overlap): place each hierarchy level's total
+    // busy time on a shared analytical timeline. Adjacent stages overlap (pipeline over
+    // tiles) when the boundary's downstream side buffers tiles -- the same
+    // destination-side double-buffer convention the access-cycle accounting uses; a
+    // single-buffered boundary serializes its two sides. The GLB->PE-array->PE path is
+    // one continuous stream, so those stages always overlap. The layer critical-path
+    // latency is the segment-combined result: max within an overlapped run of stages,
+    // summed across serialized boundaries.
+    busy_cycle_dram = m_dram->modeled_elapsed_cycles();
+    busy_cycle_multi_chip = m_multi_chip->modeled_elapsed_cycles();
+    busy_cycle_global_buffer = 0.0;
+    busy_cycle_pe_array = 0.0;
+    bool global_buffer_double_buffer = false;
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
-        layer_elapsed_cycles = std::max(layer_elapsed_cycles,
-                                        m_global_buffer[i]->modeled_elapsed_cycles());
-        layer_elapsed_cycles = std::max(layer_elapsed_cycles,
-                                        m_pe_array[i]->modeled_elapsed_cycles());
+        busy_cycle_global_buffer = std::max(busy_cycle_global_buffer,
+                                            m_global_buffer[i]->modeled_elapsed_cycles());
+        busy_cycle_pe_array = std::max(busy_cycle_pe_array,
+                                       m_pe_array[i]->modeled_elapsed_cycles());
+        global_buffer_double_buffer = global_buffer_double_buffer || m_global_buffer[i]->double_buffer;
     }
-    layer_elapsed_cycles = std::max(layer_elapsed_cycles, m_multi_chip->modeled_elapsed_cycles());
-    layer_elapsed_cycles = std::max(layer_elapsed_cycles, m_dram->modeled_elapsed_cycles());
+    busy_cycle_pe = pe_elapsed_cycles;
 
+    const double stage_busy[5] = {busy_cycle_dram, busy_cycle_multi_chip,
+                                  busy_cycle_global_buffer, busy_cycle_pe_array, busy_cycle_pe};
+    const bool boundary_overlaps[4] = {m_multi_chip->double_buffer,   // DRAM | multi-chip
+                                       global_buffer_double_buffer,   // multi-chip | GLB
+                                       true,                          // GLB | PE array (same stream)
+                                       true};                         // PE array | PE (same stream)
+    layer_latency = 0.0;
+    double segment = stage_busy[0];
+    for(unsigned b = 0; b < 4; ++b) {
+        if(boundary_overlaps[b]) {
+            segment = std::max(segment, stage_busy[b + 1]);
+        } else {
+            layer_latency += segment;
+            segment = stage_busy[b + 1];
+        }
+    }
+    layer_latency += segment;
+
+    // Leakage accrues over the layer critical-path latency (always-on components).
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); ++j) {
-            m_pe_array[i]->pes[j]->update_static_energy(layer_elapsed_cycles);
+            m_pe_array[i]->pes[j]->update_static_energy(layer_latency);
         }
-        m_pe_array[i]->update_static_energy(layer_elapsed_cycles);
+        m_pe_array[i]->update_static_energy(layer_latency);
     }
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
-        m_global_buffer[i]->update_static_energy(layer_elapsed_cycles);
+        m_global_buffer[i]->update_static_energy(layer_latency);
     }
-    m_multi_chip->update_static_energy(layer_elapsed_cycles);
+    m_multi_chip->update_static_energy(layer_latency);
 
     unsigned num_active_pe = 0;
     for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); i++) {
@@ -566,6 +602,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         
         // Update PE array utilization
         utilization_pe_array = std::max(utilization_pe_array, m_pe_array[i]->utilization);
+        for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
+            utilization_pe_array_buffer[j] = std::max(utilization_pe_array_buffer[j], m_pe_array[i]->buffer_utilization[j]);
+        }
     }
 
     // Guard the per-PE averages against a mapping that activates zero PEs (avoids NaN).
@@ -580,7 +619,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     // Available MAC cycles must span the whole layer wall-clock (compute + memory stalls),
     // the same window used for leakage; otherwise memory-bound layers report near-full MAC
     // utilization while the MACs actually idle waiting on GLB/NoP/DRAM.
-    mac_available_cycle = static_cast<double>(physical_scalar_macs) * layer_elapsed_cycles;
+    mac_available_cycle = static_cast<double>(physical_scalar_macs) * layer_latency;
     utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
     if(utilization_mac > 1.0 + 1e-9) {
         std::cerr << "Error: MAC busy cycles exceed physical MAC capacity" << std::endl;
@@ -711,6 +750,12 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
     if(m_repetitions == 1) return;
 
     num_computation = scale_counter(num_computation, m_repetitions, "computation count");
+    layer_latency *= m_repetitions;
+    busy_cycle_pe *= m_repetitions;
+    busy_cycle_pe_array *= m_repetitions;
+    busy_cycle_global_buffer *= m_repetitions;
+    busy_cycle_multi_chip *= m_repetitions;
+    busy_cycle_dram *= m_repetitions;
     computation_cycle *= m_repetitions;
     max_computation_cycle *= m_repetitions;
     min_computation_cycle *= m_repetitions;
@@ -794,6 +839,12 @@ void stats_t::update_network_stats(stats_t *m_source) {
     num_computation += m_source->num_computation;
 
     // Update computation cost
+    layer_latency += m_source->layer_latency;
+    busy_cycle_pe += m_source->busy_cycle_pe;
+    busy_cycle_pe_array += m_source->busy_cycle_pe_array;
+    busy_cycle_global_buffer += m_source->busy_cycle_global_buffer;
+    busy_cycle_multi_chip += m_source->busy_cycle_multi_chip;
+    busy_cycle_dram += m_source->busy_cycle_dram;
     computation_cycle += m_source->computation_cycle;
 
     max_computation_cycle += m_source->max_computation_cycle;
@@ -936,8 +987,30 @@ void stats_t::update_network_stats(stats_t *m_source) {
 
 // Print out the result of simulation.
 void stats_t::print_results(std::ofstream &m_output_file) {
-    /* PE result */
     m_output_file << std::fixed;
+
+    // A1: shared analytical timeline -- critical-path latency and per-level busy
+    // ratios. The bottleneck level identifies compute- vs memory-bound execution.
+    m_output_file << "============ Layer timeline =============" << std::endl;
+    m_output_file << "Critical-path latency :" << std::setw(11) << std::setprecision(1)
+                                               << layer_latency << " cycles" << std::endl;
+    const char *stage_names[5] = {"DRAM", "Multi-chip (NoP)", "Global buffer", "PE array", "PE (compute+LB)"};
+    const double stage_values[5] = {busy_cycle_dram, busy_cycle_multi_chip,
+                                    busy_cycle_global_buffer, busy_cycle_pe_array, busy_cycle_pe};
+    unsigned bottleneck = 0;
+    m_output_file << "Busy cycles (ratio of critical path)" << std::endl;
+    for(unsigned s = 0; s < 5; ++s) {
+        const double ratio = (layer_latency > 0.0) ? stage_values[s]/layer_latency*100.0 : 0.0;
+        m_output_file << " * " << std::left << std::setw(19) << stage_names[s] << std::right
+                      << ":" << std::setw(11) << std::setprecision(1) << stage_values[s]
+                      << " cycles (" << std::setprecision(1) << ratio << " %)" << std::endl;
+        if(stage_values[s] > stage_values[bottleneck]) bottleneck = s;
+    }
+    m_output_file << "Bottleneck level      :" << std::setw(17)
+                                               << stage_names[bottleneck] << std::endl;
+    m_output_file << std::endl;
+
+    /* PE result */
     m_output_file << "============== MAC result ===============" << std::endl;
     m_output_file << "# of computations     :" << std::setw(18) 
                                                << num_computation << std::endl;
@@ -1223,6 +1296,13 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << "Utilization" << std::endl;
     m_output_file << "PE array utilization  :" << std::setw(16) << std::setprecision(1)
                                                << utilization_pe_array*100 << " %" << std::endl;
+    m_output_file << "Temporal-buffer occupancy" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(16) << std::setprecision(1)
+                                               << utilization_pe_array_buffer[data_type_t::INPUT]*100 << " %" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(16) << std::setprecision(1)
+                                               << utilization_pe_array_buffer[data_type_t::WEIGHT]*100 << " %" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(16) << std::setprecision(1)
+                                               << utilization_pe_array_buffer[data_type_t::OUTPUT]*100 << " %" << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "========= Global buffer result ==========" << std::endl;

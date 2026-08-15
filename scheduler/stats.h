@@ -34,6 +34,15 @@ public:
     // Print out the result of simulation.
     void print_results(std::ofstream &m_output_file);
 	
+    /* Layer timeline (A1): per-level busy time on a shared analytical timeline and the
+       segment-combined critical-path latency (overlap at double-buffered boundaries). */
+    double layer_latency;
+    double busy_cycle_pe;
+    double busy_cycle_pe_array;
+    double busy_cycle_global_buffer;
+    double busy_cycle_multi_chip;
+    double busy_cycle_dram;
+
     /* Tile size */
     std::vector<std::vector<unsigned>> tile_size;
 
@@ -85,6 +94,7 @@ public:
     std::vector<double> access_cycle_pe_array;                          // Total access cycle to PE array.
     std::vector<double> access_energy_pe_array;                         // Total access energy to PE array.
     double utilization_pe_array;
+    std::vector<double> utilization_pe_array_buffer;                    // PE-array temporal-buffer occupancy per data type.
 
     std::vector<double> transfer_cycle_pe_array;                        // Total data transfer cycle between PE and PE array.
     std::vector<double> transfer_energy_pe_array;                       // Total data transfer energy between PE and PE array.

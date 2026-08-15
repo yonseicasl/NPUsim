@@ -213,35 +213,44 @@ void adder_tree_t::update_tile_size(scheduler_t *m_scheduler) {
     }
 }
 
+// A5 (AT1-AT3, AT6): the adder-tree variant reduces partial sums on the OUTPUT
+// write-back path, not on the operand distribution. The base accounting covers the
+// leaf injection (line-granular source-read/array-write/link stream, so the cost
+// scales with the tile data volume); this override layers the internal reduction
+// tree on top of it.
+void adder_tree_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elements) {
+    pe_array_t::account_descriptor_dense_writeback(source_pe, elements);
+    if(elements == 0) return;
+
+    // Reduction fan-in from the mapping: N active PEs each contribute `elements`
+    // partial sums that combine into the array-level OUTPUT tile. fan_in == 1 means
+    // the PEs produce disjoint outputs (pure gather, no reduction).
+    const size_t distinct_outputs = std::max<size_t>(1, tile_size[data_type_t::OUTPUT]);
+    const size_t total_partials = static_cast<size_t>(get_number_of_active_pes())*elements;
+    const unsigned fan_in = static_cast<unsigned>(std::max<size_t>(1,
+        (total_partials + distinct_outputs - 1)/distinct_outputs));
+    const adder_tree_reduction_cost_t cost = adder_tree_reduction_cost(fan_in);
+    if(cost.num_additions == 0) return;
+
+    // This write-back's share of the element-granular internal-tree work: summed over
+    // all fan-in contributors it totals exactly distinct_outputs*(fan_in-1) additions.
+    const double adds_share = static_cast<double>(elements)*cost.num_additions/fan_in;
+    transfer_energy[data_type_t::OUTPUT] += adds_share*(noc_energy + u_adder_energy);
+    // Pipeline fill through the ceil(log2(fan_in)) sequential tree levels; the
+    // element-stream serialization itself is the base link accounting.
+    const double level_fill = static_cast<double>(cost.depth)*(noc_cycle + u_adder_cycle);
+    transfer_cycle[data_type_t::OUTPUT] += level_fill;
+    if(exist_temporal_buffer) {
+        cycle_temporal_pe[data_type_t::OUTPUT] += level_fill;
+    }
+}
+
 void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
 #ifndef FUNCTIONAL
-    // account_descriptor_dense_distribution() charges every data type the same
-    // flat per-active-PE link cost, which is correct for INPUT/WEIGHT (a plain
-    // distribution scatter) but wrong for OUTPUT: combining N partial sums
-    // through a reduction tree costs N-1 adder operations at ceil(log2(N))
-    // sequential levels, not N independent link transactions. Capture OUTPUT's
-    // contribution, then replace it with the tree-shaped cost below.
-    const double output_cycle_before = transfer_cycle[data_type_t::OUTPUT];
-    const double output_energy_before = transfer_energy[data_type_t::OUTPUT];
-    const double output_cycle_temporal_before = cycle_temporal_pe[data_type_t::OUTPUT];
-
+    // Operand distribution over the bus is a plain scatter; the reduction cost is
+    // charged where it physically occurs -- on the OUTPUT write-back (see
+    // account_descriptor_dense_writeback above).
     account_descriptor_dense_distribution(m_scheduler, noc_cycle, noc_energy);
-
-    const double output_cycle_delta = transfer_cycle[data_type_t::OUTPUT] - output_cycle_before;
-    const double output_energy_delta = transfer_energy[data_type_t::OUTPUT] - output_energy_before;
-    const double output_cycle_temporal_delta = cycle_temporal_pe[data_type_t::OUTPUT] - output_cycle_temporal_before;
-    if(output_cycle_delta > 0.0 || output_energy_delta > 0.0 || output_cycle_temporal_delta > 0.0) {
-        const adder_tree_reduction_cost_t cost = adder_tree_reduction_cost(get_number_of_active_pes());
-        const double level_cycle = noc_cycle + u_adder_cycle;
-        const double reduction_cycle = cost.depth*level_cycle;
-        const double reduction_energy = cost.num_additions*(noc_energy + u_adder_energy);
-
-        transfer_cycle[data_type_t::OUTPUT] += reduction_cycle - output_cycle_delta;
-        transfer_energy[data_type_t::OUTPUT] += reduction_energy - output_energy_delta;
-        if(output_cycle_temporal_delta > 0.0) {
-            cycle_temporal_pe[data_type_t::OUTPUT] += reduction_cycle - output_cycle_temporal_delta;
-        }
-    }
     return;
 #endif
 

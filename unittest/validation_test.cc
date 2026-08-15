@@ -192,6 +192,11 @@ void validate_pe_lane_contract() {
        calculate_mac_lane_state(0, 8, 1).valid ||
        accumulate_issue_cycles(3, 0.5) != 1.5 ||
        accumulate_issue_cycles(0, 0.5) != 0.0 ||
+       // Lane->accumulator reduction fill: ceil(log2(mac_width)) stages, width 1 free.
+       lane_reduction_fill_cycles(1, 2.0) != 0.0 ||
+       lane_reduction_fill_cycles(2, 0.5) != 0.5 ||
+       lane_reduction_fill_cycles(5, 1.0) != 3.0 ||
+       lane_reduction_fill_cycles(8, 1.0) != 3.0 ||
        calculate_time_based_mac_utilization(84.0, 168.0) != 0.5 ||
        calculate_time_based_mac_utilization(0.0, 168.0) != 0.0 ||
        calculate_time_based_mac_utilization(1.0, 0.0) != 0.0) {

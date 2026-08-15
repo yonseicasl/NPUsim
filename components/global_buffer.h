@@ -150,6 +150,7 @@ protected:
     std::string parameter_order;
 
     double size;                                            // Total size of the global buffer
+    std::vector<double> capacity_per_type;                  // Per-type capacity in bytes (partition for separate, total for shared)
     float frequency;                                        // The frequency.
     float bandwidth;                                        // The bandwidth between PE array and Global buffer.
     unsigned bitwidth;                                      // The bitwidth between PE array and Global buffer

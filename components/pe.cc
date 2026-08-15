@@ -495,7 +495,9 @@ void pe_t::update_tile_size(scheduler_t *m_scheduler) {
     }
     active_mac_units = lane_state.active_accumulator_units;
     active_mac_width = lane_state.final_accumulator_lanes;
-    utilization_mac = lane_state.utilization;
+    // PE3: peak across the layer rather than last-call overwrite (identical today;
+    // hardening for per-tile variation).
+    utilization_mac = std::max(utilization_mac, lane_state.utilization);
     // Update tile sizes.
     tile_size_mac = m_scheduler->tile_size[component_type_t::MAC];
     tile_size_lb = m_scheduler->tile_size[component_type_t::PE];
@@ -684,14 +686,20 @@ void pe_t::account_descriptor_dense_mac_transfer(data_type_t type, size_t elemen
 void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
 
+    // LB2: track the peak occupancy across the layer instead of overwriting per call
+    // (identical today since the LB tile is fixed per layer; hardens against future
+    // per-tile variation), and keep double precision.
     if(!bypass[data_type_t::INPUT]) {
-        utilization_local_buffer[data_type_t::INPUT] = (float)(runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size_lb[data_type_t::INPUT]))/(float)(input_size);
+        utilization_local_buffer[data_type_t::INPUT] = std::max(utilization_local_buffer[data_type_t::INPUT],
+            static_cast<double>(runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size_lb[data_type_t::INPUT]))/static_cast<double>(input_size));
     }
     if(!bypass[data_type_t::WEIGHT]) {
-        utilization_local_buffer[data_type_t::WEIGHT] = (float)(runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size_lb[data_type_t::WEIGHT]))/(float)(weight_size);
+        utilization_local_buffer[data_type_t::WEIGHT] = std::max(utilization_local_buffer[data_type_t::WEIGHT],
+            static_cast<double>(runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size_lb[data_type_t::WEIGHT]))/static_cast<double>(weight_size));
     }
     if(!bypass[data_type_t::OUTPUT]) {
-        utilization_local_buffer[data_type_t::OUTPUT] = (float)(runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]))/(float)(output_size);
+        utilization_local_buffer[data_type_t::OUTPUT] = std::max(utilization_local_buffer[data_type_t::OUTPUT],
+            static_cast<double>(runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]))/static_cast<double>(output_size));
     }
 #ifndef FUNCTIONAL
     if(m_scheduler->compression_type != compression_type_t::DENSE) {
@@ -2779,7 +2787,8 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
             num_computation++;
             computation_energy += u_computation_energy;
         }
-        computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+        computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
 
         exist_data_mac[data_type_t::INPUT] = false, request_to_lb[data_type_t::INPUT] = true;
         exist_data_mac[data_type_t::WEIGHT] = false, request_to_lb[data_type_t::WEIGHT] = true;
@@ -2844,14 +2853,16 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                     num_computation++;
                     computation_energy += u_computation_energy;
                 }
-                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
                 num_computation += nonzero_operations;
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
-                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
                 }
             }
 #else
@@ -2859,7 +2870,8 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 num_computation++;
                 computation_energy += u_computation_energy;
             }
-            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
 #endif
         } else {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
@@ -3045,14 +3057,16 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                     num_computation++;
                     computation_energy += u_computation_energy;
                 }
-                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
                 num_computation += nonzero_operations;
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
-                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
                 }
             }
 #else
@@ -3060,7 +3074,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 num_computation++;
                 computation_energy += u_computation_energy;
             }
-            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
 #endif
         }
         else {
@@ -3249,14 +3264,16 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                     num_computation++;
                     computation_energy += u_computation_energy;
                 }
-                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
                 num_computation += nonzero_operations;
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
-                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+                    computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
                 }
             }
 #else
@@ -3264,7 +3281,8 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 num_computation++;
                 computation_energy += u_computation_energy;
             }
-            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
+            computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
 
 #endif
         }

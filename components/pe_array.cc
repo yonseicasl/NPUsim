@@ -100,6 +100,8 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("pe_array_static_energy", &u_static_energy);
     static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
+    buffer_utilization.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 }
 
 // Accumulate leakage energy of the PE-array temporal buffer once for the layer duration.
@@ -144,6 +146,14 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
         std::cerr << "Error: runtime datatype PE-array tile exceeds temporal-buffer capacity" << std::endl;
         exit(1);
     }
+    // PA6: record the temporal-buffer occupancy per data type (peak across the layer),
+    // complementing the PE-count `utilization` which only reflects spatial mapping.
+    buffer_utilization[data_type_t::INPUT] = std::max(buffer_utilization[data_type_t::INPUT],
+        static_cast<double>(required_input)/static_cast<double>(input_size));
+    buffer_utilization[data_type_t::WEIGHT] = std::max(buffer_utilization[data_type_t::WEIGHT],
+        static_cast<double>(required_weight)/static_cast<double>(weight_size));
+    buffer_utilization[data_type_t::OUTPUT] = std::max(buffer_utilization[data_type_t::OUTPUT],
+        static_cast<double>(required_output)/static_cast<double>(output_size));
     for(unsigned type_index = 0; type_index < data_type_t::NUM_DATA_TYPES; ++type_index) {
         const data_type_t type = static_cast<data_type_t>(type_index);
         bool requested = false;
@@ -154,27 +164,32 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
 
         if(!skip_transfer[type] && (type != data_type_t::OUTPUT || global_buffer->transfer_output)) {
             num_data_transfer[type]++;
+            // PA1: operands shared by several PEs are read from the temporal buffer and
+            // streamed over the fabric ONCE -- the array-level tile is the distinct data
+            // set, and the fabric multicasts it. Per-destination replication is only the
+            // local-buffer write below. (The old model charged the source read and the
+            // link stream once per destination PE, over-counting reuse-heavy dataflows
+            // by the sharing factor.)
+            const datatype_transfer_timing_t shared = datatype_transfer_timing(
+                type, tile_size[type], line_size[type], line_size[type], bitwidth);
+            payload_link_transactions[type] += shared.payload_link_transactions;
+            metadata_link_transactions[type] += shared.metadata_link_transactions;
+            storage_link_transactions[type] += shared.link_transactions;
+            access_cycle[type] += shared.source_accesses*u_read_cycle[type];
+            access_energy[type] += shared.source_accesses*u_read_energy[type];
+            transfer_cycle[type] += shared.link_transactions*link_cycle;
+            transfer_energy[type] += shared.link_transactions*link_energy;
+
+            size_t max_destination_accesses = 0;
+            double destination_write_cycle = 0.0;
             for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
-                const datatype_transfer_timing_t timing = datatype_transfer_timing(
-                    type, pes[i]->tile_size_lb[type], line_size[type],
-                    pes[i]->line_size_lb[type], bitwidth);
-                payload_link_transactions[type] += timing.payload_link_transactions;
-                metadata_link_transactions[type] += timing.metadata_link_transactions;
-                storage_link_transactions[type] += timing.link_transactions;
-                access_cycle[type] += timing.source_accesses*u_read_cycle[type];
-                access_energy[type] += timing.source_accesses*u_read_energy[type];
-                pes[i]->access_cycle_lb[type] += timing.destination_accesses*pes[i]->u_write_cycle_lb[type];
-                pes[i]->access_energy_lb[type] += timing.destination_accesses*pes[i]->u_write_energy_lb[type];
-                transfer_cycle[type] += timing.link_transactions*link_cycle;
-                transfer_energy[type] += timing.link_transactions*link_energy;
-                if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
-                    std::cerr << "Error: PE-array pipeline transaction count overflow" << std::endl;
-                    exit(1);
-                }
-                if(exist_temporal_buffer) {
-                    cycle_temporal_pe[type] += pipelined_transfer_cycles(
-                        static_cast<unsigned>(timing.pipeline_transactions),
-                        u_read_cycle[type], link_cycle, pes[i]->u_write_cycle_lb[type]);
+                const size_t destination_accesses = runtime_datatypes().storage_transactions(
+                    type, pes[i]->tile_size_lb[type], pes[i]->line_size_lb[type]);
+                pes[i]->access_cycle_lb[type] += destination_accesses*pes[i]->u_write_cycle_lb[type];
+                pes[i]->access_energy_lb[type] += destination_accesses*pes[i]->u_write_energy_lb[type];
+                if(destination_accesses > max_destination_accesses) {
+                    max_destination_accesses = destination_accesses;
+                    destination_write_cycle = pes[i]->u_write_cycle_lb[type];
                 }
                 size_t capacity = pes[i]->output_size;
                 if(type == data_type_t::INPUT) capacity = pes[i]->input_size;
@@ -184,6 +199,18 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
                     static_cast<double>(runtime_datatypes().storage_bytes(type, pes[i]->tile_size_lb[type])) /
                     static_cast<double>(capacity));
                 pes[i]->skip_transfer[type] = false;
+            }
+
+            const size_t pipeline_transactions = std::max(
+                std::max(shared.source_accesses, shared.link_transactions), max_destination_accesses);
+            if(pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+                std::cerr << "Error: PE-array pipeline transaction count overflow" << std::endl;
+                exit(1);
+            }
+            if(exist_temporal_buffer) {
+                cycle_temporal_pe[type] += pipelined_transfer_cycles(
+                    static_cast<unsigned>(pipeline_transactions),
+                    u_read_cycle[type], link_cycle, destination_write_cycle);
             }
         }
         for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
@@ -375,12 +402,16 @@ void pe_array_t::request_data() {
                 global_buffer->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
                 global_buffer->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
 
-                access_cycle[data_type_t::OUTPUT] += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
-                write_back_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                // GB3: hide the buffer access cycles when the destination global buffer is
+                // double-buffered, matching the load-path convention (multi_chip.cc
+                // distribution gates on the destination's flag). Energy is always charged.
+                if(!global_buffer->double_buffer) {
+                    access_cycle[data_type_t::OUTPUT] += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                    write_back_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                    global_buffer->access_cycle[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
+                    global_buffer->write_back_cycle += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
+                }
                 access_energy[data_type_t::OUTPUT] += pe_array_lines*u_read_energy[data_type_t::OUTPUT];
-
-                global_buffer->access_cycle[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
-                global_buffer->write_back_cycle += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
                 global_buffer->access_energy[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_energy[data_type_t::OUTPUT];
 
                 global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*link_transactions;
@@ -465,5 +496,6 @@ void pe_array_t::reset() {
     storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    buffer_utilization.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 }
 

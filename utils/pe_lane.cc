@@ -1,5 +1,6 @@
 #include "pe_lane.h"
 
+#include <cmath>
 #include <limits>
 
 mac_lane_state_t calculate_mac_lane_state(unsigned number_of_macs, unsigned mac_width,
@@ -24,6 +25,11 @@ mac_lane_state_t calculate_mac_lane_state(unsigned number_of_macs, unsigned mac_
 
 double accumulate_issue_cycles(size_t issue_steps, double unit_cycle) {
     return static_cast<double>(issue_steps) * unit_cycle;
+}
+
+double lane_reduction_fill_cycles(unsigned mac_width, double unit_cycle) {
+    if(mac_width <= 1) return 0.0;
+    return std::ceil(std::log2(static_cast<double>(mac_width))) * unit_cycle;
 }
 
 double calculate_time_based_mac_utilization(double busy_scalar_mac_cycles,

@@ -60,7 +60,9 @@ public:
     virtual void data_transfer(scheduler_t *m_scheduler) = 0;
     // Flush data at temporal buffer in PE array.
     void flush_data();
-    void account_descriptor_dense_writeback(pe_t *source_pe, size_t elements);
+    // Virtual so reduction-network variants (adder tree) can layer their tree cost on
+    // top of the generic gather accounting.
+    virtual void account_descriptor_dense_writeback(pe_t *source_pe, size_t elements);
 
     // Print out the configuration of PE array.
     virtual void print_specification() = 0;
@@ -125,6 +127,7 @@ public:
     std::vector<size_t> storage_link_transactions;
 
     double utilization;                                     // Utilization of PE array
+    std::vector<double> buffer_utilization;                 // Temporal-buffer occupancy per data type (peak across the layer)
 
     double write_back_cycle;                                //
     double overlapped_transfer_cycle;                       //

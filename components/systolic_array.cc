@@ -90,6 +90,12 @@ void systolic_array_t::init(section_config_t m_section_config) {
     if(m_section_config.get_setting("noc", &noc_str)) {
         noc_type = (noc_type_t)get_type(noc_type_str, noc_str);
     }
+    // SY4: reject topologies without a timing model instead of silently costing them
+    // as store-and-forward (mirrors spatial_arch).
+    if(!is_supported_spatial_noc(noc_type)) {
+        std::cerr << "Error: systolic_array has an undefined NoC timing model" << std::endl;
+        exit(1);
+    }
 
     // Initialize PE in systolic array
 	pe_t* pe;
@@ -216,7 +222,12 @@ void systolic_array_t::update_tile_size(scheduler_t *m_scheduler) {
 
 void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
 #ifndef FUNCTIONAL
-    account_descriptor_dense_distribution(m_scheduler, noc_cycle, noc_energy);
+    // SY1: apply the NoC topology (mesh hop) cost like spatial_arch does. For
+    // BUS/store-and-forward/crossbar the multipliers are 1, so tpu-style configs
+    // are unaffected; noc=mesh now scales latency/energy by the Manhattan hops.
+    const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
+    account_descriptor_dense_distribution(m_scheduler, noc_cycle*topology_cost.latency_multiplier,
+                                          noc_energy*topology_cost.energy_multiplier);
     return;
 #endif
 
