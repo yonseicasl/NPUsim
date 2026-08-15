@@ -60,8 +60,12 @@ void systolic_array_t::init(section_config_t m_section_config) {
 
     // Define stationary between PE array and Global buffer.
     std::string array_stationary_str;
-    if(m_section_config.get_setting("pe_array_stationary", &array_stationary_str)) {
+    if(m_section_config.get_setting("pe_stationary", &array_stationary_str)) {
         stationary_type = (stationary_type_t)get_type(stationary_type_str, array_stationary_str);
+    }
+    if(stationary_type == stationary_type_t::UNDEFINED_STATIONARY) {
+        std::cerr << "Error: systolic_array requires a defined pe_stationary type" << std::endl;
+        exit(1);
     }
 
     // Initialize the order of parameters.
@@ -137,6 +141,9 @@ void systolic_array_t::init(section_config_t m_section_config) {
     // Request data to Global buffer.
     request_to_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     request_to_global_buffer.assign(data_type_t::NUM_DATA_TYPES, false);
+
+    is_waiting_data.reserve(data_type_t::NUM_DATA_TYPES);
+    is_waiting_data.assign(data_type_t::NUM_DATA_TYPES, false);
 
     /* Initialize unit cost of systolic array */
 
@@ -414,8 +421,8 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                     parameters_pe = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::PE);
 
                     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
-#ifdef FUNCTINOAL
-                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()], 
+#ifdef FUNCTIONAL
+                        m_scheduler->transfer_data(pes[i]->weight_lb, weight, 0, m_scheduler->weight_offset_pe_array[i%m_scheduler->weight_offset_pe_array.size()],
                                                                    component_type_t::PE, component_type_t::PE_Y, 
                                                                    data_type_t::WEIGHT, pes[i]->get_local_buffer_stationary_type(), action_type_t::LOAD);
                         // Update for NPUsim ver2
@@ -436,8 +443,8 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                             pes[i]->access_cycle_lb[data_type_t::WEIGHT] += pes[i]->u_write_cycle_lb[data_type_t::WEIGHT];
                             pes[i]->access_energy_lb[data_type_t::WEIGHT] += pes[i]->u_write_energy_lb[data_type_t::WEIGHT];
 
-                            pes[i-width]->access_cycle_lb[data_type_t::WEIGHT] += pes[i]->u_read_cycle_lb[data_type_t::WEIGHT];
-                            pes[i-width]->access_energy_lb[data_type_t::WEIGHT] += pes[i]->u_read_energy_lb[data_type_t::WEIGHT];
+                            pes[i-num_active_pe_x]->access_cycle_lb[data_type_t::WEIGHT] += pes[i]->u_read_cycle_lb[data_type_t::WEIGHT];
+                            pes[i-num_active_pe_x]->access_energy_lb[data_type_t::WEIGHT] += pes[i]->u_read_energy_lb[data_type_t::WEIGHT];
                         }
                         pes[i]->skip_transfer[data_type_t::WEIGHT] = false;
                     }
@@ -565,7 +572,7 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                                                                      noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth)) +
                                                                      pes[0]->u_write_cycle_lb[data_type_t::WEIGHT];
                        } else {
-                           cycle_temporal_pe[data_type_t::INPUT] += first_stage + second_stage +
+                           cycle_temporal_pe[data_type_t::WEIGHT] += first_stage + second_stage +
                                                                     (num_access_pe_array-2)*other_stage +
                                                                     last_before_stage + last_stage;
                        }
@@ -604,7 +611,7 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                             pes[i-1]->access_cycle_lb[data_type_t::WEIGHT] += pes[i]->u_read_cycle_lb[data_type_t::WEIGHT];
                             pes[i-1]->access_energy_lb[data_type_t::WEIGHT] += pes[i]->u_read_energy_lb[data_type_t::WEIGHT];
                         }
-                        pes[i]->skip_transfer[data_type_t::OUTPUT] = false;
+                        pes[i]->skip_transfer[data_type_t::WEIGHT] = false;
                     }
                     // Update transfer cycle and energy
                     transfer_cycle[data_type_t::WEIGHT] += noc_cycle*ceil((double)(pes[0]->line_size_lb[data_type_t::WEIGHT])/(double)(bitwidth));
@@ -666,8 +673,8 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
                                 pes[i]->access_cycle_lb[data_type_t::OUTPUT] += pes[i]->u_write_cycle_lb[data_type_t::OUTPUT];
                                 pes[i]->access_energy_lb[data_type_t::OUTPUT] += pes[i]->u_write_energy_lb[data_type_t::OUTPUT];
 
-                                pes[i-width]->access_cycle_lb[data_type_t::OUTPUT] += pes[i]->u_read_cycle_lb[data_type_t::OUTPUT];
-                                pes[i-width]->access_energy_lb[data_type_t::OUTPUT] += pes[i]->u_read_energy_lb[data_type_t::OUTPUT];
+                                pes[i-num_active_pe_x]->access_cycle_lb[data_type_t::OUTPUT] += pes[i]->u_read_cycle_lb[data_type_t::OUTPUT];
+                                pes[i-num_active_pe_x]->access_energy_lb[data_type_t::OUTPUT] += pes[i]->u_read_energy_lb[data_type_t::OUTPUT];
                             }
                             pes[i]->skip_transfer[data_type_t::OUTPUT] = false;
                         }
@@ -856,9 +863,27 @@ void systolic_array_t::print_specification() {
     std::cout << "Bandwidth          :" << std::setw(19) << std::setprecision(0) 
                                         << bandwidth << " GB/s" << std::endl;
 
-    std::cout << "NoC type           :" << std::setw(24) 
-                                        << "Store and Forward" << std::endl;
-    std::cout << "NoC cycle          :" << std::setw(17) 
+    if(noc_type == MESH) {
+        std::cout << "NoC type           :" << std::setw(24)
+                                            << "Mesh" << std::endl;
+    }
+    else if(noc_type == BUS) {
+        std::cout << "NoC type           :" << std::setw(24)
+                                            << "Bus" << std::endl;
+    }
+    else if(noc_type == STORE_AND_FORWARD) {
+        std::cout << "NoC type           :" << std::setw(24)
+                                            << "Store and Forward" << std::endl;
+    }
+    else if(noc_type == CROSSBAR) {
+        std::cout << "NoC type           :" << std::setw(24)
+                                            << "Crossbar" << std::endl;
+    }
+    else {
+        std::cout << "NoC type           :" << std::setw(24)
+                                            << "Undefined" << std::endl;
+    }
+    std::cout << "NoC cycle          :" << std::setw(17)
                                         << noc_cycle << " cycles" << std::endl;
     std::cout << "NoC energy         :" << std::setw(21) 
                                         << noc_energy << " pJ" << std::endl;

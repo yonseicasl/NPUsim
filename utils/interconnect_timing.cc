@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include "interconnect_timing.h"
 #include "datatype.h"
 
@@ -11,6 +12,13 @@ bool is_supported_spatial_noc(noc_type_t topology) {
 
 bool is_supported_multi_chip_nop(noc_type_t topology) {
     return topology == noc_type_t::BUS;
+}
+
+adder_tree_reduction_cost_t adder_tree_reduction_cost(unsigned leaves) {
+    if(leaves <= 1) return {0, 0};
+    const unsigned num_additions = leaves - 1;
+    const unsigned depth = static_cast<unsigned>(std::ceil(std::log2(static_cast<double>(leaves))));
+    return {num_additions, depth};
 }
 
 bool has_valid_active_shape(unsigned physical_height, unsigned physical_width,

@@ -225,6 +225,10 @@ void stats_t::init() {
     transfer_energy_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
+    // Initialize static (leakage) energy of the Multi-chip temporal buffer
+    static_energy_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
+    static_energy_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
     /* Initialize off-chip memory stats */
     // Initialize the number of request to the off-chip memory
     num_request_dram.reserve(data_type_t::NUM_DATA_TYPES);
@@ -394,9 +398,12 @@ void stats_t::update_tile_size(scheduler_t *m_scheduler) {
 
 void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<global_buffer_t*> m_global_buffer, multi_chip_t *m_multi_chip, dram_t *m_dram) {
 
-    // static_energy in the PE config is leakage energy in pJ/cycle. Every
-    // physical PE leaks for the modeled duration of the layer, rather than
-    // once per data-transfer callback.
+    // static_energy in the PE/GLB config is leakage energy in pJ/cycle. Leakage is an
+    // always-on power: every physical component of every physical chip (active or not)
+    // leaks for the whole modeled duration of the layer, not once per data-transfer
+    // callback. That duration is the layer critical path, which must include memory
+    // (GLB/NoP/DRAM) busy time -- charging leakage over the PE-array compute window
+    // alone undercounts it heavily for memory-bound layers.
     double pe_elapsed_cycles = 0.0;
     size_t physical_scalar_macs = 0;
     for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); ++i) {
@@ -411,14 +418,27 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             physical_scalar_macs += scalar_macs;
         }
     }
-    for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); ++i) {
+
+    // Layer wall-clock proxy for leakage: the longest-running component across the
+    // hierarchy. Without a global timeline this max-of-components bound still captures
+    // the memory time that the PE-only window dropped.
+    double layer_elapsed_cycles = pe_elapsed_cycles;
+    for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
+        layer_elapsed_cycles = std::max(layer_elapsed_cycles,
+                                        m_global_buffer[i]->modeled_elapsed_cycles());
+    }
+    layer_elapsed_cycles = std::max(layer_elapsed_cycles, m_multi_chip->modeled_elapsed_cycles());
+    layer_elapsed_cycles = std::max(layer_elapsed_cycles, m_dram->modeled_elapsed_cycles());
+
+    for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); ++j) {
-            m_pe_array[i]->pes[j]->update_static_energy(pe_elapsed_cycles);
+            m_pe_array[i]->pes[j]->update_static_energy(layer_elapsed_cycles);
         }
     }
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
-        m_global_buffer[i]->update_static_energy(pe_elapsed_cycles);
+        m_global_buffer[i]->update_static_energy(layer_elapsed_cycles);
     }
+    m_multi_chip->update_static_energy(layer_elapsed_cycles);
 
     unsigned num_active_pe = 0;
     for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); i++) {
@@ -489,13 +509,6 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             num_active_pe++;
         }
-        
-        for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); j++) {
-            for(unsigned k = 0; k < data_type_t::NUM_DATA_TYPES; k++) {
-                // Update static energy of PE
-                static_energy_pe[k] += m_pe_array[i]->pes[j]->static_energy[k];
-            }
-        }
 
         for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
             /* Update PE array stats */
@@ -564,7 +577,17 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     }
     utilization_mac = std::min(1.0, utilization_mac);
 
-    // Update global buffer static energy
+    // Update PE static energy (leakage) over all physical chips and all physical PEs
+    // (always-on): inactive chips/PEs still leak for the layer duration.
+    for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); i++) {
+        for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); j++) {
+            for(unsigned k = 0; k < data_type_t::NUM_DATA_TYPES; k++) {
+                static_energy_pe[k] += m_pe_array[i]->pes[j]->static_energy[k];
+            }
+        }
+    }
+
+    // Update global buffer static energy over all physical chips (always-on).
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); i++) {
         for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
             static_energy_global_buffer[j] += m_global_buffer[i]->static_energy[j];
@@ -591,6 +614,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         // Update transfer cost between the global buffer and chip-level processor
         transfer_cycle_multi_chip[i] = m_multi_chip->transfer_cycle[i];
         transfer_energy_multi_chip[i] = m_multi_chip->transfer_energy[i];
+
+        // Update static (leakage) energy of the Multi-chip temporal buffer
+        static_energy_multi_chip[i] = m_multi_chip->static_energy[i];
 
         /* Update off-chip memory stats */
 
@@ -728,6 +754,7 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
     scale_costs(&access_energy_multi_chip, m_repetitions);
     scale_costs(&transfer_cycle_multi_chip, m_repetitions);
     scale_costs(&transfer_energy_multi_chip, m_repetitions);
+    scale_costs(&static_energy_multi_chip, m_repetitions);
 
     scale_counters(&num_request_dram, m_repetitions, "DRAM request count");
     scale_counters(&num_data_transfer_dram, m_repetitions, "DRAM transfer count");
@@ -1096,11 +1123,20 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << transfer_energy_pe[data_type_t::INPUT] << " pJ" << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
                                                << transfer_energy_pe[data_type_t::WEIGHT] << " pJ" << std::endl;
-    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2) 
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
                                                << transfer_energy_pe[data_type_t::OUTPUT] << " pJ" << std::endl;
     m_output_file << std::endl;
 
-    m_output_file << "============ PE array result ============" << std::endl; 
+    m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_pe[data_type_t::INPUT] << " pJ" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_pe[data_type_t::WEIGHT] << " pJ" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_pe[data_type_t::OUTPUT] << " pJ" << std::endl;
+    m_output_file << std::endl;
+
+    m_output_file << "============ PE array result ============" << std::endl;
     m_output_file << "# of data transfer to PEs" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18) 
                                                << num_data_transfer_pe_array[data_type_t::INPUT] << std::endl;
@@ -1199,8 +1235,17 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << access_energy_global_buffer[data_type_t::INPUT] << " pJ" << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
                                                << access_energy_global_buffer[data_type_t::WEIGHT] << " pJ" << std::endl;
-    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2) 
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
                                                << access_energy_global_buffer[data_type_t::OUTPUT] << " pJ" << std::endl;
+    m_output_file << std::endl;
+
+    m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_global_buffer[data_type_t::INPUT] << " pJ" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_global_buffer[data_type_t::WEIGHT] << " pJ" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_global_buffer[data_type_t::OUTPUT] << " pJ" << std::endl;
     m_output_file << std::endl;
 
     // Global buffer utilization
@@ -1291,8 +1336,17 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << transfer_energy_multi_chip[data_type_t::INPUT] << " pJ" << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
                                                << transfer_energy_multi_chip[data_type_t::WEIGHT] << " pJ" <<  std::endl;
-    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2) 
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
                                                << transfer_energy_multi_chip[data_type_t::OUTPUT] << " pJ" <<  std::endl;
+    m_output_file << std::endl;
+
+    m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_multi_chip[data_type_t::INPUT] << " pJ" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_multi_chip[data_type_t::WEIGHT] << " pJ" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_multi_chip[data_type_t::OUTPUT] << " pJ" << std::endl;
     m_output_file << std::endl;
 
     // Multi-chip utilization

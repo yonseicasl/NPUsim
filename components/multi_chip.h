@@ -40,6 +40,9 @@ public:
     // Get the number of active chips at chip-level processors
     unsigned get_number_of_active_chips();
 
+    // Get the NoP link bit-width between the global buffer and chip-level processors.
+    unsigned get_bitwidth();
+
     /* Check chip-level processor's status */
 
     // Check whether the chip-level processor is idle or not
@@ -66,6 +69,12 @@ public:
 
     // Print out specification of the chip-level processors.
     void print_specification();
+
+    // Modeled busy duration of the multi-chip fabric for the current layer (max of its cost axes).
+    double modeled_elapsed_cycles() const;
+
+    // Accumulate leakage energy once for the modeled layer duration.
+    void update_static_energy(double elapsed_cycles);
 
     // Reset stats.
     void reset();
@@ -100,6 +109,8 @@ public:
     std::vector<double> u_write_cycle;          // The unit chip-level processor write cycle (if temporal buffer exist)
     std::vector<double> u_write_energy;         // The unit chip-level processor write energy (if temporal buffer exist)
 
+    std::vector<double> u_static_energy;        // The unit static (leakage) energy of the chip-level processor, pJ/cycle
+
     /* Chip-level processors stats */
     std::vector<unsigned> num_request;          // The number of data request from the global buffer to chip-level processor
     std::vector<unsigned> num_data_transfer;    // The number of data transfer from the chip-level processor to global buffer
@@ -118,8 +129,10 @@ public:
 
     double utilization;                         // Utilization of chip-level processor
 
-    double write_back_cycle;                    // 
+    double write_back_cycle;                    //
     double overlapped_transfer_cycle;           //
+
+    std::vector<double> static_energy;          // Static (leakage) energy of the chip-level processor temporal buffer
 
     std::vector<unsigned> line_size;            // Line size of temporal buffer
     std::vector<unsigned> mask_bits;            // Mask bits of temporal buffer

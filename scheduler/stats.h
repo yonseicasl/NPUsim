@@ -124,6 +124,7 @@ public:
 
     std::vector<double> transfer_cycle_multi_chip;                      // Total data transfer cycle between Multi-chip and global buffer.
     std::vector<double> transfer_energy_multi_chip;                     // Total data transfer energy between Multi-chip and global buffer.
+    std::vector<double> static_energy_multi_chip;                       // Static (leakage) energy of the Multi-chip temporal buffer.
 
     /* DRAM */
     std::vector<unsigned> num_request_dram;                             // Number of request to DRAM (from Multi-chip).

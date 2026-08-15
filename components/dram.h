@@ -46,7 +46,10 @@ public:
     // Print out the stats of DRAM.
     void print_specification();
 
-    // Reset the stats. 
+    // Modeled busy duration of the DRAM for the current layer (max of its cost axes).
+    double modeled_elapsed_cycles() const;
+
+    // Reset the stats.
     void reset();
 
 #ifdef DRAMSIM3

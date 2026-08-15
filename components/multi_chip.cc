@@ -195,6 +195,11 @@ void multi_chip_t::init(section_config_t m_section_config) {
     u_write_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("write_energy", &u_write_energy);
 
+    // Initialize unit static (leakage) energy of the temporal buffer, pJ/cycle.
+    u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
+    u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("static_energy", &u_static_energy);
+
     // Initialize NoP cost
     m_section_config.get_setting("nop_cycle", &nop_cycle);
     m_section_config.get_setting("nop_energy", &nop_energy);
@@ -230,6 +235,9 @@ void multi_chip_t::init(section_config_t m_section_config) {
     payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+
+    static_energy.reserve(data_type_t::NUM_DATA_TYPES);
+    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 }
 
 // Connect the chip-level processor and the global buffer
@@ -414,6 +422,10 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
         }
         chips[i]->skip_transfer[type] = false;
     }
+}
+
+unsigned multi_chip_t::get_bitwidth() {
+    return bitwidth;
 }
 
 void multi_chip_t::request_data() {
@@ -1762,6 +1774,35 @@ void multi_chip_t::print_specification() {
     std::cout << std::endl;
 }
 
+// Accumulate leakage energy of the temporal buffer once for the modeled layer duration.
+// static_energy in config is leakage in pJ/cycle; the temporal buffer is always-on so it
+// leaks for the whole layer elapsed window regardless of how many chips are active.
+void multi_chip_t::update_static_energy(double elapsed_cycles) {
+    if(elapsed_cycles < 0.0) {
+        std::cerr << "Error: multi_chip elapsed cycles must be non-negative" << std::endl;
+        exit(1);
+    }
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(u_static_energy[i] < 0.0) {
+            std::cerr << "Error: multi_chip static_energy must be a non-negative pJ/cycle value" << std::endl;
+            exit(1);
+        }
+        static_energy[i] = static_energy_for_cycles(u_static_energy[i], elapsed_cycles);
+    }
+}
+
+// Modeled busy duration of the multi-chip fabric for the current layer: the max of its
+// access, NoP transfer, and overlapped cost axes.
+double multi_chip_t::modeled_elapsed_cycles() const {
+    double elapsed = std::max(write_back_cycle, overlapped_transfer_cycle);
+    for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
+        elapsed = std::max(elapsed, access_cycle[type]);
+        elapsed = std::max(elapsed, transfer_cycle[type]);
+        elapsed = std::max(elapsed, cycle_temporal_chips[type]);
+    }
+    return elapsed;
+}
+
 void multi_chip_t::reset() {
     std::fill_n(data, (memory_size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
 
@@ -1783,5 +1824,7 @@ void multi_chip_t::reset() {
     payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+
+    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 }
 

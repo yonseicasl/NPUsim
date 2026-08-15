@@ -64,13 +64,18 @@ public:
     void data_transfer(scheduler_t *m_scheduler);
     // Account a dense transfer using runtime datatype transactions.
     void account_descriptor_dense_transfer(data_type_t type);
-    // Flush the data 
+    // Account a GLB->multi-chip OUTPUT write-back using runtime datatype transactions.
+    void account_output_writeback_link();
+    // Flush the data
     void flush_data(scheduler_t *m_scheduler);
 
     // Print out the configuration of the Global buffer.
     virtual void print_specification() = 0;
     // Accumulate leakage energy once for the modeled layer duration.
     void update_static_energy(double elapsed_cycles);
+
+    // Modeled busy duration of the global buffer for the current layer (max of its cost axes).
+    double modeled_elapsed_cycles() const;
 
     void reset();
 

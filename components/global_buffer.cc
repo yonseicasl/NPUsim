@@ -168,6 +168,36 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
     pe_array->skip_transfer[type] = false;
 }
 
+// Account a GLB->multi-chip OUTPUT write-back using runtime datatype transactions,
+// mirroring the multi-chip->DRAM write-back path. This charges the GLB read access,
+// the multi-chip temporal-buffer write access, the serialized NoP link transfer, and
+// the write-back overlap counters -- all from packing-aware descriptor line/link
+// counts, so the off-chip output store no longer reports zero timing/energy and no
+// longer depends on host-pointer address granularity.
+void global_buffer_t::account_output_writeback_link() {
+    const datatype_transfer_timing_t timing = datatype_transfer_timing(
+        data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
+        multi_chip->line_size[data_type_t::OUTPUT], multi_chip->get_bitwidth());
+
+    // GLB read (source) access.
+    access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+    access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
+    write_back_cycle += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+
+    // Multi-chip temporal-buffer write (destination) access.
+    multi_chip->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
+    multi_chip->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_energy[data_type_t::OUTPUT];
+    multi_chip->write_back_cycle += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
+
+    // Serialized NoP link transfer over the GLB<->multi-chip fabric.
+    multi_chip->transfer_cycle[data_type_t::OUTPUT] += multi_chip->u_transfer_cycle*timing.link_transactions;
+    multi_chip->transfer_energy[data_type_t::OUTPUT] += multi_chip->u_transfer_energy*timing.link_transactions;
+    multi_chip->overlapped_transfer_cycle += multi_chip->u_transfer_cycle*timing.link_transactions;
+    multi_chip->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
+    multi_chip->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
+    multi_chip->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
+}
+
 // Transfer the data to temporal buffer of PE array.
 void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
@@ -1404,100 +1434,9 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
-            std::vector<unsigned> parameters_global_buffer(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-            std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-
-            parameters_global_buffer = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::GLOBAL_BUFFER);
-            parameters_multi_chip = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::CHIPS_Y);
-
-            uint64_t address_global_buffer = 0, address_multi_chip = 0;
-            unsigned num_access_global_buffer = 0, num_access_multi_chip = 0;
-
-            for(unsigned b = 0; b < parameters_global_buffer[parameter_type_t::BATCH_SIZE]; b++) {
-                for(unsigned k = 0; k < parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]; k++) {
-                    for(unsigned p = 0; p < parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]; p++) {
-                        for(unsigned q = 0; q < parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH]; q++) {
-                            // Check global buffer address
-                            if(address_global_buffer != ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                                   b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                   mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update global buffer cost
-                                access_energy[data_type_t::OUTPUT] += u_read_energy[data_type_t::OUTPUT];
-                                access_cycle[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT];
-                                num_access_global_buffer++;
-
-                                // Update global buffer address
-                                address_global_buffer = ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                         b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                         mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT];
-
-                            }
-                            // Check multi chip address (temporal buffer)
-                            if(address_multi_chip != ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update costs of chip-level processor (temporal buffer)
-                                multi_chip->access_energy[data_type_t::OUTPUT] += multi_chip->u_write_energy[data_type_t::OUTPUT];
-                                multi_chip->access_cycle[data_type_t::OUTPUT] += multi_chip->u_write_cycle[data_type_t::OUTPUT];
-                                num_access_multi_chip++;
-
-                                // Update address of chip-level processor (temporal buffer)
-                                address_multi_chip = ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT];
-                            }
-                        }
-                    }
-                }
-            }
-
-
-            /*
-            // Update overlapped cost between PE array and global buffer
-            unsigned ratio = ceil((double)(line_size[data_type_t::WEIGHT])/(double)(pe_array->line_size[data_type_t::WEIGHT]));
-
-            // At the 1, 2, before last, and last stages
-            unsigned first_stage = u_read_cycle[data_type_t::WEIGHT];
-            unsigned second_stage = std::max(u_read_cycle[data_type_t::WEIGHT],
-                                             u_transfer_cycle*ceil((double)(line_size[data_type_t::WEIGHT]*8*sizeof(data_t))/(double)(bitwidth)));
-            unsigned last_before_stage = std::max(ratio*pe_array->u_write_cycle[data_type_t::WEIGHT],
-                                                  u_transfer_cycle*ceil((double)(line_size[data_type_t::WEIGHT]*8*sizeof(data_t))/(double)(bitwidth)));
-            unsigned last_stage = ratio*pe_array->u_write_cycle[data_type_t::WEIGHT];
-
-            // Remainder stages
-            unsigned other_stage = std::max(u_read_cycle[data_type_t::WEIGHT],
-                                   std::max(u_transfer_cycle*ceil((double)(line_size[data_type_t::WEIGHT]*8*sizeof(data_t))/(double)(bitwidth)),
-                                            ratio*pe_array->u_write_cycle[data_type_t::WEIGHT]));  
-            */
-
-            /*
-            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
-            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
-            */
+            // GB1+GB2: descriptor-based GLB->multi-chip OUTPUT write-back accounting
+            // (GLB read + multi-chip write access, serialized NoP link transfer, overlap).
+            account_output_writeback_link();
 
             // Increase flush counter of weight and output data
             weight_flush_counter++;
@@ -1517,81 +1456,9 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
-            std::vector<unsigned> parameters_global_buffer(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-            std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-
-            parameters_global_buffer = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::GLOBAL_BUFFER);
-            parameters_multi_chip = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::CHIPS_Y);
-
-            uint64_t address_global_buffer = 0, address_multi_chip = 0;
-            unsigned num_access_global_buffer = 0, num_access_multi_chip = 0;
-
-            for(unsigned b = 0; b < parameters_global_buffer[parameter_type_t::BATCH_SIZE]; b++) {
-                for(unsigned k = 0; k < parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]; k++) {
-                    for(unsigned p = 0; p < parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]; p++) {
-                        for(unsigned q = 0; q < parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH]; q++) {
-                            // Check global buffer address
-                            if(address_global_buffer != ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                                   b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                   mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update global buffer cost
-                                access_energy[data_type_t::OUTPUT] += u_read_energy[data_type_t::OUTPUT];
-                                access_cycle[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT];
-                                num_access_global_buffer++;
-
-                                // Update global buffer address
-                                address_global_buffer = ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                         b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                         mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT];
-
-                            }
-                            // Check multi chip address (temporal buffer)
-                            if(address_multi_chip != ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update costs of chip-level processor (temporal buffer)
-                                multi_chip->access_energy[data_type_t::OUTPUT] += multi_chip->u_write_energy[data_type_t::OUTPUT];
-                                multi_chip->access_cycle[data_type_t::OUTPUT] += multi_chip->u_write_cycle[data_type_t::OUTPUT];
-                                num_access_multi_chip++;
-
-                                // Update address of chip-level processor (temporal buffer)
-                                address_multi_chip = ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT];
-                            }
-                        }
-                    }
-                }
-            }
-
-            /*
-            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
-            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
-            */
+            // GB1+GB2: descriptor-based GLB->multi-chip OUTPUT write-back accounting
+            // (GLB read + multi-chip write access, serialized NoP link transfer, overlap).
+            account_output_writeback_link();
 
             weight_flush_counter = 0; 
             output_flush_counter = 0;
@@ -1614,81 +1481,9 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
-            std::vector<unsigned> parameters_global_buffer(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-            std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-
-            parameters_global_buffer = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::GLOBAL_BUFFER);
-            parameters_multi_chip = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::CHIPS_Y);
-
-            uint64_t address_global_buffer = 0, address_multi_chip = 0;
-            unsigned num_access_global_buffer = 0, num_access_multi_chip = 0;
-
-            for(unsigned b = 0; b < parameters_global_buffer[parameter_type_t::BATCH_SIZE]; b++) {
-                for(unsigned k = 0; k < parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]; k++) {
-                    for(unsigned p = 0; p < parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]; p++) {
-                        for(unsigned q = 0; q < parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH]; q++) {
-                            // Check global buffer address
-                            if(address_global_buffer != ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                                   b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                   mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update global buffer cost
-                                access_energy[data_type_t::OUTPUT] += u_read_energy[data_type_t::OUTPUT];
-                                access_cycle[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT];
-                                num_access_global_buffer++;
-
-                                // Update global buffer address
-                                address_global_buffer = ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                         b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                         mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT];
-
-                            }
-                            // Check multi chip address (temporal buffer)
-                            if(address_multi_chip != ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update costs of chip-level processor (temporal buffer)
-                                multi_chip->access_energy[data_type_t::OUTPUT] += multi_chip->u_write_energy[data_type_t::OUTPUT];
-                                multi_chip->access_cycle[data_type_t::OUTPUT] += multi_chip->u_write_cycle[data_type_t::OUTPUT];
-                                num_access_multi_chip++;
-
-                                // Update address of chip-level processor (temporal buffer)
-                                address_multi_chip = ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT];
-                            }
-                        }
-                    }
-                }
-            }
-
-            /*
-            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
-            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
-            */
+            // GB1+GB2: descriptor-based GLB->multi-chip OUTPUT write-back accounting
+            // (GLB read + multi-chip write access, serialized NoP link transfer, overlap).
+            account_output_writeback_link();
             
             input_flush_counter++;
             output_flush_counter++;
@@ -1708,81 +1503,9 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
-            std::vector<unsigned> parameters_global_buffer(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-            std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-
-            parameters_global_buffer = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::GLOBAL_BUFFER);
-            parameters_multi_chip = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::CHIPS_Y);
-
-            uint64_t address_global_buffer = 0, address_multi_chip = 0;
-            unsigned num_access_global_buffer = 0, num_access_multi_chip = 0;
-
-            for(unsigned b = 0; b < parameters_global_buffer[parameter_type_t::BATCH_SIZE]; b++) {
-                for(unsigned k = 0; k < parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]; k++) {
-                    for(unsigned p = 0; p < parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]; p++) {
-                        for(unsigned q = 0; q < parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH]; q++) {
-                            // Check global buffer address
-                            if(address_global_buffer != ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                                   b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                   mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update global buffer cost
-                                access_energy[data_type_t::OUTPUT] += u_read_energy[data_type_t::OUTPUT];
-                                access_cycle[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT];
-                                num_access_global_buffer++;
-
-                                // Update global buffer address
-                                address_global_buffer = ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                         b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                         mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT];
-
-                            }
-                            // Check multi chip address (temporal buffer)
-                            if(address_multi_chip != ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update costs of chip-level processor (temporal buffer)
-                                multi_chip->access_energy[data_type_t::OUTPUT] += multi_chip->u_write_energy[data_type_t::OUTPUT];
-                                multi_chip->access_cycle[data_type_t::OUTPUT] += multi_chip->u_write_cycle[data_type_t::OUTPUT];
-                                num_access_multi_chip++;
-
-                                // Update address of chip-level processor (temporal buffer)
-                                address_multi_chip = ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT];
-                            }
-                        }
-                    }
-                }
-            }
-
-            /*
-            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
-            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
-            */
+            // GB1+GB2: descriptor-based GLB->multi-chip OUTPUT write-back accounting
+            // (GLB read + multi-chip write access, serialized NoP link transfer, overlap).
+            account_output_writeback_link();
          
             input_flush_counter = 0;
             output_flush_counter = 0;
@@ -1817,81 +1540,9 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
-            std::vector<unsigned> parameters_global_buffer(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-            std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
-
-            parameters_global_buffer = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::GLOBAL_BUFFER);
-            parameters_multi_chip = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::CHIPS_Y);
-
-            uint64_t address_global_buffer = 0, address_multi_chip = 0;
-            unsigned num_access_global_buffer = 0, num_access_multi_chip = 0;
-
-            for(unsigned b = 0; b < parameters_global_buffer[parameter_type_t::BATCH_SIZE]; b++) {
-                for(unsigned k = 0; k < parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]; k++) {
-                    for(unsigned p = 0; p < parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]; p++) {
-                        for(unsigned q = 0; q < parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH]; q++) {
-                            // Check global buffer address
-                            if(address_global_buffer != ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                                   b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                    *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                   p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                   mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update global buffer cost
-                                access_energy[data_type_t::OUTPUT] += u_read_energy[data_type_t::OUTPUT];
-                                access_cycle[data_type_t::OUTPUT] += u_read_cycle[data_type_t::OUTPUT];
-                                num_access_global_buffer++;
-
-                                // Update global buffer address
-                                address_global_buffer = ((uint64_t)&data[offsets[data_type_t::OUTPUT] + 
-                                                                         b*parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         k*parameters_global_buffer[parameter_type_t::OUTPUT_HEIGHT]
-                                                                          *parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                         p*parameters_global_buffer[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                         mask_bits[data_type_t::OUTPUT]) << mask_bits[data_type_t::OUTPUT];
-
-                            }
-                            // Check multi chip address (temporal buffer)
-                            if(address_multi_chip != ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT]) {
-
-                                // Update costs of chip-level processor (temporal buffer)
-                                multi_chip->access_energy[data_type_t::OUTPUT] += multi_chip->u_write_energy[data_type_t::OUTPUT];
-                                multi_chip->access_cycle[data_type_t::OUTPUT] += multi_chip->u_write_cycle[data_type_t::OUTPUT];
-                                num_access_multi_chip++;
-
-                                // Update address of chip-level processor (temporal buffer)
-                                address_multi_chip = ((uint64_t)&multi_chip->data[multi_chip->offsets[data_type_t::OUTPUT] + 
-                                                                                  m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()] + 
-                                                                                  b*parameters_multi_chip[parameter_type_t::OUTPUT_CHANNEL]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  k*parameters_multi_chip[parameter_type_t::OUTPUT_HEIGHT]
-                                                                                   *parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + 
-                                                                                  p*parameters_multi_chip[parameter_type_t::OUTPUT_WIDTH] + q] >> 
-                                                                                  multi_chip->mask_bits[data_type_t::OUTPUT]) << multi_chip->mask_bits[data_type_t::OUTPUT];
-                            }
-                        }
-                    }
-                }
-            }
-
-            /*
-            write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT])*u_read_cycle[data_type_t::OUTPUT];
-            multi_chip->write_back_cycle += runtime_datatypes().storage_transactions(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], multi_chip->line_size[data_type_t::OUTPUT])*multi_chip->u_write_cycle[data_type_t::OUTPUT];
-            */
+            // GB1+GB2: descriptor-based GLB->multi-chip OUTPUT write-back accounting
+            // (GLB read + multi-chip write access, serialized NoP link transfer, overlap).
+            account_output_writeback_link();
 
             // Reset flush counter of input data and weight
             input_flush_counter = 0;
@@ -1918,6 +1569,19 @@ void global_buffer_t::update_static_energy(double elapsed_cycles) {
         }
         static_energy[i] = static_energy_for_cycles(u_static_energy[i], elapsed_cycles);
     }
+}
+
+// Modeled busy duration of the global buffer for the current layer: the max of its
+// access, transfer, and overlapped cost axes. Used so that leakage is charged over
+// the true layer wall-clock rather than only the PE-array compute window.
+double global_buffer_t::modeled_elapsed_cycles() const {
+    double elapsed = std::max(write_back_cycle, overlapped_transfer_cycle);
+    for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
+        elapsed = std::max(elapsed, access_cycle[type]);
+        elapsed = std::max(elapsed, transfer_cycle[type]);
+        elapsed = std::max(elapsed, cycle_pe_array_global_buffer[type]);
+    }
+    return elapsed;
 }
 
 void global_buffer_t::reset() {

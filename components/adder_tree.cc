@@ -128,6 +128,9 @@ void adder_tree_t::init(section_config_t m_section_config) {
     request_to_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     request_to_global_buffer.assign(data_type_t::NUM_DATA_TYPES, false);
 
+    is_waiting_data.reserve(data_type_t::NUM_DATA_TYPES);
+    is_waiting_data.assign(data_type_t::NUM_DATA_TYPES, false);
+
     /* Initialize unit cost of adder tree */
 
     // Initialize the stats between PE array and Global buffer.
@@ -150,6 +153,17 @@ void adder_tree_t::init(section_config_t m_section_config) {
     // Initialize the NoC cycle of PE array.
     m_section_config.get_setting("noc_cycle", &noc_cycle);
     m_section_config.get_setting("noc_energy", &noc_energy);
+
+    // Per-addition unit cost of an internal adder-tree node. Defaults to 0
+    // so configs that do not calibrate it keep the link-only reduction cost.
+    u_adder_cycle = 0.0;
+    u_adder_energy = 0.0;
+    m_section_config.get_setting("adder_cycle", &u_adder_cycle);
+    m_section_config.get_setting("adder_energy", &u_adder_energy);
+    if(u_adder_cycle < 0.0 || u_adder_energy < 0.0) {
+        std::cerr << "Error: adder_tree adder_cycle/adder_energy must be non-negative" << std::endl;
+        exit(1);
+    }
 
     /* Initialize stats of adder tree */
 
@@ -197,7 +211,33 @@ void adder_tree_t::update_tile_size(scheduler_t *m_scheduler) {
 
 void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
 #ifndef FUNCTIONAL
+    // account_descriptor_dense_distribution() charges every data type the same
+    // flat per-active-PE link cost, which is correct for INPUT/WEIGHT (a plain
+    // distribution scatter) but wrong for OUTPUT: combining N partial sums
+    // through a reduction tree costs N-1 adder operations at ceil(log2(N))
+    // sequential levels, not N independent link transactions. Capture OUTPUT's
+    // contribution, then replace it with the tree-shaped cost below.
+    const double output_cycle_before = transfer_cycle[data_type_t::OUTPUT];
+    const double output_energy_before = transfer_energy[data_type_t::OUTPUT];
+    const double output_cycle_temporal_before = cycle_temporal_pe[data_type_t::OUTPUT];
+
     account_descriptor_dense_distribution(m_scheduler, noc_cycle, noc_energy);
+
+    const double output_cycle_delta = transfer_cycle[data_type_t::OUTPUT] - output_cycle_before;
+    const double output_energy_delta = transfer_energy[data_type_t::OUTPUT] - output_energy_before;
+    const double output_cycle_temporal_delta = cycle_temporal_pe[data_type_t::OUTPUT] - output_cycle_temporal_before;
+    if(output_cycle_delta > 0.0 || output_energy_delta > 0.0 || output_cycle_temporal_delta > 0.0) {
+        const adder_tree_reduction_cost_t cost = adder_tree_reduction_cost(get_number_of_active_pes());
+        const double level_cycle = noc_cycle + u_adder_cycle;
+        const double reduction_cycle = cost.depth*level_cycle;
+        const double reduction_energy = cost.num_additions*(noc_energy + u_adder_energy);
+
+        transfer_cycle[data_type_t::OUTPUT] += reduction_cycle - output_cycle_delta;
+        transfer_energy[data_type_t::OUTPUT] += reduction_energy - output_energy_delta;
+        if(output_cycle_temporal_delta > 0.0) {
+            cycle_temporal_pe[data_type_t::OUTPUT] += reduction_cycle - output_cycle_temporal_delta;
+        }
+    }
     return;
 #endif
 
@@ -744,6 +784,7 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
         for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
             pes[i]->exist_data_lb[data_type_t::INPUT] = true, pes[i]->request_to_pe_array[data_type_t::INPUT] = false;
         }
+        is_waiting_data[data_type_t::INPUT] = false;
     }
 
     bool request_to_pe_array_weight = false;
@@ -1296,6 +1337,7 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
         for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
             pes[i]->exist_data_lb[data_type_t::WEIGHT] = true, pes[i]->request_to_pe_array[data_type_t::WEIGHT] = false;
         }
+        is_waiting_data[data_type_t::WEIGHT] = false;
     }
 
     bool request_to_pe_array_output = false;
@@ -1431,8 +1473,9 @@ void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
         for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
             pes[i]->exist_data_lb[data_type_t::OUTPUT] = true, pes[i]->request_to_pe_array[data_type_t::OUTPUT] = false;
         }
+        is_waiting_data[data_type_t::OUTPUT] = false;
     }
-        
+
     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
         pes[i]->fill_data();
     }
@@ -1479,8 +1522,12 @@ void adder_tree_t::print_specification() {
                                         << "Adder Tree" << std::endl;
     std::cout << "NoC cycle          :" << std::setw(17) 
                                         << noc_cycle << " cycles" << std::endl;
-    std::cout << "NoC energy         :" << std::setw(21) 
+    std::cout << "NoC energy         :" << std::setw(21)
                                         << noc_energy << " pJ" << std::endl;
+    std::cout << "Adder cycle        :" << std::setw(17)
+                                        << u_adder_cycle << " cycles" << std::endl;
+    std::cout << "Adder energy       :" << std::setw(21)
+                                        << u_adder_energy << " pJ" << std::endl;
 	std::cout << std::endl;
 }
 

@@ -47,5 +47,14 @@ spatial_noc_cost_t spatial_noc_cost(noc_type_t topology,
 // Multi-chip currently models a single serialized bus fabric only.
 bool is_supported_multi_chip_nop(noc_type_t topology);
 
+// Balanced 2-input adder-tree reduction over `leaves` active operands.
+// depth is the number of sequential levels (parallel additions per level);
+// num_additions is the total adder-operation count across the whole tree.
+struct adder_tree_reduction_cost_t {
+    unsigned num_additions;
+    unsigned depth;
+};
+
+adder_tree_reduction_cost_t adder_tree_reduction_cost(unsigned leaves);
 
 #endif

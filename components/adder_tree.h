@@ -21,6 +21,10 @@ public:
 
 	// print out the configuration of PE array.
 	void print_specification();
+
+    // Per-addition unit cost of an internal adder-tree node (cycles / pJ).
+    double u_adder_cycle;
+    double u_adder_energy;
 };
 
 #endif

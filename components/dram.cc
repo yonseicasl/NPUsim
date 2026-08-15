@@ -1406,6 +1406,18 @@ void dram_t::print_specification() {
 }
 
 // Reset stats of the off-chip memory.
+// Modeled busy duration of the DRAM for the current layer: the max of its access,
+// transfer, and overlapped cost axes.
+double dram_t::modeled_elapsed_cycles() const {
+    double elapsed = 0.0;
+    for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
+        elapsed = std::max(elapsed, access_cycle[type]);
+        elapsed = std::max(elapsed, transfer_cycle[type]);
+        elapsed = std::max(elapsed, cycle_chip_dram[type]);
+    }
+    return elapsed;
+}
+
 void dram_t::reset() {
     done = false;
 
