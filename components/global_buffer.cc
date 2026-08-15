@@ -160,11 +160,8 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
         exit(1);
     }
     cycle_pe_array_global_buffer[type] += pipelined_transfer_cycles(
-        static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
-        std::max(u_read_cycle[type], u_transfer_cycle),
-        std::max(u_read_cycle[type], std::max(u_transfer_cycle, pe_array->u_write_cycle[type])),
-        std::max(u_transfer_cycle, pe_array->u_write_cycle[type]),
-        pe_array->u_write_cycle[type]);
+        static_cast<unsigned>(timing.pipeline_transactions),
+        u_read_cycle[type], u_transfer_cycle, pe_array->u_write_cycle[type]);
     pe_array->skip_transfer[type] = false;
 }
 
@@ -1646,8 +1643,12 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     // Initialize the frequency and bandwidth of the separate buffer
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = 8*bandwidth/frequency;
+    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
     m_section_config.get_setting("bitwidth", &bitwidth);
+    if(bitwidth == 0) {
+        std::cerr << "Error: global_buffer requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
+        exit(1);
+    }
 
     // Initialize global buffer type (double buffer or single buffer)
     m_section_config.get_setting("double_buffer", &double_buffer);
@@ -1889,8 +1890,12 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     // Initialize frequency and bandwidth of the shared buffer
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = 8*bandwidth/frequency;
+    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
     m_section_config.get_setting("bitwidth", &bitwidth);
+    if(bitwidth == 0) {
+        std::cerr << "Error: global_buffer requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
+        exit(1);
+    }
 
     m_section_config.get_setting("double_buffer", &double_buffer);
 

@@ -34,8 +34,12 @@ void systolic_array_t::init(section_config_t m_section_config) {
     // Initialize the frequency (in MHz) and bandwidth (in MB/sec) 
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = 8*bandwidth/frequency;
+    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
     m_section_config.get_setting("bitwidth", &bitwidth);
+    if(bitwidth == 0) {
+        std::cerr << "Error: systolic_array requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
+        exit(1);
+    }
 
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
     line_size.assign(data_type_t::NUM_DATA_TYPES, 8);

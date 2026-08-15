@@ -76,6 +76,7 @@ public:
     std::vector<double> cycle_mac_lb;                                   // Overlapped cycle between computing and local buffer
 
     std::vector<double> static_energy_pe;                               // Static energy of PE
+    std::vector<double> static_energy_pe_array;                         // Static (leakage) energy of the PE-array temporal buffer
 
     /* PE array */
     std::vector<unsigned> num_request_pe_array;                         // Number of request to PE array (from PE).

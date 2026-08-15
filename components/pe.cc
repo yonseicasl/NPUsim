@@ -675,10 +675,8 @@ void pe_t::account_descriptor_dense_mac_transfer(data_type_t type, size_t elemen
         exit(1);
     }
     cycle_mac_lb[type] += pipelined_transfer_cycles(
-        static_cast<unsigned>(timing.pipeline_transactions), source_cycle,
-        std::max(source_cycle, u_transfer_cycle),
-        std::max(source_cycle, std::max(u_transfer_cycle, destination_cycle)),
-        std::max(u_transfer_cycle, destination_cycle), destination_cycle);
+        static_cast<unsigned>(timing.pipeline_transactions),
+        source_cycle, u_transfer_cycle, destination_cycle);
 }
 
 // Transfer data from local buffer to MAC unit.
@@ -2775,9 +2773,13 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
 
 #endif
 
-        num_computation++;
+        // PE7: scale computation count/energy by the active scalar-MAC lanes, matching the
+        // input/weight/output_stationary paths (energy per active MAC; one issue step/tile).
+        for(unsigned i = 0; i < num_active_macs; i++) {
+            num_computation++;
+            computation_energy += u_computation_energy;
+        }
         computation_cycle += accumulate_issue_cycles(1, u_computation_cycle);
-        computation_energy += u_computation_energy;
 
         exist_data_mac[data_type_t::INPUT] = false, request_to_lb[data_type_t::INPUT] = true;
         exist_data_mac[data_type_t::WEIGHT] = false, request_to_lb[data_type_t::WEIGHT] = true;

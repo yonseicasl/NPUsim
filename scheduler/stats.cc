@@ -120,6 +120,8 @@ void stats_t::init() {
     // Initialize static energy at PE
     static_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    static_energy_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
+    static_energy_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     format_cycle_pe.reserve(data_type_t::NUM_DATA_TYPES);
     format_cycle_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -426,6 +428,8 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
         layer_elapsed_cycles = std::max(layer_elapsed_cycles,
                                         m_global_buffer[i]->modeled_elapsed_cycles());
+        layer_elapsed_cycles = std::max(layer_elapsed_cycles,
+                                        m_pe_array[i]->modeled_elapsed_cycles());
     }
     layer_elapsed_cycles = std::max(layer_elapsed_cycles, m_multi_chip->modeled_elapsed_cycles());
     layer_elapsed_cycles = std::max(layer_elapsed_cycles, m_dram->modeled_elapsed_cycles());
@@ -434,6 +438,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_pes(); ++j) {
             m_pe_array[i]->pes[j]->update_static_energy(layer_elapsed_cycles);
         }
+        m_pe_array[i]->update_static_energy(layer_elapsed_cycles);
     }
     for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); ++i) {
         m_global_buffer[i]->update_static_energy(layer_elapsed_cycles);
@@ -563,13 +568,19 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         utilization_pe_array = std::max(utilization_pe_array, m_pe_array[i]->utilization);
     }
 
-    avg_computation_cycle /= num_active_pe;
-    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
-        avg_access_cycle_mac[i] /= num_active_pe;
-        avg_access_cycle_lb[i] /= num_active_pe;
+    // Guard the per-PE averages against a mapping that activates zero PEs (avoids NaN).
+    if(num_active_pe > 0) {
+        avg_computation_cycle /= num_active_pe;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+            avg_access_cycle_mac[i] /= num_active_pe;
+            avg_access_cycle_lb[i] /= num_active_pe;
+        }
     }
 
-    mac_available_cycle = static_cast<double>(physical_scalar_macs) * pe_elapsed_cycles;
+    // Available MAC cycles must span the whole layer wall-clock (compute + memory stalls),
+    // the same window used for leakage; otherwise memory-bound layers report near-full MAC
+    // utilization while the MACs actually idle waiting on GLB/NoP/DRAM.
+    mac_available_cycle = static_cast<double>(physical_scalar_macs) * layer_elapsed_cycles;
     utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
     if(utilization_mac > 1.0 + 1e-9) {
         std::cerr << "Error: MAC busy cycles exceed physical MAC capacity" << std::endl;
@@ -584,6 +595,13 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             for(unsigned k = 0; k < data_type_t::NUM_DATA_TYPES; k++) {
                 static_energy_pe[k] += m_pe_array[i]->pes[j]->static_energy[k];
             }
+        }
+    }
+
+    // Update PE-array temporal-buffer static energy over all physical chips (always-on).
+    for(unsigned i = 0; i < m_multi_chip->get_number_of_chips(); i++) {
+        for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
+            static_energy_pe_array[j] += m_pe_array[i]->static_energy[j];
         }
     }
 
@@ -722,6 +740,7 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
     scale_counters(&storage_link_transactions_pe, m_repetitions, "PE storage transactions");
     scale_costs(&cycle_mac_lb, m_repetitions);
     scale_costs(&static_energy_pe, m_repetitions);
+    scale_costs(&static_energy_pe_array, m_repetitions);
 
     scale_counters(&num_request_pe_array, m_repetitions, "PE-array request count");
     scale_counters(&num_data_transfer_pe_array, m_repetitions, "PE-array transfer count");
@@ -809,6 +828,8 @@ void stats_t::update_network_stats(stats_t *m_source) {
         // Update access cost of the local buffer
         access_cycle_lb[i] += m_source->access_cycle_lb[i];
         access_energy_lb[i] += m_source->access_energy_lb[i];
+        static_energy_pe[i] += m_source->static_energy_pe[i];
+        static_energy_pe_array[i] += m_source->static_energy_pe_array[i];
 
         max_access_cycle_lb[i] += m_source->max_access_cycle_lb[i];
         min_access_cycle_lb[i] += m_source->min_access_cycle_lb[i];
@@ -860,6 +881,7 @@ void stats_t::update_network_stats(stats_t *m_source) {
         // Update access cost of the global buffer
         access_cycle_global_buffer[i] += m_source->access_cycle_global_buffer[i];
         access_energy_global_buffer[i] += m_source->access_energy_global_buffer[i];
+        static_energy_global_buffer[i] += m_source->static_energy_global_buffer[i];
 
         // Update transfer cost between the global buffer and PE array
         transfer_cycle_global_buffer[i] += m_source->transfer_cycle_global_buffer[i];
@@ -886,6 +908,7 @@ void stats_t::update_network_stats(stats_t *m_source) {
         // Update transfer cost between the chip-level processor to the global buffer
         transfer_cycle_multi_chip[i] += m_source->transfer_cycle_multi_chip[i];
         transfer_energy_multi_chip[i] += m_source->transfer_energy_multi_chip[i];
+        static_energy_multi_chip[i] += m_source->static_energy_multi_chip[i];
 
         /* Update off-chip memory stats */
 
@@ -1071,16 +1094,24 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     // Local buffer utilization
     m_output_file << "Local buffer utilization" << std::endl;
     if(local_buffer_type == memory_type_t::SEPARATE) {
-        m_output_file << " * Input data         :" << std::setw(16) << std::setprecision(1) 
+        // Separate partitions: Average is the mean per-type partition occupancy.
+        total_utilization_local_buffer = (utilization_local_buffer[data_type_t::INPUT] +
+                                          utilization_local_buffer[data_type_t::WEIGHT] +
+                                          utilization_local_buffer[data_type_t::OUTPUT]) / 3.0;
+        m_output_file << " * Input data         :" << std::setw(16) << std::setprecision(1)
                                                    << utilization_local_buffer[data_type_t::INPUT]*100 << " %" << std::endl;
-        m_output_file << " * Weight             :" << std::setw(16) << std::setprecision(1) 
+        m_output_file << " * Weight             :" << std::setw(16) << std::setprecision(1)
                                                    << utilization_local_buffer[data_type_t::WEIGHT]*100 << " %" << std::endl;
-        m_output_file << " * Output data        :" << std::setw(16) << std::setprecision(1) 
+        m_output_file << " * Output data        :" << std::setw(16) << std::setprecision(1)
                                                    << utilization_local_buffer[data_type_t::OUTPUT]*100 << " %" << std::endl;
         m_output_file << " * Average            :" << std::setw(16) << std::setprecision(1)
                                                    << total_utilization_local_buffer*100 << " %" << std::endl;
     }
     else if(local_buffer_type == memory_type_t::SHARED) {
+        // Shared buffer holds all types: total occupancy is the sum of per-type ratios.
+        total_utilization_local_buffer = utilization_local_buffer[data_type_t::INPUT] +
+                                         utilization_local_buffer[data_type_t::WEIGHT] +
+                                         utilization_local_buffer[data_type_t::OUTPUT];
         m_output_file << "buffer utilization    :" << std::setw(16) << std::setprecision(1)
                                                    << total_utilization_local_buffer*100 << " %" << std::endl;
     }
@@ -1179,9 +1210,18 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << transfer_energy_pe_array[data_type_t::OUTPUT] << " pJ" <<  std::endl;
     m_output_file << std::endl;
 
+    m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_pe_array[data_type_t::INPUT] << " pJ" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_pe_array[data_type_t::WEIGHT] << " pJ" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << static_energy_pe_array[data_type_t::OUTPUT] << " pJ" << std::endl;
+    m_output_file << std::endl;
+
     // PE utilization
     m_output_file << "Utilization" << std::endl;
-    m_output_file << "PE array utilization  :" << std::setw(16) << std::setprecision(1) 
+    m_output_file << "PE array utilization  :" << std::setw(16) << std::setprecision(1)
                                                << utilization_pe_array*100 << " %" << std::endl;
     m_output_file << std::endl;
 
@@ -1251,7 +1291,12 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     // Global buffer utilization
     m_output_file << "Global buffer utilization" << std::endl;
     if(global_buffer_type == memory_type_t::SEPARATE) {
-        m_output_file << " * input data         :" << std::setw(16) << std::setprecision(1) 
+        // Separate partitions: Average is the mean per-type partition occupancy
+        // (previously never computed in this branch -> printed as 0).
+        total_utilization_global_buffer = (utilization_global_buffer[data_type_t::INPUT] +
+                                          utilization_global_buffer[data_type_t::WEIGHT] +
+                                          utilization_global_buffer[data_type_t::OUTPUT]) / 3.0;
+        m_output_file << " * input data         :" << std::setw(16) << std::setprecision(1)
                                                    << utilization_global_buffer[data_type_t::INPUT]*100 << " %" << std::endl;
         m_output_file << " * Weight             :" << std::setw(16) << std::setprecision(1) 
                                                    << utilization_global_buffer[data_type_t::WEIGHT]*100 << " %" <<  std::endl;

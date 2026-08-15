@@ -47,14 +47,17 @@ spatial_noc_cost_t spatial_noc_cost(noc_type_t topology,
     return cost;
 }
 
-double pipelined_transfer_cycles(unsigned transactions, double first_stage,
-                                 double second_stage, double other_stage,
-                                 double last_before_stage, double last_stage) {
+double pipelined_transfer_cycles(unsigned transactions, double source_stage,
+                                 double link_stage, double destination_stage) {
     if(transactions == 0) return 0.0;
-    if(transactions == 1) return first_stage + second_stage + last_stage;
-    return first_stage + second_stage +
+    // A single transaction fills and drains with no overlap: source -> link -> destination.
+    if(transactions == 1) return source_stage + link_stage + destination_stage;
+    const double second_stage      = std::max(source_stage, link_stage);
+    const double other_stage       = std::max(source_stage, std::max(link_stage, destination_stage));
+    const double last_before_stage = std::max(link_stage, destination_stage);
+    return source_stage + second_stage +
            static_cast<double>(transactions - 2)*other_stage +
-           last_before_stage + last_stage;
+           last_before_stage + destination_stage;
 }
 
 

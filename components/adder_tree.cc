@@ -33,8 +33,12 @@ void adder_tree_t::init(section_config_t m_section_config) {
     // Initialize frequency and bandwidth of adder tree
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = 8*bandwidth/frequency;
+    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
     m_section_config.get_setting("bitwidth", &bitwidth);
+    if(bitwidth == 0) {
+        std::cerr << "Error: adder_tree requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
+        exit(1);
+    }
 
     // Initialize line size and mask bits of temporal buffer in PE array.
     line_size.reserve(data_type_t::NUM_DATA_TYPES);

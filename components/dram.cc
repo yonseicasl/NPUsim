@@ -39,8 +39,14 @@ void dram_t::init(section_config_t m_section_config) {
     // Initialize frequency, bandwidth, and bitwidth of the off-chip memory
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = 8*bandwidth/frequency;
+    // Only derive from bandwidth/frequency when frequency>0 (else the float divide is
+    // inf and the cast to unsigned is UB). An explicit 'bitwidth' setting still overrides.
+    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
     m_section_config.get_setting("bitwidth", &bitwidth);
+    if(bitwidth == 0) {
+        std::cerr << "Error: dram requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
+        exit(1);
+    }
 
     // Initialize off-chip memory line size.
     line_size.reserve(data_type_t::NUM_DATA_TYPES);
@@ -185,11 +191,8 @@ void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
     }
     if(multi_chip->exist_temporal_buffer) {
         cycle_chip_dram[type] += pipelined_transfer_cycles(
-            static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
-            std::max(u_read_cycle[type], u_transfer_cycle),
-            std::max(u_read_cycle[type], std::max(u_transfer_cycle, multi_chip->u_write_cycle[type])),
-            std::max(u_transfer_cycle, multi_chip->u_write_cycle[type]),
-            multi_chip->u_write_cycle[type]);
+            static_cast<unsigned>(timing.pipeline_transactions),
+            u_read_cycle[type], u_transfer_cycle, multi_chip->u_write_cycle[type]);
     }
     multi_chip->skip_transfer[type] = false;
 }

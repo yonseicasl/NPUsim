@@ -95,6 +95,40 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
     input_data = new data_t[num_input]();
     weight = new data_t[num_weight]();
     output_data = new data_t[num_output]();
+
+    // Unit static (leakage) energy of the PE-array temporal buffer, pJ/cycle. Defaults to 0.
+    u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("pe_array_static_energy", &u_static_energy);
+    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+}
+
+// Accumulate leakage energy of the PE-array temporal buffer once for the layer duration.
+// The temporal buffer is always-on, so it leaks over the full layer elapsed window.
+void pe_array_t::update_static_energy(double elapsed_cycles) {
+    if(elapsed_cycles < 0.0) {
+        std::cerr << "Error: PE-array elapsed cycles must be non-negative" << std::endl;
+        exit(1);
+    }
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(u_static_energy[i] < 0.0) {
+            std::cerr << "Error: PE-array static_energy must be a non-negative pJ/cycle value" << std::endl;
+            exit(1);
+        }
+        static_energy[i] = static_energy_for_cycles(u_static_energy[i], elapsed_cycles);
+    }
+}
+
+// Modeled busy duration of the PE-array temporal buffer: the max of its access, transfer,
+// and overlapped cost axes. Feeds the layer leakage window and consumes the otherwise
+// write-only overlap/write-back counters.
+double pe_array_t::modeled_elapsed_cycles() const {
+    double elapsed = std::max(write_back_cycle, overlapped_transfer_cycle);
+    for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
+        elapsed = std::max(elapsed, access_cycle[type]);
+        elapsed = std::max(elapsed, transfer_cycle[type]);
+        elapsed = std::max(elapsed, cycle_temporal_pe[type]);
+    }
+    return elapsed;
 }
 
 void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
@@ -139,11 +173,8 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
                 }
                 if(exist_temporal_buffer) {
                     cycle_temporal_pe[type] += pipelined_transfer_cycles(
-                        static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
-                        std::max(u_read_cycle[type], link_cycle),
-                        std::max(u_read_cycle[type], std::max(link_cycle, pes[i]->u_write_cycle_lb[type])),
-                        std::max(link_cycle, pes[i]->u_write_cycle_lb[type]),
-                        pes[i]->u_write_cycle_lb[type]);
+                        static_cast<unsigned>(timing.pipeline_transactions),
+                        u_read_cycle[type], link_cycle, pes[i]->u_write_cycle_lb[type]);
                 }
                 size_t capacity = pes[i]->output_size;
                 if(type == data_type_t::INPUT) capacity = pes[i]->input_size;
@@ -180,18 +211,22 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
     access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
     access_energy[data_type_t::OUTPUT] += timing.destination_accesses*u_write_energy[data_type_t::OUTPUT];
     write_back_cycle += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
-    transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*noc_cycle;
-    transfer_energy[data_type_t::OUTPUT] += timing.link_transactions*noc_energy;
+    // PA5: apply the NoC topology (mesh hop) cost to the output write-back too, mirroring
+    // the distribution path. spatial_noc_cost() returns unit multipliers for non-mesh
+    // topologies, so this is a no-op for BUS/store-and-forward/crossbar and systolic/adder.
+    const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
+    const double topology_cycle = noc_cycle*topology_cost.latency_multiplier;
+    const double topology_energy = noc_energy*topology_cost.energy_multiplier;
+    transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*topology_cycle;
+    transfer_energy[data_type_t::OUTPUT] += timing.link_transactions*topology_energy;
     if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
         std::cerr << "Error: PE-array write-back transaction count overflow" << std::endl;
         exit(1);
     }
     if(exist_temporal_buffer) {
         cycle_temporal_pe[data_type_t::OUTPUT] += pipelined_transfer_cycles(
-            static_cast<unsigned>(timing.pipeline_transactions), source_pe->u_read_cycle_lb[data_type_t::OUTPUT],
-            std::max(source_pe->u_read_cycle_lb[data_type_t::OUTPUT], noc_cycle),
-            std::max(source_pe->u_read_cycle_lb[data_type_t::OUTPUT], std::max(noc_cycle, u_write_cycle[data_type_t::OUTPUT])),
-            std::max(noc_cycle, u_write_cycle[data_type_t::OUTPUT]), u_write_cycle[data_type_t::OUTPUT]);
+            static_cast<unsigned>(timing.pipeline_transactions),
+            source_pe->u_read_cycle_lb[data_type_t::OUTPUT], topology_cycle, u_write_cycle[data_type_t::OUTPUT]);
     }
 }
 
@@ -428,5 +463,7 @@ void pe_array_t::reset() {
     payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
+
+    static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 }
 

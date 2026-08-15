@@ -212,9 +212,11 @@ void validate_spatial_interconnect_contract() {
        !has_valid_active_shape(4, 8, 4, 8) ||
        has_valid_active_shape(4, 8, 5, 8) ||
        has_valid_active_shape(4, 8, 4, 9) ||
-       pipelined_transfer_cycles(0, 1.0, 2.0, 3.0, 4.0, 5.0) != 0.0 ||
-       pipelined_transfer_cycles(1, 1.0, 2.0, 3.0, 4.0, 5.0) != 8.0 ||
-       pipelined_transfer_cycles(4, 1.0, 2.0, 3.0, 4.0, 5.0) != 18.0 ||
+       // (transactions, source, link, dest). One transaction has no overlap: source+link+dest
+       // (=8, not the pre-fix 5+max(5,1)+2=12). N>=2 pipelines the stages.
+       pipelined_transfer_cycles(0, 5.0, 1.0, 2.0) != 0.0 ||
+       pipelined_transfer_cycles(1, 5.0, 1.0, 2.0) != 8.0 ||
+       pipelined_transfer_cycles(4, 5.0, 1.0, 2.0) != 24.0 ||
        static_energy_for_cycles(2.5, 4.0) != 10.0) {
         fail("spatial interconnect timing contract");
     }

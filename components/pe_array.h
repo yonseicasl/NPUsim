@@ -65,6 +65,11 @@ public:
     // Print out the configuration of PE array.
     virtual void print_specification() = 0;
 
+    // Accumulate leakage energy of the PE-array temporal buffer once for the layer duration.
+    void update_static_energy(double elapsed_cycles);
+    // Modeled busy duration of the PE-array temporal buffer for the current layer.
+    double modeled_elapsed_cycles() const;
+
     // Reset the component and stat
     void reset();
 
@@ -99,7 +104,9 @@ public:
     std::vector<double> u_write_cycle;                      // The unit PE array write cycle
     std::vector<double> u_write_energy;                     // The unit PE array write energy
 
-    
+    std::vector<double> u_static_energy;                    // The unit static (leakage) energy of the PE-array temporal buffer, pJ/cycle
+
+
     /* PE array stats */
 
     std::vector<unsigned> num_request;                      // The number of data request from PE to PE array
@@ -121,6 +128,8 @@ public:
 
     double write_back_cycle;                                //
     double overlapped_transfer_cycle;                       //
+
+    std::vector<double> static_energy;                      // Static (leakage) energy of the PE-array temporal buffer
 
     std::vector<unsigned> line_size;
     std::vector<unsigned> mask_bits;

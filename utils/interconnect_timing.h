@@ -12,10 +12,12 @@ bool has_valid_active_shape(unsigned physical_height, unsigned physical_width,
                             unsigned active_height, unsigned active_width);
 bool is_valid_memory_line_bits(size_t width_bits);
 
-// A five-stage pipeline with a safe empty-transfer case.
-double pipelined_transfer_cycles(unsigned transactions, double first_stage,
-                                 double second_stage, double other_stage,
-                                 double last_before_stage, double last_stage);
+// Fill/drain latency of a serialized source->link->destination transfer pipelined over
+// `transactions` items. Takes the three raw per-item stage costs; the internal pipeline
+// stages are derived from them. A single transaction has no overlap (source+link+dest);
+// the empty case is 0.
+double pipelined_transfer_cycles(unsigned transactions, double source_stage,
+                                 double link_stage, double destination_stage);
 
 // Unit static energy is expressed in pJ/cycle.
 double static_energy_for_cycles(double unit_energy, double elapsed_cycles);

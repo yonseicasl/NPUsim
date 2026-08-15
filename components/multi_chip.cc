@@ -60,7 +60,7 @@ void multi_chip_t::init(section_config_t m_section_config) {
     // Initialize frequency and bandwidth of chip-level processors.
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = 8*bandwidth/frequency;
+    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
     m_section_config.get_setting("bitwidth", &bitwidth);
     if(frequency <= 0.0f || bandwidth < 0.0f || bitwidth == 0) {
         std::cerr << "Error: multi_chip frequency and bitwidth must be positive, and bandwidth non-negative" << std::endl;
@@ -414,11 +414,8 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
         }
         if(exist_temporal_buffer) {
             cycle_temporal_chips[type] += pipelined_transfer_cycles(
-                static_cast<unsigned>(timing.pipeline_transactions), u_read_cycle[type],
-                std::max(u_read_cycle[type], nop_cycle),
-                std::max(u_read_cycle[type], std::max(nop_cycle, chips[i]->u_write_cycle[type])),
-                std::max(nop_cycle, chips[i]->u_write_cycle[type]),
-                chips[i]->u_write_cycle[type]);
+                static_cast<unsigned>(timing.pipeline_transactions),
+                u_read_cycle[type], nop_cycle, chips[i]->u_write_cycle[type]);
         }
         chips[i]->skip_transfer[type] = false;
     }
@@ -466,10 +463,28 @@ void multi_chip_t::request_data() {
                 std::cout << "Write back output data from temporal buffer in Multi Chip to DRAM" << std::endl;
 #endif
 #ifdef FUNCTIONAL
-                //m_scheduler->transfer_data((data_t*)layer->output_data, data, m_scheduler->output_offset_dram.front(), multi_chip->offsets[data_type_t::OUTPUT], 
-                //                           component_type_t::DRAM, component_type_t::CHIPS_Y, 
+                //m_scheduler->transfer_data((data_t*)layer->output_data, data, m_scheduler->output_offset_dram.front(), multi_chip->offsets[data_type_t::OUTPUT],
+                //                           component_type_t::DRAM, component_type_t::CHIPS_Y,
                 //                           data_type_t::OUTPUT, multi_chip->get_stationary_type(), action_type_t::STORE);
 #endif
+                // MC3: charge the DRAM write-back only when an actual write-back occurs.
+                // On the initial pass, or when the output tile already matches DRAM's (no
+                // eviction), no data is stored, so its cost must not be counted.
+                dram->num_request[data_type_t::OUTPUT]++;
+
+                const datatype_transfer_timing_t timing = datatype_transfer_timing(
+                    data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
+                    dram->line_size[data_type_t::OUTPUT], dram->get_bitwidth());
+                access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+                access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
+                dram->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
+                dram->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_energy[data_type_t::OUTPUT];
+                dram->cycle_chip_dram[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
+                dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
+                dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
+                dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
+                dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
+                dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
             }
             else {
                 initial = 0;
@@ -477,22 +492,6 @@ void multi_chip_t::request_data() {
 
             request_to_dram[data_type_t::OUTPUT] = true;
             is_waiting_data[data_type_t::OUTPUT] = true;
-
-            dram->num_request[data_type_t::OUTPUT]++;
-
-            const datatype_transfer_timing_t timing = datatype_transfer_timing(
-                data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
-                dram->line_size[data_type_t::OUTPUT], dram->get_bitwidth());
-            access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
-            access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
-            dram->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
-            dram->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_energy[data_type_t::OUTPUT];
-            dram->cycle_chip_dram[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
-            dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
-            dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
-            dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
-            dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
-            dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
 
             break;
         }
