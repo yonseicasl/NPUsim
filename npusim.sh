@@ -83,12 +83,12 @@ if [[ $FUNCTIONAL -eq 1 ]]; then
 fi
 
 # Using integer
-if [[ $USE_INTEGER -eq 1 ]]; then
+if [[ $USER_INTEGER -eq 1 ]]; then
     ccopt+=" -DUSER_INTEGER"
 fi
 
 #Using float
-if [[ $USE_FLOAT -eq 1 ]]; then
+if [[ $USER_FLOAT -eq 1 ]]; then
     ccopt +=" -DUSER_FLOAT"
 fi
 
