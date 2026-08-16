@@ -97,6 +97,7 @@ public:
     std::vector<double> utilization_pe_array_buffer;                    // PE-array temporal-buffer occupancy per data type.
 
     std::vector<double> transfer_cycle_pe_array;                        // Total data transfer cycle between PE and PE array.
+    std::vector<double> cycle_temporal_pe_array;                        // PA4: PE-array temporal-buffer pipelined-overlap cycle.
     std::vector<double> transfer_energy_pe_array;                       // Total data transfer energy between PE and PE array.
     std::vector<size_t> payload_link_transactions_pe_array;
     std::vector<size_t> metadata_link_transactions_pe_array;

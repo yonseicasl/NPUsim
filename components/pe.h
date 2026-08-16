@@ -140,7 +140,8 @@ public:
     std::vector<double> u_write_cycle_lb;                   // The unit local buffer write cycle
     std::vector<double> u_write_energy_lb;                  // The unit local buffer write energy
 
-    std::vector<double> u_static_energy;
+    std::vector<double> u_static_energy;                    // PE (MAC-side) leakage, pJ/cycle
+    std::vector<double> u_lb_static_energy;                 // LB4: local-buffer leakage, pJ/cycle (separately sweepable)
 
     // Optional format-IP cost per packed payload/metadata transaction.
     std::vector<double> u_format_payload_cycle;

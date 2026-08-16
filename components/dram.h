@@ -81,6 +81,15 @@ public:
 
     /* Off-chip memory unit stats */
 
+    // DR2: open-page row-buffer model (sequential-stream approximation). A dense
+    // stream of B bytes activates ceil(B/row_buffer_bytes) rows; each activation
+    // costs u_row_miss_cycle / u_row_miss_energy. Disabled when row_buffer_bytes == 0.
+    size_t row_buffer_bytes;
+    double u_row_miss_cycle;
+    double u_row_miss_energy;
+    // Charge the row activations of one dense stream (used by load and write-back).
+    void account_row_activations(data_type_t type, size_t elements);
+
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory
 

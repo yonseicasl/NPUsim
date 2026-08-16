@@ -141,8 +141,11 @@ public:
 protected:
 
     void initialize_temporal_buffer(section_config_t m_section_config);
+    // link_fill_cycles: one-time pipeline fill through the fabric's route depth
+    // (0 for single-hop fabrics), charged once per transferred data type.
     void account_descriptor_dense_distribution(scheduler_t *m_scheduler,
-                                               double link_cycle, double link_energy);
+                                               double link_cycle, double link_energy,
+                                               double link_fill_cycles = 0.0);
 
     global_buffer_t *global_buffer;                         // Global buffer to connect
 

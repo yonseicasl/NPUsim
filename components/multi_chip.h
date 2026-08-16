@@ -43,6 +43,10 @@ public:
     // Get the NoP link bit-width between the global buffer and chip-level processors.
     unsigned get_bitwidth();
 
+    // NoP hops from the package ingress to a chip: Manhattan distance on the mesh,
+    // 1 on the serialized bus.
+    unsigned nop_hops_for_chip(unsigned chip_index) const;
+
     /* Check chip-level processor's status */
 
     // Check whether the chip-level processor is idle or not

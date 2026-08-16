@@ -134,7 +134,8 @@ double pe_array_t::modeled_elapsed_cycles() const {
 }
 
 void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
-                                                        double link_cycle, double link_energy) {
+                                                        double link_cycle, double link_energy,
+                                                        double link_fill_cycles) {
     if(m_scheduler->compression_type != compression_type_t::DENSE) {
         std::cerr << "Error: timing PE array supports dense descriptor traffic only" << std::endl;
         exit(1);
@@ -177,7 +178,8 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
             storage_link_transactions[type] += shared.link_transactions;
             access_cycle[type] += shared.source_accesses*u_read_cycle[type];
             access_energy[type] += shared.source_accesses*u_read_energy[type];
-            transfer_cycle[type] += shared.link_transactions*link_cycle;
+            // SP1/SY2: hops pipeline, so the route depth is a one-time fill per stream.
+            transfer_cycle[type] += shared.link_transactions*link_cycle + link_fill_cycles;
             transfer_energy[type] += shared.link_transactions*link_energy;
 
             size_t max_destination_accesses = 0;
@@ -210,7 +212,7 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
             if(exist_temporal_buffer) {
                 cycle_temporal_pe[type] += pipelined_transfer_cycles(
                     static_cast<unsigned>(pipeline_transactions),
-                    u_read_cycle[type], link_cycle, destination_write_cycle);
+                    u_read_cycle[type], link_cycle, destination_write_cycle) + link_fill_cycles;
             }
         }
         for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
@@ -238,13 +240,13 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
     access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
     access_energy[data_type_t::OUTPUT] += timing.destination_accesses*u_write_energy[data_type_t::OUTPUT];
     write_back_cycle += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
-    // PA5: apply the NoC topology (mesh hop) cost to the output write-back too, mirroring
-    // the distribution path. spatial_noc_cost() returns unit multipliers for non-mesh
-    // topologies, so this is a no-op for BUS/store-and-forward/crossbar and systolic/adder.
+    // PA5/SP1: apply the NoC topology cost to the output write-back too, mirroring the
+    // distribution path -- per-hop energy per transaction, and the route depth as a
+    // one-time pipeline fill (0 for single-hop fabrics, so BUS/S&F/crossbar unchanged).
     const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
-    const double topology_cycle = noc_cycle*topology_cost.latency_multiplier;
     const double topology_energy = noc_energy*topology_cost.energy_multiplier;
-    transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*topology_cycle;
+    const double link_fill_cycles = topology_cost.latency_fill_hops*noc_cycle;
+    transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*noc_cycle + link_fill_cycles;
     transfer_energy[data_type_t::OUTPUT] += timing.link_transactions*topology_energy;
     if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
         std::cerr << "Error: PE-array write-back transaction count overflow" << std::endl;
@@ -253,7 +255,7 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
     if(exist_temporal_buffer) {
         cycle_temporal_pe[data_type_t::OUTPUT] += pipelined_transfer_cycles(
             static_cast<unsigned>(timing.pipeline_transactions),
-            source_pe->u_read_cycle_lb[data_type_t::OUTPUT], topology_cycle, u_write_cycle[data_type_t::OUTPUT]);
+            source_pe->u_read_cycle_lb[data_type_t::OUTPUT], noc_cycle, u_write_cycle[data_type_t::OUTPUT]) + link_fill_cycles;
     }
 }
 

@@ -209,10 +209,22 @@ void validate_spatial_interconnect_contract() {
        !is_supported_spatial_noc(noc_type_t::STORE_AND_FORWARD) ||
        !is_supported_spatial_noc(noc_type_t::MESH) ||
        !is_supported_multi_chip_nop(noc_type_t::BUS) ||
-       spatial_noc_cost(noc_type_t::MESH, 2, 3).latency_multiplier != 3.0 ||
+       // SP1 pipelined-hop contract: 2x3 mesh max hops = 3 -> fill 2; energy avg 1.5.
+       spatial_noc_cost(noc_type_t::MESH, 2, 3).latency_fill_hops != 2.0 ||
        spatial_noc_cost(noc_type_t::MESH, 2, 3).energy_multiplier != 1.5 ||
-       spatial_noc_cost(noc_type_t::CROSSBAR, 2, 3).latency_multiplier != 1.0 ||
-       is_supported_multi_chip_nop(noc_type_t::MESH) ||
+       spatial_noc_cost(noc_type_t::CROSSBAR, 2, 3).latency_fill_hops != 0.0 ||
+       // R2: mesh NoP is now a supported routed-unicast model; store-and-forward is not.
+       !is_supported_multi_chip_nop(noc_type_t::MESH) ||
+       is_supported_multi_chip_nop(noc_type_t::STORE_AND_FORWARD) ||
+       // Manhattan ingress hops: the same 4 chips route differently on 1x4 vs 2x2.
+       nop_route_hops(0, 4) != 1 ||   // ingress-adjacent chip still crosses one link
+       nop_route_hops(3, 4) != 3 ||   // 1x4 grid: chip 3 at (3,0) -> 3 hops
+       nop_route_hops(3, 2) != 2 ||   // 2x2 grid: chip 3 at (1,1) -> 2 hops
+       nop_route_hops(5, 3) != 3 ||   // 2x3 grid: chip 5 at (2,1) -> 3 hops
+       // B12: derived link width truncates (with a warning) and is 0 without a clock.
+       derived_link_bitwidth("test", 2.0, 1.0) != 16 ||
+       derived_link_bitwidth("test", 0.9, 1.0) != 7 ||
+       derived_link_bitwidth("test", 1.0, 0.0) != 0 ||
        !is_supported_spatial_noc(noc_type_t::CROSSBAR) ||
        !has_valid_active_shape(4, 8, 4, 8) ||
        has_valid_active_shape(4, 8, 5, 8) ||

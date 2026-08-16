@@ -12,6 +12,8 @@ multi_chip_t::multi_chip_t(section_config_t m_section_config) :
     equal_output_tile(false),
     duplicated_input(0),
     exist_temporal_buffer(true),
+    u_transfer_cycle(0.0),
+    u_transfer_energy(0.0),
     utilization(0.0),
     write_back_cycle(0.0),
     overlapped_transfer_cycle(0.0),
@@ -60,8 +62,14 @@ void multi_chip_t::init(section_config_t m_section_config) {
     // Initialize frequency and bandwidth of chip-level processors.
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // B12: an explicit 'bitwidth' wins silently; a derived width warns when the
+    // bandwidth/frequency ratio truncates fractionally.
+    unsigned explicit_bitwidth = 0;
+    if(m_section_config.get_setting("bitwidth", &explicit_bitwidth)) {
+        bitwidth = explicit_bitwidth;
+    } else {
+        bitwidth = derived_link_bitwidth("multi_chip", bandwidth, frequency);
+    }
     if(frequency <= 0.0f || bandwidth < 0.0f || bitwidth == 0) {
         std::cerr << "Error: multi_chip frequency and bitwidth must be positive, and bandwidth non-negative" << std::endl;
         exit(1);
@@ -145,7 +153,7 @@ void multi_chip_t::init(section_config_t m_section_config) {
         nop_type = (noc_type_t)get_type(noc_type_str, nop_str);
     }
     if(!is_supported_multi_chip_nop(nop_type)) {
-        std::cerr << "Error: multi_chip supports only bus NoP timing model" << std::endl;
+        std::cerr << "Error: multi_chip supports only bus or mesh NoP timing models" << std::endl;
         exit(1);
     }
 
@@ -200,9 +208,20 @@ void multi_chip_t::init(section_config_t m_section_config) {
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
 
-    // Initialize NoP cost
-    m_section_config.get_setting("nop_cycle", &nop_cycle);
-    m_section_config.get_setting("nop_energy", &nop_energy);
+    // Initialize NoP cost. Existing configs spell the unit cost "noc_cycle"/"noc_energy"
+    // (matching the topology-key fallback above); accept both, "nop_*" taking priority.
+    // (Previously only "nop_*" was read, so every shipped config silently ran with a
+    // zero NoP unit cost.)
+    if(!m_section_config.get_setting("nop_cycle", &nop_cycle)) {
+        m_section_config.get_setting("noc_cycle", &nop_cycle);
+    }
+    if(!m_section_config.get_setting("nop_energy", &nop_energy)) {
+        m_section_config.get_setting("noc_energy", &nop_energy);
+    }
+    // The GLB->multi-chip write-back path charges the same NoP link unit cost
+    // (u_transfer_* was previously never assigned).
+    u_transfer_cycle = nop_cycle;
+    u_transfer_energy = nop_energy;
 
     /* Initialize stats of chip-level processor */
 
@@ -406,8 +425,13 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
             access_cycle[type] += timing.source_accesses*u_read_cycle[type];
             chips[i]->access_cycle[type] += timing.destination_accesses*chips[i]->u_write_cycle[type];
         }
-        transfer_cycle[type] += timing.link_transactions*nop_cycle;
-        transfer_energy[type] += timing.link_transactions*nop_energy;
+        // R2: routed-unicast mesh -- each chip's stream burns per-hop energy per
+        // transaction and pays its Manhattan route depth as a one-time pipeline fill
+        // (SP1 contract). On the serialized bus hops == 1, so nothing changes.
+        const unsigned hops = nop_hops_for_chip(i);
+        const double hop_fill = static_cast<double>(hops - 1)*nop_cycle;
+        transfer_cycle[type] += timing.link_transactions*nop_cycle + hop_fill;
+        transfer_energy[type] += timing.link_transactions*nop_energy*hops;
         if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
             std::cerr << "Error: multi_chip pipeline transaction count overflow" << std::endl;
             exit(1);
@@ -415,7 +439,7 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
         if(exist_temporal_buffer) {
             cycle_temporal_chips[type] += pipelined_transfer_cycles(
                 static_cast<unsigned>(timing.pipeline_transactions),
-                u_read_cycle[type], nop_cycle, chips[i]->u_write_cycle[type]);
+                u_read_cycle[type], nop_cycle, chips[i]->u_write_cycle[type]) + hop_fill;
         }
         chips[i]->skip_transfer[type] = false;
     }
@@ -423,6 +447,11 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
 
 unsigned multi_chip_t::get_bitwidth() {
     return bitwidth;
+}
+
+unsigned multi_chip_t::nop_hops_for_chip(unsigned chip_index) const {
+    if(nop_type != noc_type_t::MESH) return 1;
+    return nop_route_hops(chip_index, width);
 }
 
 void multi_chip_t::request_data() {
@@ -482,6 +511,7 @@ void multi_chip_t::request_data() {
                 dram->cycle_chip_dram[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
                 dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
                 dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
+                dram->account_row_activations(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
                 dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
                 dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
                 dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;

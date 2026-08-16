@@ -32,8 +32,14 @@ void spatial_arch_t::init(section_config_t m_section_config) {
     // Initialize the frequency and bandwidth of spatial architecture
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // B12: an explicit 'bitwidth' wins silently; a derived width warns when the
+    // bandwidth/frequency ratio truncates fractionally.
+    unsigned explicit_bitwidth = 0;
+    if(m_section_config.get_setting("bitwidth", &explicit_bitwidth)) {
+        bitwidth = explicit_bitwidth;
+    } else {
+        bitwidth = derived_link_bitwidth("spatial_arch", bandwidth, frequency);
+    }
     if(bitwidth == 0) {
         std::cerr << "Error: spatial_arch requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
         exit(1);
@@ -222,10 +228,14 @@ void spatial_arch_t::update_tile_size(scheduler_t *m_scheduler) {
 
 void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
     const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
-    const double topology_cycle = noc_cycle*topology_cost.latency_multiplier;
+    // Legacy multiplicative view kept for the FUNCTIONAL-only body below.
+    const double topology_cycle = noc_cycle*(topology_cost.latency_fill_hops + 1.0);
     const double topology_energy = noc_energy*topology_cost.energy_multiplier;
 #ifndef FUNCTIONAL
-    account_descriptor_dense_distribution(m_scheduler, topology_cycle, topology_energy);
+    // SP1: hops pipeline -- per-transaction latency stays one link cycle and the mesh
+    // route depth is a one-time fill; energy is per-hop per transaction.
+    account_descriptor_dense_distribution(m_scheduler, noc_cycle, topology_energy,
+                                          topology_cost.latency_fill_hops*noc_cycle);
     return;
 #endif
 

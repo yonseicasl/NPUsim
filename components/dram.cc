@@ -41,8 +41,14 @@ void dram_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("bandwidth", &bandwidth);
     // Only derive from bandwidth/frequency when frequency>0 (else the float divide is
     // inf and the cast to unsigned is UB). An explicit 'bitwidth' setting still overrides.
-    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // B12: an explicit 'bitwidth' wins silently; a derived width warns when the
+    // bandwidth/frequency ratio truncates fractionally.
+    unsigned explicit_bitwidth = 0;
+    if(m_section_config.get_setting("bitwidth", &explicit_bitwidth)) {
+        bitwidth = explicit_bitwidth;
+    } else {
+        bitwidth = derived_link_bitwidth("dram", bandwidth, frequency);
+    }
     if(bitwidth == 0) {
         std::cerr << "Error: dram requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
         exit(1);
@@ -108,10 +114,26 @@ void dram_t::init(section_config_t m_section_config) {
     metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
-    /* The unit stats */ 
+    /* The unit stats */
     // Initialize DRAM transfer cycle and energy
     m_section_config.get_setting("transfer_cycle", &u_transfer_cycle);
     m_section_config.get_setting("transfer_energy", &u_transfer_energy);
+
+    // DR2: optional open-page row-buffer model. `row_buffer_size` is in KB (matching
+    // the other size keys); each row activation of a dense sequential stream costs
+    // `row_miss_cycle`/`row_miss_energy`. All default to 0 (model disabled).
+    double row_buffer_kb = 0.0;
+    row_buffer_bytes = 0;
+    u_row_miss_cycle = 0.0;
+    u_row_miss_energy = 0.0;
+    m_section_config.get_setting("row_buffer_size", &row_buffer_kb);
+    m_section_config.get_setting("row_miss_cycle", &u_row_miss_cycle);
+    m_section_config.get_setting("row_miss_energy", &u_row_miss_energy);
+    if(row_buffer_kb < 0.0 || u_row_miss_cycle < 0.0 || u_row_miss_energy < 0.0) {
+        std::cerr << "Error: dram row-buffer parameters must be non-negative" << std::endl;
+        exit(1);
+    }
+    row_buffer_bytes = static_cast<size_t>(row_buffer_kb*1024.0);
 
     // Initialize DRAM unit read cycle
     u_read_cycle.reserve(data_type_t::NUM_DATA_TYPES);
@@ -169,6 +191,17 @@ bool dram_t::is_idle() {
     return done;
 }
 
+// DR2: charge the row activations of one dense sequential stream. This is an
+// open-page approximation -- random/strided access patterns and bank-level effects
+// are not modeled (use DRAMSIM3 for cycle-accurate DRAM).
+void dram_t::account_row_activations(data_type_t type, size_t elements) {
+    if(row_buffer_bytes == 0 || elements == 0) return;
+    const size_t stream_bytes = runtime_datatypes().storage_bytes(type, elements);
+    const size_t row_misses = (stream_bytes + row_buffer_bytes - 1)/row_buffer_bytes;
+    transfer_cycle[type] += static_cast<double>(row_misses)*u_row_miss_cycle;
+    transfer_energy[type] += static_cast<double>(row_misses)*u_row_miss_energy;
+}
+
 void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
     const datatype_transfer_timing_t timing = datatype_transfer_timing(
         type, elements, line_size[type], multi_chip->line_size[type], bitwidth);
@@ -185,6 +218,7 @@ void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
     }
     transfer_cycle[type] += timing.link_transactions*u_transfer_cycle;
     transfer_energy[type] += timing.link_transactions*u_transfer_energy;
+    account_row_activations(type, elements);
     if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
         std::cerr << "Error: DRAM pipeline transaction count overflow" << std::endl;
         exit(1);

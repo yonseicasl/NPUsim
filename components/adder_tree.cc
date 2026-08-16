@@ -33,8 +33,14 @@ void adder_tree_t::init(section_config_t m_section_config) {
     // Initialize frequency and bandwidth of adder tree
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // B12: an explicit 'bitwidth' wins silently; a derived width warns when the
+    // bandwidth/frequency ratio truncates fractionally.
+    unsigned explicit_bitwidth = 0;
+    if(m_section_config.get_setting("bitwidth", &explicit_bitwidth)) {
+        bitwidth = explicit_bitwidth;
+    } else {
+        bitwidth = derived_link_bitwidth("adder_tree", bandwidth, frequency);
+    }
     if(bitwidth == 0) {
         std::cerr << "Error: adder_tree requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
         exit(1);

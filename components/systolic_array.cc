@@ -34,8 +34,14 @@ void systolic_array_t::init(section_config_t m_section_config) {
     // Initialize the frequency (in MHz) and bandwidth (in MB/sec) 
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // B12: an explicit 'bitwidth' wins silently; a derived width warns when the
+    // bandwidth/frequency ratio truncates fractionally.
+    unsigned explicit_bitwidth = 0;
+    if(m_section_config.get_setting("bitwidth", &explicit_bitwidth)) {
+        bitwidth = explicit_bitwidth;
+    } else {
+        bitwidth = derived_link_bitwidth("systolic_array", bandwidth, frequency);
+    }
     if(bitwidth == 0) {
         std::cerr << "Error: systolic_array requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
         exit(1);
@@ -222,12 +228,15 @@ void systolic_array_t::update_tile_size(scheduler_t *m_scheduler) {
 
 void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
 #ifndef FUNCTIONAL
-    // SY1: apply the NoC topology (mesh hop) cost like spatial_arch does. For
-    // BUS/store-and-forward/crossbar the multipliers are 1, so tpu-style configs
-    // are unaffected; noc=mesh now scales latency/energy by the Manhattan hops.
-    const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
-    account_descriptor_dense_distribution(m_scheduler, noc_cycle*topology_cost.latency_multiplier,
-                                          noc_energy*topology_cost.energy_multiplier);
+    // SY1/SY2: a systolic array is structurally a 2D store-and-forward grid, so the
+    // injection wavefront traverses the active diameter regardless of the configured
+    // noc label: route-depth fill = (active_x-1)+(active_y-1) hop cycles per stream,
+    // and per-hop energy = average Manhattan distance per transaction. Active-shape
+    // changes now move the fill/drain latency (1xN vs NxM differ).
+    const spatial_noc_cost_t wavefront = spatial_noc_cost(noc_type_t::MESH, num_active_pe_y, num_active_pe_x);
+    account_descriptor_dense_distribution(m_scheduler, noc_cycle,
+                                          noc_energy*wavefront.energy_multiplier,
+                                          wavefront.latency_fill_hops*noc_cycle);
     return;
 #endif
 

@@ -187,10 +187,13 @@ void global_buffer_t::account_output_writeback_link() {
     access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
     multi_chip->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_energy[data_type_t::OUTPUT];
 
-    // Serialized NoP link transfer over the GLB<->multi-chip fabric.
-    multi_chip->transfer_cycle[data_type_t::OUTPUT] += multi_chip->u_transfer_cycle*timing.link_transactions;
-    multi_chip->transfer_energy[data_type_t::OUTPUT] += multi_chip->u_transfer_energy*timing.link_transactions;
-    multi_chip->overlapped_transfer_cycle += multi_chip->u_transfer_cycle*timing.link_transactions;
+    // Serialized NoP link transfer over the GLB<->multi-chip fabric. On a mesh NoP the
+    // stream burns per-hop energy and pays this chip's route depth as a one-time fill.
+    const unsigned nop_hops = multi_chip->nop_hops_for_chip(index);
+    const double nop_fill = static_cast<double>(nop_hops - 1)*multi_chip->u_transfer_cycle;
+    multi_chip->transfer_cycle[data_type_t::OUTPUT] += multi_chip->u_transfer_cycle*timing.link_transactions + nop_fill;
+    multi_chip->transfer_energy[data_type_t::OUTPUT] += multi_chip->u_transfer_energy*timing.link_transactions*nop_hops;
+    multi_chip->overlapped_transfer_cycle += multi_chip->u_transfer_cycle*timing.link_transactions + nop_fill;
     multi_chip->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
     multi_chip->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
     multi_chip->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
@@ -1655,8 +1658,14 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     // Initialize the frequency and bandwidth of the separate buffer
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // B12: an explicit 'bitwidth' wins silently; a derived width warns when the
+    // bandwidth/frequency ratio truncates fractionally.
+    unsigned explicit_bitwidth = 0;
+    if(m_section_config.get_setting("bitwidth", &explicit_bitwidth)) {
+        bitwidth = explicit_bitwidth;
+    } else {
+        bitwidth = derived_link_bitwidth("global_buffer", bandwidth, frequency);
+    }
     if(bitwidth == 0) {
         std::cerr << "Error: global_buffer requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
         exit(1);
@@ -1744,6 +1753,23 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     u_write_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_write_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("write_energy", &u_write_energy);
+
+    // GLB bank parallelism (ideal line interleaving): with B banks, B accesses proceed
+    // in parallel, so the effective per-access cycle is u/B across every access path.
+    // Per-access energy is unchanged. Bank conflicts, arbitration, and read/write port
+    // contention are NOT modeled -- this knob covers the conflict-free upper bound.
+    unsigned num_banks = 1;
+    m_section_config.get_setting("num_banks", &num_banks);
+    if(num_banks == 0) {
+        std::cerr << "Error: global_buffer num_banks must be non-zero" << std::endl;
+        exit(1);
+    }
+    if(num_banks > 1) {
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+            u_read_cycle[i] /= num_banks;
+            u_write_cycle[i] /= num_banks;
+        }
+    }
     
     u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -1909,8 +1935,14 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     // Initialize frequency and bandwidth of the shared buffer
     m_section_config.get_setting("frequency", &frequency);
     m_section_config.get_setting("bandwidth", &bandwidth);
-    bitwidth = (frequency > 0.0f) ? static_cast<unsigned>(8*bandwidth/frequency) : 0u;
-    m_section_config.get_setting("bitwidth", &bitwidth);
+    // B12: an explicit 'bitwidth' wins silently; a derived width warns when the
+    // bandwidth/frequency ratio truncates fractionally.
+    unsigned explicit_bitwidth = 0;
+    if(m_section_config.get_setting("bitwidth", &explicit_bitwidth)) {
+        bitwidth = explicit_bitwidth;
+    } else {
+        bitwidth = derived_link_bitwidth("global_buffer", bandwidth, frequency);
+    }
     if(bitwidth == 0) {
         std::cerr << "Error: global_buffer requires a positive link bitwidth (set 'bitwidth' or a positive 'frequency')" << std::endl;
         exit(1);
@@ -1996,6 +2028,23 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     u_write_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_write_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("write_energy", &u_write_energy);
+
+    // GLB bank parallelism (ideal line interleaving): with B banks, B accesses proceed
+    // in parallel, so the effective per-access cycle is u/B across every access path.
+    // Per-access energy is unchanged. Bank conflicts, arbitration, and read/write port
+    // contention are NOT modeled -- this knob covers the conflict-free upper bound.
+    unsigned num_banks = 1;
+    m_section_config.get_setting("num_banks", &num_banks);
+    if(num_banks == 0) {
+        std::cerr << "Error: global_buffer num_banks must be non-zero" << std::endl;
+        exit(1);
+    }
+    if(num_banks > 1) {
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+            u_read_cycle[i] /= num_banks;
+            u_write_cycle[i] /= num_banks;
+        }
+    }
 
     u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);

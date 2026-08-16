@@ -99,7 +99,14 @@ void memory_controller_t::insert_pending_queue(request_t m_request) {
     }
     request_t request;
     request.address = (m_request.address >> mask_bits) << mask_bits, request.is_write = m_request.is_write;
-    if(request.address != pending_queue.back().address) { pending_queue.push_back(request); }
+    // DR4: coalesce only CONSECUTIVE accesses to the same line (a line revisited later
+    // in the stream is a distinct DRAM transaction), distinguish reads from writes,
+    // and guard the first insert -- back() on an empty deque is undefined behavior.
+    if(pending_queue.empty() ||
+       request.address != pending_queue.back().address ||
+       request.is_write != pending_queue.back().is_write) {
+        pending_queue.push_back(request);
+    }
 }
 
 void memory_controller_t::tick() {

@@ -157,6 +157,8 @@ void stats_t::init() {
     // Initialize transfer cycle between PE array and PE (Interconnection)
     transfer_cycle_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_cycle_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    cycle_temporal_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
+    cycle_temporal_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer energy between PE array and PE (Interconnection)
     transfer_energy_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
@@ -569,6 +571,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             // Update transfer cycle from PE array to local buffers
             transfer_cycle_pe_array[j] = std::max(transfer_cycle_pe_array[j], m_pe_array[i]->transfer_cycle[j]);
+            cycle_temporal_pe_array[j] = std::max(cycle_temporal_pe_array[j], m_pe_array[i]->cycle_temporal_pe[j]);
             transfer_energy_pe_array[j] += m_pe_array[i]->transfer_energy[j];
 
             /* Update global buffer stats */
@@ -795,6 +798,7 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
     scale_costs(&access_cycle_pe_array, m_repetitions);
     scale_costs(&access_energy_pe_array, m_repetitions);
     scale_costs(&transfer_cycle_pe_array, m_repetitions);
+    scale_costs(&cycle_temporal_pe_array, m_repetitions);
     scale_costs(&transfer_energy_pe_array, m_repetitions);
 
     scale_counters(&num_request_global_buffer, m_repetitions, "global-buffer request count");
@@ -919,6 +923,7 @@ void stats_t::update_network_stats(stats_t *m_source) {
 
         // Update transfer cost between the PE array and the local buffers
         transfer_cycle_pe_array[i] += m_source->transfer_cycle_pe_array[i];
+        cycle_temporal_pe_array[i] += m_source->cycle_temporal_pe_array[i];
         transfer_energy_pe_array[i] += m_source->transfer_energy_pe_array[i];
 
         /* Update global buffer stats */
@@ -1271,6 +1276,13 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << transfer_cycle_pe_array[data_type_t::WEIGHT] << " cycles" <<  std::endl;
     m_output_file << " * Output data        :" << std::setw(11) << std::setprecision(1) 
                                                << transfer_cycle_pe_array[data_type_t::OUTPUT] << " cycles" <<  std::endl;
+    m_output_file << "Overlapped cycle (temporal buffer)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(11) << std::setprecision(1)
+                                               << cycle_temporal_pe_array[data_type_t::INPUT] << " cycles" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(11) << std::setprecision(1)
+                                               << cycle_temporal_pe_array[data_type_t::WEIGHT] << " cycles" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(11) << std::setprecision(1)
+                                               << cycle_temporal_pe_array[data_type_t::OUTPUT] << " cycles" << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "Energy" << std::endl;

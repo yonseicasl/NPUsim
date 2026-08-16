@@ -411,6 +411,12 @@ void pe_t::init(section_config_t m_section_config) {
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
 
+    // LB4: optional local-buffer leakage, separately sweepable from the MAC-side
+    // `static_energy`. Both accrue over the same layer elapsed window.
+    u_lb_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
+    u_lb_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("lb_static_energy", &u_lb_static_energy);
+
     // Optional format-IP unit costs. Each value is per packed transaction.
     u_format_payload_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     u_format_payload_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -2690,11 +2696,12 @@ void pe_t::update_static_energy(double elapsed_cycles) {
         exit(1);
     }
     for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
-        if(u_static_energy[type] < 0.0) {
-            std::cerr << "Error: PE static_energy must be a non-negative pJ/cycle value" << std::endl;
+        if(u_static_energy[type] < 0.0 || u_lb_static_energy[type] < 0.0) {
+            std::cerr << "Error: PE static_energy/lb_static_energy must be non-negative pJ/cycle values" << std::endl;
             exit(1);
         }
-        static_energy[type] = u_static_energy[type] * elapsed_cycles;
+        // LB4: MAC-side and local-buffer leakage accrue over the same elapsed window.
+        static_energy[type] = (u_static_energy[type] + u_lb_static_energy[type]) * elapsed_cycles;
     }
 }
 
