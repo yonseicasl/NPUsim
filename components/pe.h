@@ -98,6 +98,7 @@ public:
     unsigned output_size;                                   // Output local buffer size
 
     std::vector<bool> bypass;                               // Check if bypass is applied at the local buffer
+    bool edge_accumulation;                                 // V3: outputs accumulate at the array edge; OUTPUT exempt from LB capacity
     unsigned index;                                         // Index of PE in PE array.
 
     std::vector<bool> skip_transfer;                        // Check whether skip data transfer from local buffer to MAC unit

@@ -120,6 +120,7 @@ pe_t::pe_t(section_config_t m_section_config) :
     input_size(0),
     weight_size(0),
     output_size(0),
+    edge_accumulation(false),
     index(0),
     duplicated_input_mac(0),
     duplicated_input_lb(0),
@@ -198,6 +199,10 @@ void pe_t::init(section_config_t m_section_config) {
         std::cerr << "Error: PE buffer sizes must be non-zero" << std::endl;
         exit(1);
     }
+
+    // V3: outputs accumulate at the array edge (Gemmini-style accumulator); the OUTPUT
+    // tile then streams through rather than residing in the local buffer.
+    m_section_config.get_setting("edge_accumulation", &edge_accumulation);
 
     // Initialize the number of elements in each buffer.
     size_t num_input = (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t);
@@ -533,7 +538,8 @@ void pe_t::check_tile_size() {
     if(memory_type == memory_type_t::SEPARATE) {
         if(runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size_lb[data_type_t::INPUT]) > input_size ||
            runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size_lb[data_type_t::WEIGHT]) > weight_size ||
-           runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]) > output_size) {
+           (!edge_accumulation &&
+            runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]) > output_size)) {
             std::cerr << "The data size is bigger than local buffer size\n"
                       << "Input data : " << runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size_lb[data_type_t::INPUT])
                       << " Input buffer : " << input_size << "\t"
@@ -548,6 +554,8 @@ void pe_t::check_tile_size() {
         size_t data_size = 0;
         for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
             const data_type_t type = static_cast<data_type_t>(i);
+            // V3: edge-accumulated outputs do not occupy the local buffer.
+            if(edge_accumulation && type == data_type_t::OUTPUT) continue;
             if(!bypass[type]) {
                 data_size += runtime_datatypes().storage_bytes(type, tile_size_lb[type]);
             }

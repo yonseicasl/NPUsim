@@ -95,6 +95,8 @@ public:
     std::vector<double> access_energy_pe_array;                         // Total access energy to PE array.
     double utilization_pe_array;
     std::vector<double> utilization_pe_array_buffer;                    // PE-array temporal-buffer occupancy per data type.
+    double fold_fill_cycle_pe_array;                                    // V2: weight-residency fold fill + per-layer setup on the compute schedule.
+    double layer_setup_cycle_pe_array;                                  // V2: one-time per-layer setup (added once, after repetition scaling).
 
     std::vector<double> transfer_cycle_pe_array;                        // Total data transfer cycle between PE and PE array.
     std::vector<double> cycle_temporal_pe_array;                        // PA4: PE-array temporal-buffer pipelined-overlap cycle.

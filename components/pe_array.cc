@@ -17,6 +17,10 @@ pe_array_t::pe_array_t(section_config_t /*m_section_config*/) :
     utilization(0.0),
     write_back_cycle(0.0),
     overlapped_transfer_cycle(0.0),
+    u_weight_fold_fill_cycle(0.0),
+    u_layer_setup_cycle(0.0),
+    fold_fill_cycle(0.0),
+    edge_accumulation(false),
     global_buffer(NULL),
     stationary_type(stationary_type_t::UNDEFINED_STATIONARY),
     array_parameter_order("kbpqcrs"),
@@ -102,6 +106,12 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
     static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     buffer_utilization.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+
+    // V2: RTL-calibrated weight-residency fold fill and per-layer setup (default off).
+    m_section_config.get_setting("weight_fold_fill_cycle", &u_weight_fold_fill_cycle);
+    m_section_config.get_setting("layer_setup_cycle", &u_layer_setup_cycle);
+    // V3: array-edge output accumulation (Gemmini-style accumulator).
+    m_section_config.get_setting("edge_accumulation", &edge_accumulation);
 }
 
 // Accumulate leakage energy of the PE-array temporal buffer once for the layer duration.
@@ -143,7 +153,10 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
     const size_t required_input = runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size[data_type_t::INPUT]);
     const size_t required_weight = runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size[data_type_t::WEIGHT]);
     const size_t required_output = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
-    if(required_input > input_size || required_weight > weight_size || required_output > output_size) {
+    // V3: with edge accumulation the output tile lives in the array-edge accumulator
+    // (modeled by the global-buffer output partition), not in the array/PE buffers.
+    if(required_input > input_size || required_weight > weight_size ||
+       (!edge_accumulation && required_output > output_size)) {
         std::cerr << "Error: runtime datatype PE-array tile exceeds temporal-buffer capacity" << std::endl;
         exit(1);
     }
@@ -153,8 +166,10 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
         static_cast<double>(required_input)/static_cast<double>(input_size));
     buffer_utilization[data_type_t::WEIGHT] = std::max(buffer_utilization[data_type_t::WEIGHT],
         static_cast<double>(required_weight)/static_cast<double>(weight_size));
-    buffer_utilization[data_type_t::OUTPUT] = std::max(buffer_utilization[data_type_t::OUTPUT],
-        static_cast<double>(required_output)/static_cast<double>(output_size));
+    if(!edge_accumulation) {
+        buffer_utilization[data_type_t::OUTPUT] = std::max(buffer_utilization[data_type_t::OUTPUT],
+            static_cast<double>(required_output)/static_cast<double>(output_size));
+    }
     for(unsigned type_index = 0; type_index < data_type_t::NUM_DATA_TYPES; ++type_index) {
         const data_type_t type = static_cast<data_type_t>(type_index);
         bool requested = false;
@@ -165,6 +180,15 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
 
         if(!skip_transfer[type] && (type != data_type_t::OUTPUT || global_buffer->transfer_output)) {
             num_data_transfer[type]++;
+            // V2: every array-wide weight residency stalls the compute schedule while the
+            // new weights load down the columns and the previous accumulation drains
+            // (RTL-measured ~DIM+1 cycles/fold on Gemmini). Each per-PE temporal weight
+            // element is one sequential residency, so a distribution event carries
+            // per-PE-weight-tile-size folds.
+            if(type == data_type_t::WEIGHT && u_weight_fold_fill_cycle > 0.0) {
+                fold_fill_cycle += u_weight_fold_fill_cycle
+                                  *static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT]);
+            }
             // PA1: operands shared by several PEs are read from the temporal buffer and
             // streamed over the fabric ONCE -- the array-level tile is the distinct data
             // set, and the fabric multicasts it. Per-destination replication is only the
@@ -196,10 +220,13 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
                 size_t capacity = pes[i]->output_size;
                 if(type == data_type_t::INPUT) capacity = pes[i]->input_size;
                 else if(type == data_type_t::WEIGHT) capacity = pes[i]->weight_size;
-                pes[i]->utilization_local_buffer[type] = std::max(
-                    pes[i]->utilization_local_buffer[type],
-                    static_cast<double>(runtime_datatypes().storage_bytes(type, pes[i]->tile_size_lb[type])) /
-                    static_cast<double>(capacity));
+                // V3: edge-accumulated outputs stream through, so LB occupancy is undefined.
+                if(!(edge_accumulation && type == data_type_t::OUTPUT)) {
+                    pes[i]->utilization_local_buffer[type] = std::max(
+                        pes[i]->utilization_local_buffer[type],
+                        static_cast<double>(runtime_datatypes().storage_bytes(type, pes[i]->tile_size_lb[type])) /
+                        static_cast<double>(capacity));
+                }
                 pes[i]->skip_transfer[type] = false;
             }
 
@@ -482,6 +509,9 @@ void pe_array_t::reset() {
 
     utilization = 0.0;
     write_back_cycle = 0.0, overlapped_transfer_cycle = 0.0;
+    // V2: fold fills accrue per weight residency; the one-time per-layer setup
+    // (u_layer_setup_cycle) is added at the stats level AFTER repetition scaling.
+    fold_fill_cycle = 0.0;
 
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
 

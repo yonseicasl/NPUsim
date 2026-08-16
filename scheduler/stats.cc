@@ -38,6 +38,8 @@ stats_t::stats_t() :
     utilization_mac(0.0),
     total_utilization_local_buffer(0.0),
     utilization_pe_array(0.0),
+    fold_fill_cycle_pe_array(0.0),
+    layer_setup_cycle_pe_array(0.0),
     global_buffer_type(memory_type_t::UNDEFINED_MEMORY),
     total_utilization_global_buffer(0.0),
     utilization_multi_chip(0.0) {
@@ -56,7 +58,10 @@ stats_t::~stats_t() {
 void stats_t::init() {
     
     // Reserve the memory for calculating tile size.
-    tile_size.reserve(component_type_t::NUM_COMPONENT_TYPES);
+    // (Was reserve() + operator[] on an empty outer vector -- undefined behavior that
+    // crashed intermittently depending on allocator state; resize() constructs the
+    // inner vectors first.)
+    tile_size.resize(component_type_t::NUM_COMPONENT_TYPES);
     for(unsigned i = 0; i < component_type_t::NUM_COMPONENT_TYPES; i++) {
         tile_size[i].reserve(data_type_t::NUM_DATA_TYPES);
     }
@@ -608,6 +613,9 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
             utilization_pe_array_buffer[j] = std::max(utilization_pe_array_buffer[j], m_pe_array[i]->buffer_utilization[j]);
         }
+        // V2: fold fill serializes on the compute schedule (max across parallel arrays).
+        fold_fill_cycle_pe_array = std::max(fold_fill_cycle_pe_array, m_pe_array[i]->fold_fill_cycle);
+        layer_setup_cycle_pe_array = std::max(layer_setup_cycle_pe_array, m_pe_array[i]->u_layer_setup_cycle);
     }
 
     // Guard the per-PE averages against a mapping that activates zero PEs (avoids NaN).
@@ -750,7 +758,11 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
         std::cerr << "Error: temporal repetition count must be non-zero" << std::endl;
         exit(1);
     }
-    if(m_repetitions == 1) return;
+    if(m_repetitions == 1) {
+        // V2: the one-time per-layer setup applies regardless of repetition count.
+        fold_fill_cycle_pe_array += layer_setup_cycle_pe_array;
+        return;
+    }
 
     num_computation = scale_counter(num_computation, m_repetitions, "computation count");
     layer_latency *= m_repetitions;
@@ -800,6 +812,9 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
     scale_costs(&transfer_cycle_pe_array, m_repetitions);
     scale_costs(&cycle_temporal_pe_array, m_repetitions);
     scale_costs(&transfer_energy_pe_array, m_repetitions);
+    // V2: fold fill repeats with every global-buffer repetition; the per-layer setup
+    // (config/flush/DMA prologue) is a one-time cost added after scaling.
+    fold_fill_cycle_pe_array = fold_fill_cycle_pe_array*m_repetitions + layer_setup_cycle_pe_array;
 
     scale_counters(&num_request_global_buffer, m_repetitions, "global-buffer request count");
     scale_counters(&num_data_transfer_global_buffer, m_repetitions, "global-buffer transfer count");
@@ -925,6 +940,7 @@ void stats_t::update_network_stats(stats_t *m_source) {
         transfer_cycle_pe_array[i] += m_source->transfer_cycle_pe_array[i];
         cycle_temporal_pe_array[i] += m_source->cycle_temporal_pe_array[i];
         transfer_energy_pe_array[i] += m_source->transfer_energy_pe_array[i];
+        if(i == 0) fold_fill_cycle_pe_array += m_source->fold_fill_cycle_pe_array;
 
         /* Update global buffer stats */
 
@@ -1276,6 +1292,12 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << transfer_cycle_pe_array[data_type_t::WEIGHT] << " cycles" <<  std::endl;
     m_output_file << " * Output data        :" << std::setw(11) << std::setprecision(1) 
                                                << transfer_cycle_pe_array[data_type_t::OUTPUT] << " cycles" <<  std::endl;
+    if(fold_fill_cycle_pe_array > 0.0) {
+        // V2: RTL-calibrated weight-residency fold fill (+ per-layer setup) that serializes
+        // with computation on the array compute schedule.
+        m_output_file << "Fold fill cycle       :" << std::setw(11) << std::setprecision(1)
+                                                   << fold_fill_cycle_pe_array << " cycles" << std::endl;
+    }
     m_output_file << "Overlapped cycle (temporal buffer)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(11) << std::setprecision(1)
                                                << cycle_temporal_pe_array[data_type_t::INPUT] << " cycles" << std::endl;

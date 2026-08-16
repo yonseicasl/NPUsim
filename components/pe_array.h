@@ -132,6 +132,18 @@ public:
     double write_back_cycle;                                //
     double overlapped_transfer_cycle;                       //
 
+    // V2 (RTL-calibrated): per weight-residency fold fill. Each per-PE temporal weight
+    // element is one array-wide residency (fold) in the real WS schedule; every fold
+    // costs u_weight_fold_fill_cycle of load/accumulate-drain bubble on the compute
+    // schedule. u_layer_setup_cycle is a one-time per-layer schedule setup cost.
+    // Both default to 0 (off) so legacy configurations are unchanged.
+    double u_weight_fold_fill_cycle;                        // Cycles per weight-element residency (fold)
+    double u_layer_setup_cycle;                             // One-time per-layer setup cycles
+    double fold_fill_cycle;                                 // Accumulated fold-fill + setup cycles (per layer)
+    // V3: outputs accumulate at the array edge (Gemmini-style accumulator) instead of
+    // residing in per-PE local buffers -- exempt OUTPUT from per-PE/array capacity checks.
+    bool edge_accumulation;
+
     std::vector<double> static_energy;                      // Static (leakage) energy of the PE-array temporal buffer
 
     std::vector<unsigned> line_size;
