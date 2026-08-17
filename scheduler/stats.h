@@ -26,7 +26,13 @@ public:
     void update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<global_buffer_t*> m_global_buffer, multi_chip_t *m_multi_chip, dram_t *m_dram);
 
     // Serially account for identical temporal tiles at or above the global buffer.
-    void scale_serial_repetitions(unsigned m_repetitions);
+    // m_datatype_repetitions: per-datatype GLB repetition factors (see
+    // mapping_table_t::datatype_repetitions) -- off-chip (multi-chip/DRAM) traffic
+    // scales with these instead of the full repetition count, because repetitions
+    // over dimensions a tensor does not depend on revisit tiles the on-chip
+    // buffers retain.
+    void scale_serial_repetitions(unsigned m_repetitions,
+                                  const std::vector<unsigned> &m_datatype_repetitions);
 
     // Update network stats.
     void update_network_stats(stats_t *m_source);

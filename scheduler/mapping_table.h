@@ -21,6 +21,14 @@ public:
 	std::vector<unsigned> get_value(section_config_t m_section_config, std::string m_name);
     // Calculate the parameter size.
     std::vector<unsigned> calculate_parameter_size(component_type_t m_component_type);
+    // Full per-dimension coverage of the mapping: the DRAM-level cumulative product
+    // times the legacy GLB temporal-repetition factors (K/B/P/Q/C/R/S only).
+    std::vector<unsigned> calculate_total_parameter_size();
+    // Per-datatype GLB temporal-repetition factor: the product of only those legacy
+    // GLB loop factors that index the datatype (a repetition over a dimension a
+    // tensor does not depend on revisits the SAME tile, which the on-chip buffers
+    // retain -- off-chip traffic must not scale with it).
+    std::vector<unsigned> datatype_repetitions();
 
     // Calculate the number of tile-granular data 
     void calculate_num_tile_granular_data(component_type_t m_component_type, std::vector<unsigned> *m_tile_granumlar_data);

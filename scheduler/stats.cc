@@ -753,10 +753,17 @@ void scale_costs(std::vector<double> *values, unsigned repetitions) {
 
 } // namespace
 
-void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
+void stats_t::scale_serial_repetitions(unsigned m_repetitions,
+                                       const std::vector<unsigned> &m_datatype_repetitions) {
     if(m_repetitions == 0) {
         std::cerr << "Error: temporal repetition count must be non-zero" << std::endl;
         exit(1);
+    }
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        if(m_datatype_repetitions[i] == 0 || m_datatype_repetitions[i] > m_repetitions) {
+            std::cerr << "Error: per-datatype repetition factor out of range" << std::endl;
+            exit(1);
+        }
     }
     if(m_repetitions == 1) {
         // V2: the one-time per-layer setup applies regardless of repetition count.
@@ -828,27 +835,34 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions) {
     scale_costs(&transfer_energy_global_buffer, m_repetitions);
     scale_costs(&static_energy_global_buffer, m_repetitions);
 
+    // Off-chip traffic scales per datatype: a GLB repetition over a dimension the
+    // tensor does not depend on (e.g. the Q loop for weights) revisits the SAME
+    // tile, which the multi-chip/GLB buffers retain -- only the repetitions that
+    // actually index the tensor re-fetch it. Requests and leakage remain uniform.
     scale_counters(&num_request_multi_chip, m_repetitions, "multi-chip request count");
-    scale_counters(&num_data_transfer_multi_chip, m_repetitions, "multi-chip transfer count");
-    scale_counters(&payload_link_transactions_multi_chip, m_repetitions, "multi-chip payload transactions");
-    scale_counters(&metadata_link_transactions_multi_chip, m_repetitions, "multi-chip metadata transactions");
-    scale_counters(&storage_link_transactions_multi_chip, m_repetitions, "multi-chip storage transactions");
-    scale_costs(&access_cycle_multi_chip, m_repetitions);
-    scale_costs(&access_energy_multi_chip, m_repetitions);
-    scale_costs(&transfer_cycle_multi_chip, m_repetitions);
-    scale_costs(&transfer_energy_multi_chip, m_repetitions);
-    scale_costs(&static_energy_multi_chip, m_repetitions);
-
     scale_counters(&num_request_dram, m_repetitions, "DRAM request count");
-    scale_counters(&num_data_transfer_dram, m_repetitions, "DRAM transfer count");
-    scale_counters(&payload_link_transactions_dram, m_repetitions, "DRAM payload transactions");
-    scale_counters(&metadata_link_transactions_dram, m_repetitions, "DRAM metadata transactions");
-    scale_counters(&storage_link_transactions_dram, m_repetitions, "DRAM storage transactions");
-    scale_costs(&access_cycle_dram, m_repetitions);
-    scale_costs(&access_energy_dram, m_repetitions);
-    scale_costs(&cycle_chip_dram, m_repetitions);
-    scale_costs(&transfer_cycle_dram, m_repetitions);
-    scale_costs(&transfer_energy_dram, m_repetitions);
+    scale_costs(&static_energy_multi_chip, m_repetitions);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        const unsigned repetitions = m_datatype_repetitions[i];
+        num_data_transfer_multi_chip[i] = scale_counter(num_data_transfer_multi_chip[i], repetitions, "multi-chip transfer count");
+        payload_link_transactions_multi_chip[i] = scale_counter(payload_link_transactions_multi_chip[i], repetitions, "multi-chip payload transactions");
+        metadata_link_transactions_multi_chip[i] = scale_counter(metadata_link_transactions_multi_chip[i], repetitions, "multi-chip metadata transactions");
+        storage_link_transactions_multi_chip[i] = scale_counter(storage_link_transactions_multi_chip[i], repetitions, "multi-chip storage transactions");
+        access_cycle_multi_chip[i] *= repetitions;
+        access_energy_multi_chip[i] *= repetitions;
+        transfer_cycle_multi_chip[i] *= repetitions;
+        transfer_energy_multi_chip[i] *= repetitions;
+
+        num_data_transfer_dram[i] = scale_counter(num_data_transfer_dram[i], repetitions, "DRAM transfer count");
+        payload_link_transactions_dram[i] = scale_counter(payload_link_transactions_dram[i], repetitions, "DRAM payload transactions");
+        metadata_link_transactions_dram[i] = scale_counter(metadata_link_transactions_dram[i], repetitions, "DRAM metadata transactions");
+        storage_link_transactions_dram[i] = scale_counter(storage_link_transactions_dram[i], repetitions, "DRAM storage transactions");
+        access_cycle_dram[i] *= repetitions;
+        access_energy_dram[i] *= repetitions;
+        cycle_chip_dram[i] *= repetitions;
+        transfer_cycle_dram[i] *= repetitions;
+        transfer_energy_dram[i] *= repetitions;
+    }
 }
 
 void stats_t::update_network_stats(stats_t *m_source) {

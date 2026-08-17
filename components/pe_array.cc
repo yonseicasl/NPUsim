@@ -307,7 +307,7 @@ unsigned pe_array_t::get_number_of_active_pes() { return num_active_pe_x*num_act
 
 // A signal that checks whether the PE array is idle state or not.
 bool pe_array_t::is_idle() {
-    bool idle;
+    bool idle = true;
     for(unsigned i = 0; i < get_number_of_active_pes(); i++) {
         idle = pes[i]->is_idle();
         if(idle == false) {break;}

@@ -157,6 +157,48 @@ void mapping_table_t::calculate_num_tile_granular_data(component_type_t m_compon
 
 }
 
+std::vector<unsigned> mapping_table_t::calculate_total_parameter_size() {
+    std::vector<unsigned> parameters = calculate_parameter_size(component_type_t::DRAM);
+    for(unsigned j = 0; j < 7; j++) {
+        parameters[j] = checked_multiply(parameters[j], legacy_global_buffer_mapping[j],
+                                         "total parameter size");
+    }
+    return parameters;
+}
+
+std::vector<unsigned> mapping_table_t::datatype_repetitions() {
+    const std::vector<unsigned> &glb = legacy_global_buffer_mapping;
+    std::vector<unsigned> repetitions(data_type_t::NUM_DATA_TYPES, 1);
+    // DR5 group convention (mirrors calculate_active_component): a legacy K entry
+    // spans ALL groups and the row product is divided by GROUP. Hence K-bearing
+    // factor sets (weight, output) divide by GROUP -- distinct chunks are (g, K/G)
+    // -- while INPUT (no K) iterates once per group and multiplies by it.
+    const unsigned group = glb[parameter_type_t::GROUP] ? glb[parameter_type_t::GROUP] : 1;
+    repetitions[data_type_t::INPUT] = checked_multiply(
+        checked_multiply(glb[parameter_type_t::BATCH_SIZE], glb[parameter_type_t::INPUT_CHANNEL], "input repetitions"),
+        checked_multiply(glb[parameter_type_t::OUTPUT_HEIGHT],
+                         checked_multiply(glb[parameter_type_t::OUTPUT_WIDTH], group, "input repetitions"),
+                         "input repetitions"),
+        "input repetitions");
+    repetitions[data_type_t::WEIGHT] = checked_multiply(
+        checked_multiply(glb[parameter_type_t::OUTPUT_CHANNEL], glb[parameter_type_t::INPUT_CHANNEL], "weight repetitions"),
+        checked_multiply(glb[parameter_type_t::FILTER_HEIGHT], glb[parameter_type_t::FILTER_WIDTH], "weight repetitions"),
+        "weight repetitions");
+    repetitions[data_type_t::OUTPUT] = checked_multiply(
+        checked_multiply(glb[parameter_type_t::OUTPUT_CHANNEL], glb[parameter_type_t::BATCH_SIZE], "output repetitions"),
+        checked_multiply(glb[parameter_type_t::OUTPUT_HEIGHT], glb[parameter_type_t::OUTPUT_WIDTH], "output repetitions"),
+        "output repetitions");
+    if(group > 1) {
+        if(repetitions[data_type_t::WEIGHT] % group || repetitions[data_type_t::OUTPUT] % group) {
+            std::cerr << "Error: grouped legacy GLB mapping requires K-bearing factor products divisible by GROUP" << std::endl;
+            exit(1);
+        }
+        repetitions[data_type_t::WEIGHT] /= group;
+        repetitions[data_type_t::OUTPUT] /= group;
+    }
+    return repetitions;
+}
+
 // Calculate the number of active components (i.e., MAC, PE, Chips)
 unsigned mapping_table_t::calculate_active_component(component_type_t m_component_type) {
     const std::vector<unsigned> &component_mapping =

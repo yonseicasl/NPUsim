@@ -304,7 +304,38 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
 
                 scheduler = schedulers[index];
                 const unsigned global_buffer_repetitions = scheduler->mapping_table->calculate_active_component(component_type_t::GLOBAL_BUFFER);
-                
+
+                // Spatial-padding guard: mapping factor products may exceed the layer
+                // dimensions (silicon-style padding, e.g. Eyeriss computes 55 output
+                // columns as 7x8 = 56), but that padding -- or an accidental
+                // under-coverage -- must be visible, not silent.
+                {
+                    const std::vector<unsigned> mapped =
+                        scheduler->mapping_table->calculate_total_parameter_size();
+                    // Connected layers fold the input volume into a flat C dimension.
+                    const unsigned layer_c =
+                        (scheduler->layer_name == layer_name_t::CONNECTED_LAYER)
+                            ? layer->input_size : layer->input_channel;
+                    const struct { const char *name; unsigned mapped_size; unsigned layer_size; } dims[] = {
+                        {"K", mapped[parameter_type_t::OUTPUT_CHANNEL], layer->output_channel},
+                        {"P", mapped[parameter_type_t::OUTPUT_HEIGHT], layer->output_height},
+                        {"Q", mapped[parameter_type_t::OUTPUT_WIDTH], layer->output_width},
+                        {"C", mapped[parameter_type_t::INPUT_CHANNEL], layer_c},
+                    };
+                    for(const auto &dim : dims) {
+                        if(dim.layer_size == 0) continue;
+                        if(dim.mapped_size > dim.layer_size) {
+                            std::cerr << "Warning: layer " << index << " mapping pads " << dim.name
+                                      << " from " << dim.layer_size << " to " << dim.mapped_size
+                                      << " (padded work is charged as compute)" << std::endl;
+                        } else if(dim.mapped_size < dim.layer_size) {
+                            std::cerr << "Warning: layer " << index << " mapping covers only "
+                                      << dim.mapped_size << " of " << dim.layer_size << " in " << dim.name
+                                      << " (layer is partially simulated)" << std::endl;
+                        }
+                    }
+                }
+
                 print_network_configuration(index);
                 reset();
                 update_tile_size();
@@ -331,7 +362,8 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     request_to_pe_array();
                 }
                 layer_stats[index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
-                layer_stats[index]->scale_serial_repetitions(global_buffer_repetitions);
+                layer_stats[index]->scale_serial_repetitions(global_buffer_repetitions,
+                    scheduler->mapping_table->datatype_repetitions());
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
                 //dram->disconnect_layer();
 			}
