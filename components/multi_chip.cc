@@ -420,10 +420,12 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
         metadata_link_transactions[type] += timing.metadata_link_transactions;
         storage_link_transactions[type] += timing.link_transactions;
         access_energy[type] += timing.source_accesses*u_read_energy[type];
-        chips[i]->access_energy[type] += timing.destination_accesses*chips[i]->u_write_energy[type];
+        // GLB fill (write) side: separate accumulator so it can scale with the
+        // per-datatype off-chip supply it mirrors (not the full GLB repetition).
+        chips[i]->fill_access_energy[type] += timing.destination_accesses*chips[i]->u_write_energy[type];
         if(!chips[i]->double_buffer) {
             access_cycle[type] += timing.source_accesses*u_read_cycle[type];
-            chips[i]->access_cycle[type] += timing.destination_accesses*chips[i]->u_write_cycle[type];
+            chips[i]->fill_access_cycle[type] += timing.destination_accesses*chips[i]->u_write_cycle[type];
         }
         // R2: routed-unicast mesh -- each chip's stream burns per-hop energy per
         // transaction and pays its Manhattan route depth as a one-time pipeline fill
@@ -438,8 +440,9 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
         }
         if(exist_temporal_buffer) {
             cycle_temporal_chips[type] += pipelined_transfer_cycles(
-                static_cast<unsigned>(timing.pipeline_transactions),
-                u_read_cycle[type], nop_cycle, chips[i]->u_write_cycle[type]) + hop_fill;
+                timing.source_accesses, u_read_cycle[type],
+                timing.link_transactions, nop_cycle,
+                timing.destination_accesses, chips[i]->u_write_cycle[type]) + hop_fill;
         }
         chips[i]->skip_transfer[type] = false;
     }
@@ -452,6 +455,32 @@ unsigned multi_chip_t::get_bitwidth() {
 unsigned multi_chip_t::nop_hops_for_chip(unsigned chip_index) const {
     if(nop_type != noc_type_t::MESH) return 1;
     return nop_route_hops(chip_index, width);
+}
+
+void multi_chip_t::account_output_writeback_to_dram() {
+    dram->num_request[data_type_t::OUTPUT]++;
+
+    const datatype_transfer_timing_t timing = datatype_transfer_timing(
+        data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
+        dram->line_size[data_type_t::OUTPUT], dram->get_bitwidth());
+    access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+    access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
+    dram->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
+    dram->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_energy[data_type_t::OUTPUT];
+    dram->cycle_chip_dram[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
+    dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
+    dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
+    dram->account_row_activations(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
+    dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
+    dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
+}
+
+// DR6: the in-loop write-back fires on output-tile changes, so the LAST resident
+// tile of the live pass never stores. Charged once at layer end, before repetition
+// scaling, so each repetition's final tile is covered as well.
+void multi_chip_t::flush_output_writeback() {
+    account_output_writeback_to_dram();
 }
 
 void multi_chip_t::request_data() {
@@ -499,22 +528,7 @@ void multi_chip_t::request_data() {
                 // MC3: charge the DRAM write-back only when an actual write-back occurs.
                 // On the initial pass, or when the output tile already matches DRAM's (no
                 // eviction), no data is stored, so its cost must not be counted.
-                dram->num_request[data_type_t::OUTPUT]++;
-
-                const datatype_transfer_timing_t timing = datatype_transfer_timing(
-                    data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
-                    dram->line_size[data_type_t::OUTPUT], dram->get_bitwidth());
-                access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
-                access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
-                dram->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
-                dram->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_energy[data_type_t::OUTPUT];
-                dram->cycle_chip_dram[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
-                dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
-                dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
-                dram->account_row_activations(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
-                dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
-                dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
-                dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
+                account_output_writeback_to_dram();
             }
             else {
                 initial = 0;

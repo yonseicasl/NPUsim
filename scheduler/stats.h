@@ -31,6 +31,10 @@ public:
     // scales with these instead of the full repetition count, because repetitions
     // over dimensions a tensor does not depend on revisit tiles the on-chip
     // buffers retain.
+    void merge_global_buffer_fill();
+    // CE1/CE2/CE4: recompute stage busy, critical path, bottleneck inputs, leakage
+    // window, and MAC availability from the FINAL (repetition-scaled) cycle vectors.
+    void finalize_layer_timeline();
     void scale_serial_repetitions(unsigned m_repetitions,
                                   const std::vector<unsigned> &m_datatype_repetitions);
 
@@ -44,6 +48,13 @@ public:
        segment-combined critical-path latency (overlap at double-buffered boundaries). */
     double layer_latency;
     double busy_cycle_pe;
+    // CE7: per-stage busy composition (0=DRAM,1=multi-chip,2=GLB,3=PE array,4=PE).
+    double stage_axis_access[5];
+    double stage_axis_link[5];
+    double stage_axis_overlap[5];
+    double stage_axis_compute;                 // PE compute schedule incl. fold fill (CE2)
+    bool timeline_boundary_overlap[4];         // stage-boundary overlap flags captured pre-scale
+    double timeline_physical_macs;             // physical scalar MACs for availability
     double busy_cycle_pe_array;
     double busy_cycle_global_buffer;
     double busy_cycle_multi_chip;
@@ -121,6 +132,8 @@ public:
     std::vector<size_t> storage_link_transactions_global_buffer;
 
     std::vector<double> access_cycle_global_buffer;                     // Total access cycle to global buffer.
+    std::vector<double> fill_access_cycle_global_buffer;               // mc->GLB fill (write) side; scaled per datatype.
+    std::vector<double> fill_access_energy_global_buffer;
     std::vector<double> access_energy_global_buffer;                    // Total access energy to global buffer.
     std::vector<double> cycle_pe_array_global_buffer;                   // Overlapped cycle between the global buffer and the PE array
     std::vector<double> utilization_global_buffer;                      // Global buffer utilization

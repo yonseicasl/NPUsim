@@ -229,11 +229,19 @@ void validate_spatial_interconnect_contract() {
        !has_valid_active_shape(4, 8, 4, 8) ||
        has_valid_active_shape(4, 8, 5, 8) ||
        has_valid_active_shape(4, 8, 4, 9) ||
-       // (transactions, source, link, dest). One transaction has no overlap: source+link+dest
-       // (=8, not the pre-fix 5+max(5,1)+2=12). N>=2 pipelines the stages.
+       // (transactions, source, link, dest). One transaction has no overlap: source+link+dest.
+       // CE5: N>=2 uses the ideal makespan src+link+dst+(N-1)*max -- (4,5,1,2)=8+3*5=23
+       // (the pre-fix double-max formula gave 24), symmetric for any bottleneck stage.
        pipelined_transfer_cycles(0, 5.0, 1.0, 2.0) != 0.0 ||
        pipelined_transfer_cycles(1, 5.0, 1.0, 2.0) != 8.0 ||
-       pipelined_transfer_cycles(4, 5.0, 1.0, 2.0) != 24.0 ||
+       pipelined_transfer_cycles(4, 5.0, 1.0, 2.0) != 23.0 ||
+       pipelined_transfer_cycles(4, 1.0, 5.0, 2.0) != 23.0 ||
+       pipelined_transfer_cycles(4, 2.0, 1.0, 5.0) != 23.0 ||
+       // CE5 count-aware overload: a 256b source line feeding a 32b link/destination
+       // makes 1 source access but 8 link/destination tokens -- each stage services
+       // its own count: 5+1+2 + max(0, 7*1, 7*2) = 22.
+       pipelined_transfer_cycles(size_t(1), 5.0, size_t(8), 1.0, size_t(8), 2.0) != 22.0 ||
+       pipelined_transfer_cycles(size_t(4), 5.0, size_t(4), 1.0, size_t(4), 2.0) != 23.0 ||
        static_energy_for_cycles(2.5, 4.0) != 10.0) {
         fail("spatial interconnect timing contract");
     }

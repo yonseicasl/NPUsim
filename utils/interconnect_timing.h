@@ -18,6 +18,11 @@ bool is_valid_memory_line_bits(size_t width_bits);
 // the empty case is 0.
 double pipelined_transfer_cycles(unsigned transactions, double source_stage,
                                  double link_stage, double destination_stage);
+// Count-aware overload for width-mismatched endpoints: each stage services its own
+// transaction count (CE5).
+double pipelined_transfer_cycles(size_t source_transactions, double source_stage,
+                                 size_t link_transactions, double link_stage,
+                                 size_t destination_transactions, double destination_stage);
 
 // Unit static energy is expressed in pJ/cycle.
 double static_energy_for_cycles(double unit_energy, double elapsed_cycles);

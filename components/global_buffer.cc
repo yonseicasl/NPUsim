@@ -151,8 +151,12 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
     storage_link_transactions[type] += timing.link_transactions;
     access_cycle[type] += timing.source_accesses*u_read_cycle[type];
     access_energy[type] += timing.source_accesses*u_read_energy[type];
-    pe_array->access_cycle[type] += timing.destination_accesses*pe_array->u_write_cycle[type];
-    pe_array->access_energy[type] += timing.destination_accesses*pe_array->u_write_energy[type];
+    // A pass-through PE array (no temporal buffer) imposes no buffer write cost;
+    // the stream lands directly in the PE local buffers.
+    if(pe_array->exist_temporal_buffer) {
+        pe_array->access_cycle[type] += timing.destination_accesses*pe_array->u_write_cycle[type];
+        pe_array->access_energy[type] += timing.destination_accesses*pe_array->u_write_energy[type];
+    }
     transfer_cycle[type] += timing.link_transactions*u_transfer_cycle;
     transfer_energy[type] += timing.link_transactions*u_transfer_energy;
     if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
@@ -160,8 +164,9 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
         exit(1);
     }
     cycle_pe_array_global_buffer[type] += pipelined_transfer_cycles(
-        static_cast<unsigned>(timing.pipeline_transactions),
-        u_read_cycle[type], u_transfer_cycle, pe_array->u_write_cycle[type]);
+        timing.source_accesses, u_read_cycle[type],
+        timing.link_transactions, u_transfer_cycle,
+        timing.destination_accesses, pe_array->u_write_cycle[type]);
     pe_array->skip_transfer[type] = false;
 }
 
@@ -1105,6 +1110,8 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
         /* Stats */
 
 #else
+#if 0
+        /* Legacy host-address timing path: replaced by descriptor accounting above. */
         if(!skip_transfer[data_type_t::WEIGHT]) {
             num_data_transfer[data_type_t::WEIGHT]++;
 
@@ -1215,6 +1222,7 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                 move_front(&m_scheduler->weight_offset_global_buffer);
             }
         }
+#endif
 #endif
         /* Stats */
 
@@ -1583,7 +1591,11 @@ void global_buffer_t::update_static_energy(double elapsed_cycles) {
 double global_buffer_t::modeled_elapsed_cycles() const {
     double elapsed = std::max(write_back_cycle, overlapped_transfer_cycle);
     for(unsigned type = 0; type < data_type_t::NUM_DATA_TYPES; ++type) {
-        elapsed = std::max(elapsed, access_cycle[type]);
+        // Reads (serving the array) and fill writes (from the multi-chip) may
+        // serialize on the SRAM port, so the busy axis is their sum. Charging the
+        // fill here pre-scaling also keeps busy >= final per-type access totals:
+        // the fill later scales by a per-datatype factor <= the uniform factor.
+        elapsed = std::max(elapsed, access_cycle[type] + fill_access_cycle[type]);
         elapsed = std::max(elapsed, transfer_cycle[type]);
         elapsed = std::max(elapsed, cycle_pe_array_global_buffer[type]);
     }
@@ -1608,6 +1620,8 @@ void global_buffer_t::reset() {
     storage_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     access_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     access_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     cycle_pe_array_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -1794,6 +1808,8 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     // Initialize the total access cycle
     access_cycle.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize the total access energy
     access_energy.reserve(data_type_t::NUM_DATA_TYPES);
@@ -2068,6 +2084,8 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     // Initialize the access cycle 
     access_cycle.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize the access energy.
     access_energy.reserve(data_type_t::NUM_DATA_TYPES);

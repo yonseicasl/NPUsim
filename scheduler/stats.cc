@@ -188,6 +188,15 @@ void stats_t::init() {
     // Initialize access cycle of the global buffer
     access_cycle_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_cycle_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    fill_access_energy_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    for(unsigned s = 0; s < 5; ++s) {
+        stage_axis_access[s] = stage_axis_link[s] = stage_axis_overlap[s] = 0.0;
+    }
+    stage_axis_compute = 0.0;
+    timeline_boundary_overlap[0] = timeline_boundary_overlap[1] = false;
+    timeline_boundary_overlap[2] = timeline_boundary_overlap[3] = true;
+    timeline_physical_macs = 0.0;
 
     // Initialize access energy of the global buffer
     access_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
@@ -464,6 +473,10 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
                                        global_buffer_double_buffer,   // multi-chip | GLB
                                        true,                          // GLB | PE array (same stream)
                                        true};                         // PE array | PE (same stream)
+    // CE1: keep the boundary contract and MAC capacity for the post-scaling
+    // timeline recomputation (finalize_layer_timeline).
+    for(unsigned b = 0; b < 4; ++b) timeline_boundary_overlap[b] = boundary_overlaps[b];
+    timeline_physical_macs = static_cast<double>(physical_scalar_macs);
     layer_latency = 0.0;
     double segment = stage_busy[0];
     for(unsigned b = 0; b < 4; ++b) {
@@ -489,6 +502,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     m_multi_chip->update_static_energy(layer_latency);
 
     unsigned num_active_pe = 0;
+    bool first_active_pe = true;   // CE6: MIN counters initialize once across ALL chips
     for(unsigned i = 0; i < m_multi_chip->get_number_of_active_chips(); i++) {
         for(unsigned j = 0; j < m_pe_array[i]->get_number_of_active_pes(); j++) {
             /* Update PE stats */
@@ -499,7 +513,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             computation_cycle = std::max(computation_cycle, m_pe_array[i]->pes[j]->computation_cycle);
 
             max_computation_cycle = std::max(max_computation_cycle, m_pe_array[i]->pes[j]->computation_cycle);
-            min_computation_cycle = (j == 0) ? m_pe_array[i]->pes[j]->computation_cycle : std::min(min_computation_cycle, m_pe_array[i]->pes[j]->computation_cycle);
+            min_computation_cycle = first_active_pe ? m_pe_array[i]->pes[j]->computation_cycle : std::min(min_computation_cycle, m_pe_array[i]->pes[j]->computation_cycle);
             avg_computation_cycle += m_pe_array[i]->pes[j]->computation_cycle;
 
             // Update computation energy
@@ -520,7 +534,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
                 access_cycle_mac[k] = std::max(access_cycle_mac[k], m_pe_array[i]->pes[j]->access_cycle_mac[k]);
                 
                 max_access_cycle_mac[k] = std::max(max_access_cycle_mac[k], m_pe_array[i]->pes[j]->access_cycle_mac[k]);
-                min_access_cycle_mac[k] = (j == 0) ? m_pe_array[i]->pes[j]->access_cycle_mac[k] : std::min(min_access_cycle_mac[k], m_pe_array[i]->pes[j]->access_cycle_mac[k]);
+                min_access_cycle_mac[k] = first_active_pe ? m_pe_array[i]->pes[j]->access_cycle_mac[k] : std::min(min_access_cycle_mac[k], m_pe_array[i]->pes[j]->access_cycle_mac[k]);
                 avg_access_cycle_mac[k] += m_pe_array[i]->pes[j]->access_cycle_mac[k];
 
                 // Update access energy of the computing units
@@ -530,7 +544,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
                 access_cycle_lb[k] = std::max(access_cycle_lb[k], m_pe_array[i]->pes[j]->access_cycle_lb[k]);
 
                 max_access_cycle_lb[k] = std::max(max_access_cycle_lb[k], m_pe_array[i]->pes[j]->access_cycle_lb[k]);
-                min_access_cycle_lb[k] = (j == 0) ? m_pe_array[i]->pes[j]->access_cycle_lb[k] : std::min(min_access_cycle_lb[k], m_pe_array[i]->pes[j]->access_cycle_lb[k]);
+                min_access_cycle_lb[k] = first_active_pe ? m_pe_array[i]->pes[j]->access_cycle_lb[k] : std::min(min_access_cycle_lb[k], m_pe_array[i]->pes[j]->access_cycle_lb[k]);
                 avg_access_cycle_lb[k] += m_pe_array[i]->pes[j]->access_cycle_lb[k];
 
                 // Update access energy of the local buffer
@@ -556,6 +570,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             local_buffer_type = m_pe_array[i]->pes[j]->get_memory_type();
 
             num_active_pe++;
+            first_active_pe = false;
         }
 
         for(unsigned j = 0; j < data_type_t::NUM_DATA_TYPES; j++) {
@@ -596,6 +611,8 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             // Update access cost to the global buffer
             access_cycle_global_buffer[j] = std::max(access_cycle_global_buffer[j], m_global_buffer[i]->access_cycle[j]);
             access_energy_global_buffer[j] += m_global_buffer[i]->access_energy[j];
+            fill_access_cycle_global_buffer[j] = std::max(fill_access_cycle_global_buffer[j], m_global_buffer[i]->fill_access_cycle[j]);
+            fill_access_energy_global_buffer[j] += m_global_buffer[i]->fill_access_energy[j];
 
             // Update transfer cost between the global buffer to the PE array
             transfer_cycle_global_buffer[j] = std::max(transfer_cycle_global_buffer[j], m_global_buffer[i]->transfer_cycle[j]);
@@ -768,6 +785,8 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     if(m_repetitions == 1) {
         // V2: the one-time per-layer setup applies regardless of repetition count.
         fold_fill_cycle_pe_array += layer_setup_cycle_pe_array;
+        merge_global_buffer_fill();
+        finalize_layer_timeline();
         return;
     }
 
@@ -862,6 +881,102 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
         cycle_chip_dram[i] *= repetitions;
         transfer_cycle_dram[i] *= repetitions;
         transfer_energy_dram[i] *= repetitions;
+
+        // GLB fill (write) side mirrors the off-chip supply, so it scales with the
+        // same per-datatype factor before folding into the GLB access totals.
+        fill_access_cycle_global_buffer[i] *= repetitions;
+        fill_access_energy_global_buffer[i] *= repetitions;
+    }
+    merge_global_buffer_fill();
+    finalize_layer_timeline();
+}
+
+// CE1/CE2/CE4: the live pass ran one GLB repetition; scaling multiplied the cycle
+// vectors per datatype and added fold/setup. Stage busy and the critical path must
+// come from those FINAL vectors, not from a uniform blow-up of the pre-scale state.
+// CE4 combination rule: a single physical link/port serializes the datatype
+// streams (sum across types); separate per-type partitions serve them concurrently
+// (max across types).
+void stats_t::finalize_layer_timeline() {
+    auto sum_types = [](const std::vector<double> &values) {
+        double total = 0.0;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) total += values[i];
+        return total;
+    };
+    auto max_types = [](const std::vector<double> &values) {
+        double peak = 0.0;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) peak = std::max(peak, values[i]);
+        return peak;
+    };
+    // DRAM: one device/channel and one off-chip link.
+    stage_axis_access[0] = sum_types(access_cycle_dram);
+    stage_axis_link[0] = sum_types(transfer_cycle_dram);
+    stage_axis_overlap[0] = sum_types(cycle_chip_dram);
+    // Multi-chip: one NoP fabric.
+    stage_axis_access[1] = sum_types(access_cycle_multi_chip);
+    stage_axis_link[1] = sum_types(transfer_cycle_multi_chip);
+    stage_axis_overlap[1] = 0.0;
+    // GLB: a shared SRAM serializes the three streams; separate partitions do not.
+    stage_axis_access[2] = (global_buffer_type == memory_type_t::SHARED)
+        ? sum_types(access_cycle_global_buffer) : max_types(access_cycle_global_buffer);
+    stage_axis_link[2] = sum_types(transfer_cycle_global_buffer);
+    stage_axis_overlap[2] = sum_types(cycle_pe_array_global_buffer);
+    // PE array: one temporal buffer and one distribution fabric.
+    stage_axis_access[3] = sum_types(access_cycle_pe_array);
+    stage_axis_link[3] = sum_types(transfer_cycle_pe_array);
+    stage_axis_overlap[3] = sum_types(cycle_temporal_pe_array);
+    // PE: the compute schedule serializes with fold fill and setup (CE2); the local
+    // buffer combines per its memory type; MAC<->LB is one per-PE bus.
+    stage_axis_compute = computation_cycle + fold_fill_cycle_pe_array;
+    stage_axis_access[4] = (local_buffer_type == memory_type_t::SHARED)
+        ? sum_types(access_cycle_lb) : max_types(access_cycle_lb);
+    stage_axis_link[4] = sum_types(transfer_cycle_pe);
+    stage_axis_overlap[4] = sum_types(cycle_mac_lb);
+
+    busy_cycle_dram = std::max(stage_axis_access[0], std::max(stage_axis_link[0], stage_axis_overlap[0]));
+    busy_cycle_multi_chip = std::max(stage_axis_access[1], std::max(stage_axis_link[1], stage_axis_overlap[1]));
+    busy_cycle_global_buffer = std::max(stage_axis_access[2], std::max(stage_axis_link[2], stage_axis_overlap[2]));
+    busy_cycle_pe_array = std::max(stage_axis_access[3], std::max(stage_axis_link[3], stage_axis_overlap[3]));
+    busy_cycle_pe = std::max(std::max(stage_axis_compute, stage_axis_access[4]),
+                             std::max(stage_axis_link[4], stage_axis_overlap[4]));
+
+    const double stage_busy[5] = {busy_cycle_dram, busy_cycle_multi_chip,
+                                  busy_cycle_global_buffer, busy_cycle_pe_array, busy_cycle_pe};
+    double final_latency = 0.0;
+    double segment = stage_busy[0];
+    for(unsigned b = 0; b < 4; ++b) {
+        if(timeline_boundary_overlap[b]) {
+            segment = std::max(segment, stage_busy[b + 1]);
+        } else {
+            final_latency += segment;
+            segment = stage_busy[b + 1];
+        }
+    }
+    final_latency += segment;
+
+    // Leakage accrued linearly over the uniform-scaled pre-recompute latency;
+    // rescale it to the final window.
+    if(layer_latency > 0.0 && final_latency != layer_latency) {
+        const double leakage_scale = final_latency/layer_latency;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+            static_energy_pe[i] *= leakage_scale;
+            static_energy_pe_array[i] *= leakage_scale;
+            static_energy_global_buffer[i] *= leakage_scale;
+            static_energy_multi_chip[i] *= leakage_scale;
+        }
+    }
+    layer_latency = final_latency;
+    mac_available_cycle = timeline_physical_macs*layer_latency;
+    utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
+    utilization_mac = std::min(1.0, utilization_mac);
+}
+
+void stats_t::merge_global_buffer_fill() {
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        access_cycle_global_buffer[i] += fill_access_cycle_global_buffer[i];
+        access_energy_global_buffer[i] += fill_access_energy_global_buffer[i];
+        fill_access_cycle_global_buffer[i] = 0.0;
+        fill_access_energy_global_buffer[i] = 0.0;
     }
 }
 
@@ -1027,6 +1142,12 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     // A1: shared analytical timeline -- critical-path latency and per-level busy
     // ratios. The bottleneck level identifies compute- vs memory-bound execution.
     m_output_file << "============ Layer timeline =============" << std::endl;
+    // CE3 contract: "Compute-schedule latency" (computation + fold fill/setup) is the
+    // validated official metric (Gemmini RTL / Eyeriss silicon golden gates).
+    // "Critical-path latency" is the memory-inclusive analytical timeline
+    // (informational; reflects config unit costs, not externally validated).
+    m_output_file << "Compute-schedule latency :" << std::setw(11) << std::setprecision(1)
+                                                  << stage_axis_compute << " cycles (validated metric)" << std::endl;
     m_output_file << "Critical-path latency :" << std::setw(11) << std::setprecision(1)
                                                << layer_latency << " cycles" << std::endl;
     const char *stage_names[5] = {"DRAM", "Multi-chip (NoP)", "Global buffer", "PE array", "PE (compute+LB)"};
@@ -1043,6 +1164,15 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     }
     m_output_file << "Bottleneck level      :" << std::setw(17)
                                                << stage_names[bottleneck] << std::endl;
+    // CE7: the axes each stage busy was computed from (busy = max of its axes;
+    // the PE stage additionally includes the compute schedule above).
+    m_output_file << "Busy-cycle axes (access / link / overlap)" << std::endl;
+    for(unsigned s = 0; s < 5; ++s) {
+        m_output_file << " * " << std::left << std::setw(19) << stage_names[s] << std::right
+                      << ":" << std::setw(11) << std::setprecision(1) << stage_axis_access[s]
+                      << " /" << std::setw(11) << stage_axis_link[s]
+                      << " /" << std::setw(11) << stage_axis_overlap[s] << " cycles" << std::endl;
+    }
     m_output_file << std::endl;
 
     /* PE result */
@@ -1405,6 +1535,13 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << access_energy_global_buffer[data_type_t::WEIGHT] << " pJ" << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
                                                << access_energy_global_buffer[data_type_t::OUTPUT] << " pJ" << std::endl;
+    m_output_file << "Interconnection energy" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << transfer_energy_global_buffer[data_type_t::INPUT] << " pJ" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << transfer_energy_global_buffer[data_type_t::WEIGHT] << " pJ" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << transfer_energy_global_buffer[data_type_t::OUTPUT] << " pJ" << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
@@ -1471,7 +1608,7 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << std::endl;
    
     m_output_file << "=========== Multi chip result ===========" << std::endl;
-    m_output_file << "# of data transfer to global buffers" << std::endl;
+    m_output_file << "# of data transfer to global buffers (loads)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18) 
                                                << num_data_transfer_multi_chip[data_type_t::INPUT] << std::endl;
     m_output_file << " * Weight             :" << std::setw(18) 
@@ -1531,7 +1668,7 @@ void stats_t::print_results(std::ofstream &m_output_file) {
 
 #ifndef DRAMSIM3
     m_output_file << "============== DRAM result ==============" << std::endl;
-    m_output_file << "# of data transfer multi chip" << std::endl;
+    m_output_file << "# of data transfer to multi chip (loads)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18)
                                                << num_data_transfer_dram[data_type_t::INPUT] << std::endl;
     m_output_file << " * Weight             :" << std::setw(18) 

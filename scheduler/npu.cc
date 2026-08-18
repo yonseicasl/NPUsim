@@ -361,6 +361,8 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     // Request data from PEs to PE array.
                     request_to_pe_array();
                 }
+                // DR6: store the layer's final resident output tile.
+                multi_chip->flush_output_writeback();
                 layer_stats[index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
                 layer_stats[index]->scale_serial_repetitions(global_buffer_repetitions,
                     scheduler->mapping_table->datatype_repetitions());

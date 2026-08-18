@@ -122,6 +122,10 @@ public:
     std::vector<size_t> storage_link_transactions;
 
     std::vector<double> access_cycle;                       // Total access cycles to the global buffer
+    // Fill (multi-chip -> GLB write) side, kept separate so off-chip supply can be
+    // repetition-scaled per datatype like the DRAM traffic it mirrors.
+    std::vector<double> fill_access_cycle;
+    std::vector<double> fill_access_energy;
     std::vector<double> access_energy;                      // Total access energies to the global buffer
 
     std::vector<double> cycle_pe_array_global_buffer;       // Total cycle between PE array and global buffer

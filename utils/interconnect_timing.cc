@@ -70,14 +70,34 @@ spatial_noc_cost_t spatial_noc_cost(noc_type_t topology,
 double pipelined_transfer_cycles(unsigned transactions, double source_stage,
                                  double link_stage, double destination_stage) {
     if(transactions == 0) return 0.0;
-    // A single transaction fills and drains with no overlap: source -> link -> destination.
-    if(transactions == 1) return source_stage + link_stage + destination_stage;
-    const double second_stage      = std::max(source_stage, link_stage);
-    const double other_stage       = std::max(source_stage, std::max(link_stage, destination_stage));
-    const double last_before_stage = std::max(link_stage, destination_stage);
-    return source_stage + second_stage +
-           static_cast<double>(transactions - 2)*other_stage +
-           last_before_stage + destination_stage;
+    // CE5: ideal 3-stage pipeline makespan -- one fill through every stage, then
+    // the slowest stage issues the remaining transactions back to back.
+    const double slowest = std::max(source_stage, std::max(link_stage, destination_stage));
+    return source_stage + link_stage + destination_stage +
+           static_cast<double>(transactions - 1)*slowest;
+}
+
+// CE5: stage transaction counts may differ when the source line, link width, and
+// destination line differ -- each stage works its OWN count; the makespan is one
+// fill through every stage plus the bottleneck stage's remaining service time.
+double pipelined_transfer_cycles(size_t source_transactions, double source_stage,
+                                 size_t link_transactions, double link_stage,
+                                 size_t destination_transactions, double destination_stage) {
+    if(source_transactions == 0 && link_transactions == 0 && destination_transactions == 0) return 0.0;
+    double fill = 0.0, bottleneck = 0.0;
+    if(source_transactions > 0) {
+        fill += source_stage;
+        bottleneck = std::max(bottleneck, static_cast<double>(source_transactions - 1)*source_stage);
+    }
+    if(link_transactions > 0) {
+        fill += link_stage;
+        bottleneck = std::max(bottleneck, static_cast<double>(link_transactions - 1)*link_stage);
+    }
+    if(destination_transactions > 0) {
+        fill += destination_stage;
+        bottleneck = std::max(bottleneck, static_cast<double>(destination_transactions - 1)*destination_stage);
+    }
+    return fill + bottleneck;
 }
 
 

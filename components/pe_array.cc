@@ -200,8 +200,12 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
             payload_link_transactions[type] += shared.payload_link_transactions;
             metadata_link_transactions[type] += shared.metadata_link_transactions;
             storage_link_transactions[type] += shared.link_transactions;
-            access_cycle[type] += shared.source_accesses*u_read_cycle[type];
-            access_energy[type] += shared.source_accesses*u_read_energy[type];
+            // Reading the distributed tile out of the array temporal buffer only
+            // costs cycles/energy when that buffer exists (pass-through otherwise).
+            if(exist_temporal_buffer) {
+                access_cycle[type] += shared.source_accesses*u_read_cycle[type];
+                access_energy[type] += shared.source_accesses*u_read_energy[type];
+            }
             // SP1/SY2: hops pipeline, so the route depth is a one-time fill per stream.
             transfer_cycle[type] += shared.link_transactions*link_cycle + link_fill_cycles;
             transfer_energy[type] += shared.link_transactions*link_energy;
@@ -238,8 +242,9 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
             }
             if(exist_temporal_buffer) {
                 cycle_temporal_pe[type] += pipelined_transfer_cycles(
-                    static_cast<unsigned>(pipeline_transactions),
-                    u_read_cycle[type], link_cycle, destination_write_cycle) + link_fill_cycles;
+                    shared.source_accesses, u_read_cycle[type],
+                    shared.link_transactions, link_cycle,
+                    max_destination_accesses, destination_write_cycle) + link_fill_cycles;
             }
         }
         for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
@@ -264,9 +269,13 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
     source_pe->access_cycle_lb[data_type_t::OUTPUT] += timing.source_accesses*source_pe->u_read_cycle_lb[data_type_t::OUTPUT];
     source_pe->access_energy_lb[data_type_t::OUTPUT] += timing.source_accesses*source_pe->u_read_energy_lb[data_type_t::OUTPUT];
     source_pe->write_back_cycle_lb += timing.source_accesses*source_pe->u_read_cycle_lb[data_type_t::OUTPUT];
-    access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
-    access_energy[data_type_t::OUTPUT] += timing.destination_accesses*u_write_energy[data_type_t::OUTPUT];
-    write_back_cycle += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
+    // A pass-through array (no temporal buffer) adds no buffer write on the
+    // write-back path; outputs stream from the PE LBs straight toward the GLB.
+    if(exist_temporal_buffer) {
+        access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
+        access_energy[data_type_t::OUTPUT] += timing.destination_accesses*u_write_energy[data_type_t::OUTPUT];
+        write_back_cycle += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
+    }
     // PA5/SP1: apply the NoC topology cost to the output write-back too, mirroring the
     // distribution path -- per-hop energy per transaction, and the route depth as a
     // one-time pipeline fill (0 for single-hop fabrics, so BUS/S&F/crossbar unchanged).
@@ -281,8 +290,9 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
     }
     if(exist_temporal_buffer) {
         cycle_temporal_pe[data_type_t::OUTPUT] += pipelined_transfer_cycles(
-            static_cast<unsigned>(timing.pipeline_transactions),
-            source_pe->u_read_cycle_lb[data_type_t::OUTPUT], noc_cycle, u_write_cycle[data_type_t::OUTPUT]) + link_fill_cycles;
+            timing.source_accesses, source_pe->u_read_cycle_lb[data_type_t::OUTPUT],
+            timing.link_transactions, noc_cycle,
+            timing.destination_accesses, u_write_cycle[data_type_t::OUTPUT]) + link_fill_cycles;
     }
 }
 
@@ -435,12 +445,15 @@ void pe_array_t::request_data() {
                 // double-buffered, matching the load-path convention (multi_chip.cc
                 // distribution gates on the destination's flag). Energy is always charged.
                 if(!global_buffer->double_buffer) {
-                    access_cycle[data_type_t::OUTPUT] += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
-                    write_back_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                    if(exist_temporal_buffer) {
+                        access_cycle[data_type_t::OUTPUT] += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                        write_back_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                    }
                     global_buffer->access_cycle[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
                     global_buffer->write_back_cycle += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
                 }
-                access_energy[data_type_t::OUTPUT] += pe_array_lines*u_read_energy[data_type_t::OUTPUT];
+                if(exist_temporal_buffer)
+                    access_energy[data_type_t::OUTPUT] += pe_array_lines*u_read_energy[data_type_t::OUTPUT];
                 global_buffer->access_energy[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_energy[data_type_t::OUTPUT];
 
                 global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*link_transactions;

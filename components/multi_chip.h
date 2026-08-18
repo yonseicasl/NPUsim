@@ -66,6 +66,12 @@ public:
     void fill_data();
     // Request data to Global buffer.
     void request_data();
+    // DR6: charge the layer's final output tile write-back to DRAM (the in-loop
+    // write-back only fires on tile CHANGES, so the last resident tile of the
+    // live pass is otherwise never stored).
+    void flush_output_writeback();
+    // Shared accounting for one multi-chip -> DRAM output tile write-back.
+    void account_output_writeback_to_dram();
     // Transfer the data each PE.
     void data_transfer(scheduler_t *m_scheduler);
     // Flush data at temporal buffer in PE array.

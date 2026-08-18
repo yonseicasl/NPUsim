@@ -691,8 +691,9 @@ void pe_t::account_descriptor_dense_mac_transfer(data_type_t type, size_t elemen
         exit(1);
     }
     cycle_mac_lb[type] += pipelined_transfer_cycles(
-        static_cast<unsigned>(timing.pipeline_transactions),
-        source_cycle, u_transfer_cycle, destination_cycle);
+        timing.source_accesses, source_cycle,
+        timing.link_transactions, u_transfer_cycle,
+        timing.destination_accesses, destination_cycle);
 }
 
 // Transfer data from local buffer to MAC unit.

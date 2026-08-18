@@ -225,8 +225,9 @@ void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
     }
     if(multi_chip->exist_temporal_buffer) {
         cycle_chip_dram[type] += pipelined_transfer_cycles(
-            static_cast<unsigned>(timing.pipeline_transactions),
-            u_read_cycle[type], u_transfer_cycle, multi_chip->u_write_cycle[type]);
+            timing.source_accesses, u_read_cycle[type],
+            timing.link_transactions, u_transfer_cycle,
+            timing.destination_accesses, multi_chip->u_write_cycle[type]);
     }
     multi_chip->skip_transfer[type] = false;
 }

@@ -28,7 +28,7 @@ _NPUsim_ is an architecture-oriented modeling framework in which accelerator com
 - Multi-chip object counts and active mapping dimensions are validated against physical capacity before execution.
 - `configs/` is the authoritative configuration root. Files formerly copied under `models/` are not used by `npusim.sh run`.
 - Included accelerator and mapping files are configuration assets, not calibration evidence. Transformer mappings do not currently imply end-to-end Transformer execution support.
-- There is no committed golden output or paper/hardware calibration dataset yet. Do not treat uncalibrated totals as validated reference results.
+- Committed Gemmini RTL and Eyeriss silicon timing references provide calibrated latency checks for their documented configurations. Memory-traffic and energy values remain uncalibrated unless a result explicitly says otherwise.
 
 ## Prerequisites
 NPUsim requires g++ to compile C++ code.
@@ -91,7 +91,7 @@ Run the dependency-free validation suite before submitting a change:
 
 It parses all committed accelerator/network/mapping files, checks accelerator component cardinality and multi-chip dimensions, exercises strict parser failure cases, and checks build/run script regressions. GitHub Actions also runs this suite with AddressSanitizer and UndefinedBehaviorSanitizer.
 
-This suite does not replace an end-to-end golden-result comparison, full simulator sanitizer run, functional comparison against PyTorch/Nebula, or latency/energy calibration. Those require the external dependencies and reference datasets and remain future validation work.
+The dependency-backed timing suite (`./unittest/run_timing_validation.sh`) reruns the calibrated Gemmini and Eyeriss workloads, and `./unittest/run_full_sanitizers.sh` smoke-tests the complete simulator with ASan and UBSan. These checks still do not establish functional correctness, sparse execution, general energy calibration, or accuracy outside the documented validation configurations.
 
 ## Reference and Contact
 To reference NPUsim, please use our ModSim workshop white paper.
