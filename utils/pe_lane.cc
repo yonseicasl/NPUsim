@@ -32,6 +32,11 @@ double lane_reduction_fill_cycles(unsigned mac_width, double unit_cycle) {
     return std::ceil(std::log2(static_cast<double>(mac_width))) * unit_cycle;
 }
 
+double lane_reduction_energy(unsigned mac_width, double unit_energy) {
+    if(mac_width <= 1) return 0.0;
+    return static_cast<double>(mac_width - 1) * unit_energy;
+}
+
 double calculate_time_based_mac_utilization(double busy_scalar_mac_cycles,
                                             double available_scalar_mac_cycles) {
     if(busy_scalar_mac_cycles < 0.0 || available_scalar_mac_cycles <= 0.0) return 0.0;

@@ -135,6 +135,23 @@ void dram_t::init(section_config_t m_section_config) {
     }
     row_buffer_bytes = static_cast<size_t>(row_buffer_kb*1024.0);
 
+    // P4-1/DR2: optional JEDEC tRC=tRAS+tRP timing and bank-level parallelism.
+    // Defaults (0, 0, 1) reproduce today's flat-cost, fully-serial behavior exactly.
+    t_ras_cycle = 0.0;
+    t_rp_cycle = 0.0;
+    num_banks = 1;
+    m_section_config.get_setting("t_ras_cycle", &t_ras_cycle);
+    m_section_config.get_setting("t_rp_cycle", &t_rp_cycle);
+    m_section_config.get_setting("num_banks", &num_banks);
+    if(t_ras_cycle < 0.0 || t_rp_cycle < 0.0) {
+        std::cerr << "Error: dram tRAS/tRP must be non-negative" << std::endl;
+        exit(1);
+    }
+    if(num_banks == 0) {
+        std::cerr << "Error: dram num_banks must be non-zero" << std::endl;
+        exit(1);
+    }
+
     // Initialize DRAM unit read cycle
     u_read_cycle.reserve(data_type_t::NUM_DATA_TYPES);
     u_read_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -191,14 +208,22 @@ bool dram_t::is_idle() {
     return done;
 }
 
-// DR2: charge the row activations of one dense sequential stream. This is an
-// open-page approximation -- random/strided access patterns and bank-level effects
-// are not modeled (use DRAMSIM3 for cycle-accurate DRAM).
+// DR2/P4-1: charge the row activations of one dense sequential stream. This is an
+// open-page approximation -- random/strided access patterns and per-request bank
+// conflicts are not modeled (use DRAMSIM3 for cycle-accurate DRAM); row misses are
+// assumed evenly spread round-robin across num_banks independent banks.
 void dram_t::account_row_activations(data_type_t type, size_t elements) {
     if(row_buffer_bytes == 0 || elements == 0) return;
     const size_t stream_bytes = runtime_datatypes().storage_bytes(type, elements);
     const size_t row_misses = (stream_bytes + row_buffer_bytes - 1)/row_buffer_bytes;
-    transfer_cycle[type] += static_cast<double>(row_misses)*u_row_miss_cycle;
+    // JEDEC tRC = tRAS + tRP row-cycle time, when calibrated, replaces the flat
+    // row_miss_cycle per-activation cost. Cycles benefit from bank parallelism (the
+    // busiest of num_banks banks serializes ceil(row_misses/num_banks) activations);
+    // energy does not -- every activation costs energy regardless of overlap.
+    const double row_activation_cycle = (t_ras_cycle > 0.0 && t_rp_cycle > 0.0)
+        ? t_ras_cycle + t_rp_cycle : u_row_miss_cycle;
+    const size_t busiest_bank_misses = (row_misses + num_banks - 1)/num_banks;
+    transfer_cycle[type] += static_cast<double>(busiest_bank_misses)*row_activation_cycle;
     transfer_energy[type] += static_cast<double>(row_misses)*u_row_miss_energy;
 }
 

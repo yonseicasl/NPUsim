@@ -77,27 +77,56 @@ double pipelined_transfer_cycles(unsigned transactions, double source_stage,
            static_cast<double>(transactions - 1)*slowest;
 }
 
-// CE5: stage transaction counts may differ when the source line, link width, and
-// destination line differ -- each stage works its OWN count; the makespan is one
-// fill through every stage plus the bottleneck stage's remaining service time.
+namespace {
+// Streaming makespan of up to three stages that are known to overlap (fill once
+// through every active stage, then the bottleneck stage issues its remaining
+// transactions back to back). Valid only when downstream counts are non-decreasing
+// (fan-out from a single upstream unit); callers must not mix stages across a
+// fan-in barrier into one stream() call.
+double stream_cycles(size_t a_count, double a_stage, size_t b_count, double b_stage,
+                     size_t c_count, double c_stage) {
+    double fill = 0.0, bottleneck = 0.0;
+    if(a_count > 0) { fill += a_stage; bottleneck = std::max(bottleneck, static_cast<double>(a_count - 1)*a_stage); }
+    if(b_count > 0) { fill += b_stage; bottleneck = std::max(bottleneck, static_cast<double>(b_count - 1)*b_stage); }
+    if(c_count > 0) { fill += c_stage; bottleneck = std::max(bottleneck, static_cast<double>(c_count - 1)*c_stage); }
+    return fill + bottleneck;
+}
+} // namespace
+
+// CE5/width-conversion: stage transaction counts may differ when the source line,
+// link width, and destination line differ -- each stage works its OWN count. A
+// boundary where the downstream count is SMALLER than its upstream count is an
+// assemble/disassemble point (e.g. 32 narrow 8b source reads packed into 1 wide
+// 256b link transaction): every one of the upstream transactions must land before
+// the single downstream transaction can fire, so that boundary cannot overlap and
+// the two sides' costs sum instead of streaming together. A boundary where the
+// downstream count is >= the upstream count is ordinary fan-out and streams as
+// before (one fill through both stages, then the bottleneck stage's remainder).
 double pipelined_transfer_cycles(size_t source_transactions, double source_stage,
                                  size_t link_transactions, double link_stage,
                                  size_t destination_transactions, double destination_stage) {
     if(source_transactions == 0 && link_transactions == 0 && destination_transactions == 0) return 0.0;
-    double fill = 0.0, bottleneck = 0.0;
-    if(source_transactions > 0) {
-        fill += source_stage;
-        bottleneck = std::max(bottleneck, static_cast<double>(source_transactions - 1)*source_stage);
+
+    const bool assemble_barrier = source_transactions > 0 && link_transactions > 0 &&
+                                  link_transactions < source_transactions;
+    const bool disassemble_barrier = link_transactions > 0 && destination_transactions > 0 &&
+                                     destination_transactions < link_transactions;
+
+    if(!assemble_barrier && !disassemble_barrier) {
+        return stream_cycles(source_transactions, source_stage, link_transactions, link_stage,
+                             destination_transactions, destination_stage);
     }
-    if(link_transactions > 0) {
-        fill += link_stage;
-        bottleneck = std::max(bottleneck, static_cast<double>(link_transactions - 1)*link_stage);
+    if(assemble_barrier && !disassemble_barrier) {
+        return stream_cycles(source_transactions, source_stage, 0, 0.0, 0, 0.0) +
+               stream_cycles(link_transactions, link_stage, destination_transactions, destination_stage, 0, 0.0);
     }
-    if(destination_transactions > 0) {
-        fill += destination_stage;
-        bottleneck = std::max(bottleneck, static_cast<double>(destination_transactions - 1)*destination_stage);
+    if(!assemble_barrier && disassemble_barrier) {
+        return stream_cycles(source_transactions, source_stage, link_transactions, link_stage, 0, 0.0) +
+               stream_cycles(destination_transactions, destination_stage, 0, 0.0, 0, 0.0);
     }
-    return fill + bottleneck;
+    return stream_cycles(source_transactions, source_stage, 0, 0.0, 0, 0.0) +
+           stream_cycles(link_transactions, link_stage, 0, 0.0, 0, 0.0) +
+           stream_cycles(destination_transactions, destination_stage, 0, 0.0, 0, 0.0);
 }
 
 
@@ -118,6 +147,20 @@ datatype_transfer_timing_t datatype_transfer_timing(data_type_t type, size_t ele
                                                      timing.link_transactions));
     return timing;
 }
+double temporal_pipeline_run_cycles(unsigned tiles, const std::vector<double> &stage_totals) {
+    if(stage_totals.empty()) return 0.0;
+    if(tiles <= 1) {
+        return *std::max_element(stage_totals.begin(), stage_totals.end());
+    }
+    double fill = 0.0, peak_per_tile = 0.0;
+    for(double total : stage_totals) {
+        const double per_tile = total/static_cast<double>(tiles);
+        fill += per_tile;
+        peak_per_tile = std::max(peak_per_tile, per_tile);
+    }
+    return fill + static_cast<double>(tiles - 1)*peak_per_tile;
+}
+
 double static_energy_for_cycles(double unit_energy, double elapsed_cycles) {
     return unit_energy * elapsed_cycles;
 }

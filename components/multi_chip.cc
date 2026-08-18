@@ -411,20 +411,33 @@ void multi_chip_t::fill_data() {
     }
 }
 
-void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
+void multi_chip_t::account_descriptor_dense_distribution(data_type_t type, size_t distinct_chunks) {
     num_data_transfer[type]++;
+    // P2-3 NoP multicast/source sharing: chip i's tile is a fresh, distinct chunk
+    // only the first time its (i % distinct_chunks) index appears -- i.e. for
+    // i < distinct_chunks -- exactly mirroring the i % {type}_offset_multi_chip.size()
+    // wraparound the functional data-movement path already uses to decide whether
+    // chip i shares chip 0's tile. A broadcast datatype (distinct_chunks == 1, e.g. a
+    // weight tile that doesn't depend on the CHIPS_X/CHIPS_Y-split dimension) pays its
+    // shared source read once instead of once per active chip; each chip's own link
+    // delivery and destination-buffer write remain per-chip (still physically real).
     for(unsigned i = 0; i < get_number_of_active_chips(); ++i) {
         const datatype_transfer_timing_t timing = datatype_transfer_timing(
             type, chips[i]->tile_size[type], line_size[type], chips[i]->line_size[type], bitwidth);
         payload_link_transactions[type] += timing.payload_link_transactions;
         metadata_link_transactions[type] += timing.metadata_link_transactions;
         storage_link_transactions[type] += timing.link_transactions;
-        access_energy[type] += timing.source_accesses*u_read_energy[type];
+        const bool fresh_chunk = i < distinct_chunks;
+        if(fresh_chunk) {
+            access_energy[type] += timing.source_accesses*u_read_energy[type];
+        }
         // GLB fill (write) side: separate accumulator so it can scale with the
         // per-datatype off-chip supply it mirrors (not the full GLB repetition).
         chips[i]->fill_access_energy[type] += timing.destination_accesses*chips[i]->u_write_energy[type];
         if(!chips[i]->double_buffer) {
-            access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+            if(fresh_chunk) {
+                access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+            }
             chips[i]->fill_access_cycle[type] += timing.destination_accesses*chips[i]->u_write_cycle[type];
         }
         // R2: routed-unicast mesh -- each chip's stream burns per-hop energy per
@@ -440,7 +453,7 @@ void multi_chip_t::account_descriptor_dense_distribution(data_type_t type) {
         }
         if(exist_temporal_buffer) {
             cycle_temporal_chips[type] += pipelined_transfer_cycles(
-                timing.source_accesses, u_read_cycle[type],
+                fresh_chunk ? timing.source_accesses : static_cast<size_t>(0), u_read_cycle[type],
                 timing.link_transactions, nop_cycle,
                 timing.destination_accesses, chips[i]->u_write_cycle[type]) + hop_fill;
         }
@@ -561,7 +574,8 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
     if(request_to_multi_chip_input) {
 #ifndef FUNCTIONAL
         if(!skip_transfer[data_type_t::INPUT]) {
-            account_descriptor_dense_distribution(data_type_t::INPUT);
+            account_descriptor_dense_distribution(data_type_t::INPUT,
+                std::max<size_t>(1, m_scheduler->input_offset_multi_chip.size()));
         }
 #endif
 #ifdef FUNCTIONAL
@@ -1091,7 +1105,8 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
     if(request_to_multi_chip_weight) {
 #ifndef FUNCTIONAL
         if(!skip_transfer[data_type_t::WEIGHT]) {
-            account_descriptor_dense_distribution(data_type_t::WEIGHT);
+            account_descriptor_dense_distribution(data_type_t::WEIGHT,
+                std::max<size_t>(1, m_scheduler->weight_offset_multi_chip.size()));
         }
 #endif
 #ifdef FUNCTIONAL
@@ -1629,7 +1644,8 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
 
 #ifndef FUNCTIONAL
             if(dram->transfer_output) {
-                account_descriptor_dense_distribution(data_type_t::OUTPUT);
+                account_descriptor_dense_distribution(data_type_t::OUTPUT,
+                    std::max<size_t>(1, m_scheduler->output_offset_multi_chip.size()));
             }
 #else
             if(dram->transfer_output) {

@@ -142,6 +142,13 @@ void global_buffer_t::request_data() {
 }
 
 void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
+    // GLB bypass = direct stream: a bypassed datatype flows straight from the source
+    // to the PE array without an intervening GLB stage, so none of the GLB-side
+    // access/transfer accounting below applies to it.
+    if(bypass[type]) {
+        pe_array->skip_transfer[type] = false;
+        return;
+    }
     const datatype_transfer_timing_t timing = datatype_transfer_timing(
         type, pe_array->tile_size[type], line_size[type], pe_array->line_size[type], bitwidth);
 
@@ -163,10 +170,15 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
         std::cerr << "Error: global buffer pipeline transaction count overflow" << std::endl;
         exit(1);
     }
+    // A pass-through PE array has no temporal-buffer write stage (see above): drop the
+    // destination leg from the overlap pipeline too, so cycle_pe_array_global_buffer
+    // doesn't charge for a stage that doesn't exist.
+    const size_t destination_transactions = pe_array->exist_temporal_buffer ? timing.destination_accesses : 0;
+    const double destination_stage = pe_array->exist_temporal_buffer ? pe_array->u_write_cycle[type] : 0.0;
     cycle_pe_array_global_buffer[type] += pipelined_transfer_cycles(
         timing.source_accesses, u_read_cycle[type],
         timing.link_transactions, u_transfer_cycle,
-        timing.destination_accesses, pe_array->u_write_cycle[type]);
+        destination_transactions, destination_stage);
     pe_array->skip_transfer[type] = false;
 }
 
@@ -177,6 +189,9 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
 // counts, so the off-chip output store no longer reports zero timing/energy and no
 // longer depends on host-pointer address granularity.
 void global_buffer_t::account_output_writeback_link() {
+    // GLB bypass = direct stream: a bypassed OUTPUT flows straight from the PE array
+    // to multi-chip without an intervening GLB write-back stage.
+    if(bypass[data_type_t::OUTPUT]) return;
     const datatype_transfer_timing_t timing = datatype_transfer_timing(
         data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
         multi_chip->line_size[data_type_t::OUTPUT], multi_chip->get_bitwidth());

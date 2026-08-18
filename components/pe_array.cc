@@ -276,10 +276,12 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
         access_energy[data_type_t::OUTPUT] += timing.destination_accesses*u_write_energy[data_type_t::OUTPUT];
         write_back_cycle += timing.destination_accesses*u_write_cycle[data_type_t::OUTPUT];
     }
-    // PA5/SP1: apply the NoC topology cost to the output write-back too, mirroring the
-    // distribution path -- per-hop energy per transaction, and the route depth as a
-    // one-time pipeline fill (0 for single-hop fabrics, so BUS/S&F/crossbar unchanged).
-    const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
+    // PA5/SP1/SY2: apply the NoC topology cost to the output write-back too, mirroring
+    // the distribution path -- per-hop energy per transaction, and the route depth as
+    // a one-time pipeline fill (0 for single-hop fabrics, so BUS/S&F/crossbar
+    // unchanged). writeback_noc_type() lets a systolic array force the same MESH
+    // diameter treatment its load path already uses (see pe_array.h).
+    const spatial_noc_cost_t topology_cost = spatial_noc_cost(writeback_noc_type(), num_active_pe_y, num_active_pe_x);
     const double topology_energy = noc_energy*topology_cost.energy_multiplier;
     const double link_fill_cycles = topology_cost.latency_fill_hops*noc_cycle;
     transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*noc_cycle + link_fill_cycles;

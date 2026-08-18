@@ -99,6 +99,7 @@ public:
 
     std::vector<bool> bypass;                               // Check if bypass is applied at the local buffer
     bool edge_accumulation;                                 // V3: outputs accumulate at the array edge; OUTPUT exempt from LB capacity
+    bool double_buffer;                                     // LB7: single-buffered LB serializes tile load against compute; default true (overlap)
     unsigned index;                                         // Index of PE in PE array.
 
     std::vector<bool> skip_transfer;                        // Check whether skip data transfer from local buffer to MAC unit
@@ -125,6 +126,10 @@ public:
 
     double u_computation_cycle;                             // The unit MAC cycle
     double u_computation_energy;                            // The unit MAC energy
+    // P4-2/PE2: unit energy of one lane->accumulator adder-tree addition (see
+    // lane_reduction_energy()). Defaults to 0 (no-op) until a config calibrates it,
+    // mirroring adder_tree_t's u_adder_energy convention.
+    double u_mac_reduction_energy;
 
     double u_transfer_cycle;                                // The unit data transfer cycle between MAC and local buffer
     double u_transfer_energy;                               // The unit data transfer energy between MAC and local buffer

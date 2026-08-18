@@ -2,6 +2,7 @@
 #define __INTERCONNECT_TIMING_H__
 
 #include <cstddef>
+#include <vector>
 #include "def.h"
 
 // Timing-only contracts shared by interconnect hierarchy components.
@@ -23,6 +24,20 @@ double pipelined_transfer_cycles(unsigned transactions, double source_stage,
 double pipelined_transfer_cycles(size_t source_transactions, double source_stage,
                                  size_t link_transactions, double link_stage,
                                  size_t destination_transactions, double destination_stage);
+
+// P3: streaming-pipeline makespan of a set of stage-busy TOTALS that overlap over
+// the SAME `tiles` temporal repetitions (e.g. GLB/PE-array/PE all continuously
+// processing the same GLB-repetition count). PRECONDITION: every value in
+// stage_totals must scale at the SAME repetition rate as `tiles` -- do not mix a
+// stage whose total scales per-datatype (e.g. DRAM/multi-chip access cycles, which
+// scale with a per-datatype repetition factor, not the uniform GLB-repetition count)
+// into one call with stages that scale uniformly by `tiles`, or the derived per-tile
+// costs are meaningless. With <=1 tile there is nothing to pipeline against (no tile
+// i+1 for an upstream stage to work on while a downstream stage handles tile i), so
+// this degenerates to the existing flat max() -- NOT merely a conservative choice:
+// the general formula collapses to a flat SUM at tiles<=1, which would silently
+// contradict an "these stages overlap" boundary.
+double temporal_pipeline_run_cycles(unsigned tiles, const std::vector<double> &stage_totals);
 
 // Unit static energy is expressed in pJ/cycle.
 double static_energy_for_cycles(double unit_energy, double elapsed_cycles);

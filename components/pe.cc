@@ -121,12 +121,14 @@ pe_t::pe_t(section_config_t m_section_config) :
     weight_size(0),
     output_size(0),
     edge_accumulation(false),
+    double_buffer(true),
     index(0),
     duplicated_input_mac(0),
     duplicated_input_lb(0),
     /* Unit stats */
     u_computation_cycle(0.0),
     u_computation_energy(0.0),
+    u_mac_reduction_energy(0.0),
     u_transfer_cycle(0.0),
     u_transfer_energy(0.0),
     /* Accelerator stats */
@@ -203,6 +205,11 @@ void pe_t::init(section_config_t m_section_config) {
     // V3: outputs accumulate at the array edge (Gemmini-style accumulator); the OUTPUT
     // tile then streams through rather than residing in the local buffer.
     m_section_config.get_setting("edge_accumulation", &edge_accumulation);
+
+    // LB7: a single-buffered local buffer can't overlap the next tile's load with the
+    // current tile's compute. Defaults to true (the model's original always-overlap
+    // behavior) so existing configs are unaffected unless they opt into single_buffer.
+    m_section_config.get_setting("double_buffer", &double_buffer);
 
     // Initialize the number of elements in each buffer.
     size_t num_input = (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t);
@@ -373,6 +380,8 @@ void pe_t::init(section_config_t m_section_config) {
     // Initialize the MAC unit cycle and energy.
     m_section_config.get_setting("computation_cycle", &u_computation_cycle);
     m_section_config.get_setting("computation_energy", &u_computation_energy);
+    // P4-2/PE2: unit energy of one lane->accumulator adder-tree addition.
+    m_section_config.get_setting("mac_reduction_energy", &u_mac_reduction_energy);
 
     // Initialize the transfer cycle/energy between PE and MAC unit and local buffer.
     m_section_config.get_setting("transfer_cycle_pe", &u_transfer_cycle);
@@ -2805,6 +2814,7 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
         }
         computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
 
         exist_data_mac[data_type_t::INPUT] = false, request_to_lb[data_type_t::INPUT] = true;
         exist_data_mac[data_type_t::WEIGHT] = false, request_to_lb[data_type_t::WEIGHT] = true;
@@ -2871,6 +2881,7 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -2879,6 +2890,7 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
                 }
             }
 #else
@@ -2888,6 +2900,7 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
 #endif
         } else {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
@@ -3075,6 +3088,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -3083,6 +3097,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
                 }
             }
 #else
@@ -3092,6 +3107,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
 #endif
         }
         else {
@@ -3282,6 +3298,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -3290,6 +3307,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
                 }
             }
 #else
@@ -3299,6 +3317,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(mac_width, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
 
 #endif
         }

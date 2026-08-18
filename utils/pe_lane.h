@@ -21,6 +21,14 @@ double accumulate_issue_cycles(size_t issue_steps, double unit_cycle);
 // per-FMA energy. Width 1 has no reduction.
 double lane_reduction_fill_cycles(unsigned mac_width, double unit_cycle);
 
+// P4-2/PE2: energy of the same lane->accumulator reduction. Unlike the cycle fill
+// (pipeline DEPTH, ceil(log2(width)) stages), energy is proportional to the total
+// WORK done -- a standard N-leaf binary adder tree performs N-1 additions
+// regardless of depth (mirrors adder_tree_reduction_cost()'s num_additions
+// convention). Defaults to a no-op unless a config calibrates unit_energy > 0.
+// Width 1 has no reduction.
+double lane_reduction_energy(unsigned mac_width, double unit_energy);
+
 double calculate_time_based_mac_utilization(double busy_scalar_mac_cycles,
                                             double available_scalar_mac_cycles);
 

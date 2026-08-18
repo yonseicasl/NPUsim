@@ -87,6 +87,16 @@ public:
     size_t row_buffer_bytes;
     double u_row_miss_cycle;
     double u_row_miss_energy;
+    // P4-1/DR2: optional JEDEC tRC=tRAS+tRP row-cycle timing and bank-level
+    // parallelism. When t_ras_cycle/t_rp_cycle are both calibrated (>0), tRC replaces
+    // the flat u_row_miss_cycle as the per-activation cost. num_banks (>=1, default 1)
+    // amortizes row misses round-robin across independent banks -- an idealized
+    // even-spread assumption, since this analytical model has no per-request address
+    // to determine which specific bank a real access would conflict on. All default
+    // to today's fully-serial, flat-cost behavior (num_banks=1, tRAS=tRP=0).
+    double t_ras_cycle;
+    double t_rp_cycle;
+    unsigned num_banks;
     // Charge the row activations of one dense stream (used by load and write-back).
     void account_row_activations(data_type_t type, size_t elements);
 

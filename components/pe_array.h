@@ -158,6 +158,13 @@ protected:
     void account_descriptor_dense_distribution(scheduler_t *m_scheduler,
                                                double link_cycle, double link_energy,
                                                double link_fill_cycles = 0.0);
+    // P4-3/SY2: the NoC topology account_descriptor_dense_writeback() charges the
+    // output write-back fabric with. Defaults to the configured `noc_type` (unchanged
+    // behavior). systolic_array_t overrides this to force MESH, matching how its own
+    // data_transfer() override already forces MESH for the load path regardless of
+    // the configured noc label -- a systolic array is structurally a 2D grid on both
+    // the operand-skew-in and partial-sum-drain-out directions, not just the load side.
+    virtual noc_type_t writeback_noc_type() const { return noc_type; }
 
     global_buffer_t *global_buffer;                         // Global buffer to connect
 

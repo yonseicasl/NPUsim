@@ -148,7 +148,11 @@ public:
     std::vector<unsigned> mask_bits;            // Mask bits of temporal buffer
 
 protected:
-    void account_descriptor_dense_distribution(data_type_t type);
+    // P2-3: distinct_chunks is the number of distinct source tiles across the active
+    // chip grid for this datatype (1 == fully broadcast/multicast; ==
+    // get_number_of_active_chips() == fully partitioned per chip); see the scheduler's
+    // {input,weight,output}_offset_multi_chip vector sizes.
+    void account_descriptor_dense_distribution(data_type_t type, size_t distinct_chunks);
 
 
     std::vector<global_buffer_t*> chips;        // Global buffers to connect

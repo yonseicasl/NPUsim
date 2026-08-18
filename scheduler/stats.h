@@ -53,18 +53,54 @@ public:
     double stage_axis_link[5];
     double stage_axis_overlap[5];
     double stage_axis_compute;                 // PE compute schedule incl. fold fill (CE2)
+    double stage_axis_format;                  // P4-4: PE format-IP axis (payload/metadata/spill)
     bool timeline_boundary_overlap[4];         // stage-boundary overlap flags captured pre-scale
     double timeline_physical_macs;             // physical scalar MACs for availability
+    // P3: temporal GLB-repetition ("tile") count, set from scale_serial_repetitions()'s
+    // m_repetitions. Lets finalize_layer_timeline() combine an overlapping run of
+    // stage-busy totals via a fill+bottleneck pipeline makespan instead of an
+    // unrealistic flat max() (see temporal_pipeline_run_cycles()).
+    unsigned temporal_repetition_tiles;
     double busy_cycle_pe_array;
     double busy_cycle_global_buffer;
     double busy_cycle_multi_chip;
     double busy_cycle_dram;
+
+    // CE4: max_entity(sum/max_type(...)) combined directly while iterating entities
+    // (chip, or chip+PE) in update_stats(), before repetition scaling and before the
+    // entity dimension is collapsed into the flat per-datatype vectors below. Consumed
+    // by finalize_layer_timeline() instead of re-deriving stage_axis_* from the flat
+    // vectors, which would incorrectly sum/max each entity's own per-type PEAK instead
+    // of taking the max across entities of each entity's own per-type TOTAL.
+    double entity_combined_access_global_buffer;   // access_cycle_global_buffer axis, fill excluded (see stage_fill_access_global_buffer)
+    double entity_combined_link_global_buffer;      // transfer_cycle_global_buffer axis
+    double entity_combined_overlap_global_buffer;   // cycle_pe_array_global_buffer axis
+    double entity_combined_access_pe_array;         // access_cycle_pe_array axis
+    double entity_combined_link_pe_array;           // transfer_cycle_pe_array axis
+    double entity_combined_overlap_pe_array;        // cycle_temporal_pe_array axis
+    double entity_combined_access_lb;               // access_cycle_lb axis
+    double entity_combined_link_pe;                 // transfer_cycle_pe axis
+    double entity_combined_overlap_mac_lb;           // cycle_mac_lb axis
+    // P4-4: format_cycle_pe axis (payload/metadata/spill format-IP). Previously only
+    // fed the PE-local max() in pe_t::modeled_elapsed_cycles(), which only feeds an
+    // inert pre-scale estimate -- never the authoritative busy_cycle_pe/layer_latency
+    // computed in finalize_layer_timeline(), so a slow format-IP was invisible to the
+    // critical path. Now combined into busy_cycle_pe like the other PE axes.
+    double entity_combined_format;
+    // The mc->GLB fill (write) side scales per-datatype (not uniformly), so its type
+    // combination is captured separately in merge_global_buffer_fill() -- right before
+    // it is folded into access_cycle_global_buffer and zeroed -- and added onto
+    // entity_combined_access_global_buffer in finalize_layer_timeline().
+    double stage_fill_access_global_buffer;
 
     /* Tile size */
     std::vector<std::vector<unsigned>> tile_size;
 
     /* PE */
     memory_type_t local_buffer_type;
+    // LB7: true only when every active PE's local buffer is double-buffered; a single
+    // single-buffered PE forces the whole PE stage's compute<->LB axes to serialize.
+    bool pe_double_buffer;
     size_t num_computation;                                             // Number of computations.
     double computation_cycle;                                           // Total computation cycle.
     double max_computation_cycle;

@@ -22,6 +22,11 @@ public:
     // Print out the configuration of PU.
     void print_specification();
 
+protected:
+    // P4-3/SY2: the array is a 2D grid on the drain-out (output write-back) direction
+    // just as on the load direction (see data_transfer()'s override), regardless of
+    // the configured noc label.
+    noc_type_t writeback_noc_type() const { return noc_type_t::MESH; }
 };
 
 #endif

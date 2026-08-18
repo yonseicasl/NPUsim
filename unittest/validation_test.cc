@@ -242,6 +242,39 @@ void validate_spatial_interconnect_contract() {
        // its own count: 5+1+2 + max(0, 7*1, 7*2) = 22.
        pipelined_transfer_cycles(size_t(1), 5.0, size_t(8), 1.0, size_t(8), 2.0) != 22.0 ||
        pipelined_transfer_cycles(size_t(4), 5.0, size_t(4), 1.0, size_t(4), 2.0) != 23.0 ||
+       // P1-5 assemble/disassemble dependency: an 8b source line -> 256b link ->
+       // 8b destination line packs 32 narrow source reads into 1 wide link
+       // transaction, then unpacks it into 32 narrow destination writes. The link
+       // transaction is a hard barrier (all 32 reads must land before it fires), so
+       // the assemble phase (32 source reads) cannot overlap the link+disassemble
+       // phase: 32*5 (serialized reads) + (1 + 32*2) (link fill + 32 serialized
+       // writes) = 160 + 65 = 225 (the pre-fix fill+bottleneck formula
+       // undercounted this at 163 by assuming the disassemble phase overlapped
+       // the assemble phase's bottleneck).
+       pipelined_transfer_cycles(size_t(32), 5.0, size_t(1), 1.0, size_t(32), 2.0) != 225.0 ||
+       // Tail-packet case: a non-power-of-two element count (e.g. 100 bits over an
+       // 8b line) leaves a partial last transaction, still counted as a full one;
+       // the same assemble barrier applies: 13*5 (reads) + (1 + 12*2) (link fill +
+       // remaining writes) = 65 + 27 = 92.
+       pipelined_transfer_cycles(size_t(13), 5.0, size_t(1), 1.0, size_t(13), 2.0) != 92.0 ||
+       // Disassemble-only barrier: 1 source read feeds 8 link transactions (fan-out,
+       // streams normally), but those 8 must all land before a single gathering
+       // destination write fires: (5+1 fill + 7*1 bottleneck) + 1*2 = 13 + 2 = 15.
+       pipelined_transfer_cycles(size_t(1), 5.0, size_t(8), 1.0, size_t(1), 2.0) != 15.0 ||
+       // Both boundaries barrier (fan-in then fan-in again): every stage serializes
+       // against the others: 10*5 + 5*1 + 2*2 = 50 + 5 + 4 = 59.
+       pipelined_transfer_cycles(size_t(10), 5.0, size_t(5), 1.0, size_t(2), 2.0) != 59.0 ||
+       // P3: temporal_pipeline_run_cycles(). Empty run -> 0.
+       temporal_pipeline_run_cycles(4, {}) != 0.0 ||
+       // <=1 tile: nothing to pipeline against -- flat max(), NOT the general
+       // formula's degenerate sum (40+8+8=56 would silently contradict "these
+       // stages overlap").
+       temporal_pipeline_run_cycles(1, {40.0, 8.0, 8.0}) != 40.0 ||
+       temporal_pipeline_run_cycles(0, {40.0, 8.0, 8.0}) != 40.0 ||
+       // >1 tile: per-tile costs (10, 2, 2), fill = 10+2+2 = 14, bottleneck stage
+       // (10/tile) repeats 3 more times: 14 + 3*10 = 44 (vs the old flat max of 40 --
+       // strictly larger, the one-time fill cost of the non-bottleneck stages).
+       temporal_pipeline_run_cycles(4, {40.0, 8.0, 8.0}) != 44.0 ||
        static_energy_for_cycles(2.5, 4.0) != 10.0) {
         fail("spatial interconnect timing contract");
     }
