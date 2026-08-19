@@ -165,6 +165,12 @@ protected:
     // the configured noc label -- a systolic array is structurally a 2D grid on both
     // the operand-skew-in and partial-sum-drain-out directions, not just the load side.
     virtual noc_type_t writeback_noc_type() const { return noc_type; }
+    // SY2/L9: per-weight-residency tile-boundary bubble a SYSTOLIC array pays for its
+    // accumulation pipeline to drain before different weights take effect. 0 for
+    // non-systolic arrays (a spatial/adder-tree array has no such pipeline), and unused when
+    // the config calibrates weight_fold_fill_cycle from RTL -- see
+    // account_descriptor_dense_distribution().
+    virtual double weight_fold_bubble_cycles() const { return 0.0; }
 
     global_buffer_t *global_buffer;                         // Global buffer to connect
 

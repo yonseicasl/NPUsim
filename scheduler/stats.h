@@ -2,6 +2,7 @@
 #define __STATS_H__
 
 
+#include <string>
 #include <vector>
 #include "mapping_table.h"
 
@@ -61,6 +62,26 @@ public:
     // stage-busy totals via a fill+bottleneck pipeline makespan instead of an
     // unrealistic flat max() (see temporal_pipeline_run_cycles()).
     unsigned temporal_repetition_tiles;
+    // L5: how many of those tiles the OFF-CHIP stages (DRAM, multi-chip) actually serve.
+    // Off-chip traffic scales per datatype, so a GLB repetition over a dimension a tensor
+    // does not depend on revisits a tile the on-chip buffers still hold and does NOT
+    // re-fetch it. Taking the max across datatypes gives the number of tiles on the shared
+    // tile clock that carry off-chip work; the rest carry zero cost for those stages. This
+    // is what lets a rate-mismatched stage take part in the timeline at all -- the previous
+    // closed form had to fall back to a flat max() whenever a run touched stage 0 or 1.
+    unsigned offchip_repetition_tiles;
+    // L5: per-stage time spent blocked specifically by a full downstream buffer, from the
+    // final per-tile timeline. Reported so the reader can see WHERE the pipeline stalled,
+    // not only how long the layer took.
+    double timeline_stall[5];
+    // L5/L6: the staging-buffer depth the timeline used at each stage boundary, in tiles
+    // in flight (1 = single buffer / no tile-level decoupling, 2 = double buffer). Reported
+    // because it IS the overlap contract: it decides whether the two sides of a boundary
+    // pipeline or alternate, and for the multi-chip -> GLB boundary it also carries the
+    // bypass rule (a GLB-bypassed datatype has no buffer there, so that boundary cannot
+    // decouple no matter what the GLB's double_buffer flag says). At network scope the min
+    // across layers is reported -- a boundary is only as decoupled as its worst layer.
+    unsigned timeline_boundary_depth[4];
     double busy_cycle_pe_array;
     double busy_cycle_global_buffer;
     double busy_cycle_multi_chip;
@@ -88,10 +109,27 @@ public:
     // critical path. Now combined into busy_cycle_pe like the other PE axes.
     double entity_combined_format;
     // The mc->GLB fill (write) side scales per-datatype (not uniformly), so its type
-    // combination is captured separately in merge_global_buffer_fill() -- right before
-    // it is folded into access_cycle_global_buffer and zeroed -- and added onto
-    // entity_combined_access_global_buffer in finalize_layer_timeline().
+    // combination is captured in merge_global_buffer_fill() -- right before it is folded
+    // into access_cycle_global_buffer and zeroed -- at its FINAL scaled value.
+    // Reported/diagnostic only: max_chip(combine_type(fill)). The authoritative GLB
+    // access axis is entity_combined_access_global_buffer, which merge_global_buffer_fill()
+    // recomputes as max_chip(base[chip] + combine_type(fill[chip])).
     double stage_fill_access_global_buffer;
+    // CE4/P1-D: the GLB entity dimension must survive until AFTER repetition scaling,
+    // because the base (GLB->PE-array read) side scales uniformly while the fill
+    // (multi-chip->GLB write) side scales per datatype. Collapsing chips first --
+    // fill[type] = max_chip(fill[chip][type]) and only then combining types -- produces
+    // sum_type(max_chip(...)), which on a shared GLB can invent elapsed time that never
+    // existed (chip 0 input-bound at 100 and chip 1 weight-bound at 100 report 200 while
+    // the two chips actually run those fills in parallel in 100). So keep each chip's own
+    // values and combine in the correct max_chip(combine_type(...)) order at the end.
+    // L1: BOTH sides stay per-chip AND per-datatype. Type-combining either side early
+    // destroys the datatype correspondence the two sides need: on a SEPARATE buffer each
+    // datatype has its own partition and the partitions run in parallel, so
+    // max_type(base) + max_type(fill) can sum the peaks of two DIFFERENT partitions.
+    // The axis must be max_chip(combine_type(base[chip][t] + fill[chip][t])).
+    std::vector<std::vector<double>> chip_access_cycle_global_buffer;      // per chip/datatype: BASE (GLB->PE-array read) access, scales uniformly
+    std::vector<std::vector<double>> chip_fill_access_cycle_global_buffer; // per chip/datatype: FILL (multi-chip->GLB write) access, scales per datatype
 
     /* Tile size */
     std::vector<std::vector<unsigned>> tile_size;
@@ -160,6 +198,39 @@ public:
 
     /* Global buffer */
     memory_type_t global_buffer_type;
+    // P1-B: which datatypes bypass the GLB SRAM. A bypassed datatype is streamed from the
+    // chip's NoP ingress straight to the PE array: it costs no GLB fill (write) and no GLB
+    // read, but it DOES traverse the GLB<->PE-array fabric and land in the PE-array
+    // temporal buffer, so its link/destination cost is charged like any other stream and
+    // shows up in the PE-array <-> GLB transaction counters. Reported so a consumer that
+    // wants SRAM-mediated traffic only (e.g. the Eyeriss GLB-traffic reference, which
+    // counts SRAM accesses) can exclude exactly those datatypes instead of guessing.
+    std::vector<bool> global_buffer_bypass;
+    // L8: the analytical DRAM contract in force and what it does NOT capture, captured from
+    // dram_t in update_stats() and printed with the DRAM results. The audit's completion
+    // condition for the analytical path is that its supported scope is stated in the output
+    // rather than left to be inferred -- an idealized bank-interleaved row model must not be
+    // read as a bank-conflict model.
+    std::string dram_timing_model;
+    std::string dram_timing_limits;
+    // L3: true only on the network rollup object. Layer and network scope have DIFFERENT
+    // axis contracts and the report must say which one it is printing:
+    //   layer   : busy = max(its own axes) (PE also folds in compute + format) -- the
+    //             printed axes RECONSTRUCT busy.
+    //   network : busy[stage] = sum_layer(layer busy[stage]) and axis = sum_layer(layer axis),
+    //             two independent sums. sum_layer(max(...)) != max(sum_layer(...)) in
+    //             general, so the printed network axes are per-axis WORK TOTALS and do NOT
+    //             reconstruct network busy. Replacing network busy with max(network axes)
+    //             would be worse, not better: layers run serially, so it would undercount
+    //             the actual busy time of every stage.
+    bool network_rollup;
+    // L11/P4-14: the timing SCOPE of a network rollup -- how many layers were folded in and how
+    // many the accelerator timing model does not support (pooling/activation/normalization).
+    // Printed inside the layer-timeline block, next to the latency it qualifies: the trailing
+    // warning at the end of the file was too far from the number to stop anyone reading a
+    // partial rollup as an end-to-end network latency.
+    unsigned network_timing_layers;
+    unsigned excluded_timing_layers;
     std::vector<unsigned> num_request_global_buffer;                    // Number of request to global buffer (from PE array).
     std::vector<unsigned> num_data_transfer_global_buffer;              // Number of data transfer from global buffer (to PE array).
     // Link transactions are reported as logical payload/metadata and physical storage streams.

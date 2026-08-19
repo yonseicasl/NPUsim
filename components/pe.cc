@@ -149,6 +149,7 @@ pe_t::pe_t(section_config_t m_section_config) :
     mac_width(1),
     num_active_macs(1),
     active_mac_width(1),
+    lane_state(),
     active_mac_units(1),
     mac_register_capacity(1),
     frequency(0.0),
@@ -206,9 +207,24 @@ void pe_t::init(section_config_t m_section_config) {
     // tile then streams through rather than residing in the local buffer.
     m_section_config.get_setting("edge_accumulation", &edge_accumulation);
 
-    // LB7: a single-buffered local buffer can't overlap the next tile's load with the
-    // current tile's compute. Defaults to true (the model's original always-overlap
-    // behavior) so existing configs are unaffected unless they opt into single_buffer.
+    // LB7/P1-A: a single-buffered local buffer can't overlap the next tile's load with
+    // the current tile's compute, so its LB<->MAC transfer makespan serializes against
+    // the compute schedule (see stats_t::finalize_layer_timeline()). Defaults to true
+    // (the model's original always-overlap behavior) so existing configs are unaffected
+    // unless they opt out; every shipped accelerator config now states it explicitly so
+    // the assumption is not silent.
+    //
+    // CAPACITY CONTRACT (decided, P1-A item 4): this flag is a TIMING property of the
+    // LB->MAC-register fill, NOT a second resident local-buffer tile, so check_tile_size()
+    // requires ONE live copy in both modes -- unlike global_buffer_t, whose double_buffer
+    // genuinely allocates two tile halves. Rationale: what a fill-behind-compute overlap
+    // needs twice is the MAC register file, and this model represents that file as exactly
+    // the physical lane count (number_of_macs*mac_width) holding ONE tile, with no 2-deep
+    // register model to charge; the LB tile itself is read, not held twice. Charging two
+    // copies of either buffer would reject every validated config (Eyeriss conv3 already
+    // fills 100% of its input LB partition, and every config's MAC tile exactly fills its
+    // lane capacity), i.e. declare the validated silicon un-modelable. The active mode is
+    // printed in the layer-timeline result section so the contract is visible per run.
     m_section_config.get_setting("double_buffer", &double_buffer);
 
     // Initialize the number of elements in each buffer.
@@ -515,6 +531,8 @@ void pe_t::update_tile_size(scheduler_t *m_scheduler) {
     }
     active_mac_units = lane_state.active_accumulator_units;
     active_mac_width = lane_state.final_accumulator_lanes;
+    // L9: keep the whole resolved state; the reduction cost is charged against it.
+    this->lane_state = lane_state;
     // PE3: peak across the layer rather than last-call overwrite (identical today;
     // hardening for per-tile variation).
     utilization_mac = std::max(utilization_mac, lane_state.utilization);
@@ -699,10 +717,9 @@ void pe_t::account_descriptor_dense_mac_transfer(data_type_t type, size_t elemen
         std::cerr << "Error: PE pipeline transaction count overflow" << std::endl;
         exit(1);
     }
+    // L2: the packet decomposition carries where the LB/MAC line widths pack and unpack.
     cycle_mac_lb[type] += pipelined_transfer_cycles(
-        timing.source_accesses, source_cycle,
-        timing.link_transactions, u_transfer_cycle,
-        timing.destination_accesses, destination_cycle);
+        timing.groups, source_cycle, u_transfer_cycle, destination_cycle);
 }
 
 // Transfer data from local buffer to MAC unit.
@@ -2813,8 +2830,8 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
             computation_energy += u_computation_energy;
         }
         computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 
         exist_data_mac[data_type_t::INPUT] = false, request_to_lb[data_type_t::INPUT] = true;
         exist_data_mac[data_type_t::WEIGHT] = false, request_to_lb[data_type_t::WEIGHT] = true;
@@ -2880,8 +2897,8 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                     computation_energy += u_computation_energy;
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -2889,8 +2906,8 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
 #else
@@ -2899,8 +2916,8 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_energy += u_computation_energy;
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 #endif
         } else {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
@@ -3087,8 +3104,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                     computation_energy += u_computation_energy;
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -3096,8 +3113,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
 #else
@@ -3106,8 +3123,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_energy += u_computation_energy;
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 #endif
         }
         else {
@@ -3297,8 +3314,8 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                     computation_energy += u_computation_energy;
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -3306,8 +3323,8 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_energy += nonzero_operations*u_computation_energy;
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
 #else
@@ -3316,8 +3333,8 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 computation_energy += u_computation_energy;
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
-                     lane_reduction_fill_cycles(mac_width, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(mac_width, u_mac_reduction_energy);
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 
 #endif
         }

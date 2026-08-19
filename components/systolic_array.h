@@ -2,6 +2,7 @@
 #define __SYSTOLIC_ARRAY_H__
 
 #include "pe_array.h"
+#include "interconnect_timing.h"
 #include "scheduler.h"
 
 class systolic_array_t : public pe_array_t {
@@ -27,6 +28,11 @@ protected:
     // just as on the load direction (see data_transfer()'s override), regardless of
     // the configured noc label.
     noc_type_t writeback_noc_type() const { return noc_type_t::MESH; }
+    // SY2/L9: the accumulation pipeline drains down the active columns before a different
+    // weight residency can take effect.
+    double weight_fold_bubble_cycles() const {
+        return systolic_pipeline_cost(num_active_pe_y, num_active_pe_x).drain_hops*noc_cycle;
+    }
 };
 
 #endif

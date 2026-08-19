@@ -185,9 +185,32 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
             // (RTL-measured ~DIM+1 cycles/fold on Gemmini). Each per-PE temporal weight
             // element is one sequential residency, so a distribution event carries
             // per-PE-weight-tile-size folds.
-            if(type == data_type_t::WEIGHT && u_weight_fold_fill_cycle > 0.0) {
-                fold_fill_cycle += u_weight_fold_fill_cycle
-                                  *static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT]);
+            //
+            // SY2/L9: a config that has NOT calibrated that bubble from RTL now gets an
+            // analytical one instead of nothing -- a systolic array's accumulation pipeline
+            // must drain down the active columns before different weights take effect, which
+            // an injection-wavefront-only model misses entirely.
+            //
+            // The two paths deliberately use DIFFERENT multipliers, because they measure
+            // different things:
+            //   * a calibrated weight_fold_fill_cycle is an RTL measurement of the bubble per
+            //     per-PE weight ELEMENT (Gemmini reloads the array once per element, so each
+            //     element is its own sequential residency), and it wins outright -- adding the
+            //     analytical drain on top would double count the same stall;
+            //   * the analytical drain is charged ONCE PER ARRAY-WIDE WEIGHT TILE, i.e. at the
+            //     tile boundary. Charging it per element instead would assume the pipeline
+            //     fully drains between consecutive weights of the SAME tile, contradicting the
+            //     pipelining this model asserts everywhere else (on a 12x14 array with 352
+            //     weights per PE it inflated the compute schedule 10x over the computation
+            //     itself). It is therefore a LOWER bound: a design that really does drain per
+            //     element must calibrate weight_fold_fill_cycle.
+            if(type == data_type_t::WEIGHT) {
+                if(u_weight_fold_fill_cycle > 0.0) {
+                    fold_fill_cycle += u_weight_fold_fill_cycle
+                                      *static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT]);
+                } else {
+                    fold_fill_cycle += weight_fold_bubble_cycles();
+                }
             }
             // PA1: operands shared by several PEs are read from the temporal buffer and
             // streamed over the fabric ONCE -- the array-level tile is the distinct data
@@ -241,10 +264,13 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
                 exit(1);
             }
             if(exist_temporal_buffer) {
+                // L2: the source/link packet boundaries come from the shared array tile;
+                // the destination is one PE's SLICE of that tile written into its own local
+                // buffer, so its total is spread over the same packets (see
+                // with_destination_total()).
                 cycle_temporal_pe[type] += pipelined_transfer_cycles(
-                    shared.source_accesses, u_read_cycle[type],
-                    shared.link_transactions, link_cycle,
-                    max_destination_accesses, destination_write_cycle) + link_fill_cycles;
+                    shared.groups.with_destination_total(max_destination_accesses),
+                    u_read_cycle[type], link_cycle, destination_write_cycle) + link_fill_cycles;
             }
         }
         for(unsigned i = 0; i < get_number_of_active_pes(); ++i) {
@@ -291,10 +317,10 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
         exit(1);
     }
     if(exist_temporal_buffer) {
+        // L2: pipeline the physical packet decomposition of the write-back stream.
         cycle_temporal_pe[data_type_t::OUTPUT] += pipelined_transfer_cycles(
-            timing.source_accesses, source_pe->u_read_cycle_lb[data_type_t::OUTPUT],
-            timing.link_transactions, noc_cycle,
-            timing.destination_accesses, u_write_cycle[data_type_t::OUTPUT]) + link_fill_cycles;
+            timing.groups, source_pe->u_read_cycle_lb[data_type_t::OUTPUT], noc_cycle,
+            u_write_cycle[data_type_t::OUTPUT]) + link_fill_cycles;
     }
 }
 

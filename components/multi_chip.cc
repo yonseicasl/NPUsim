@@ -9,6 +9,7 @@
 multi_chip_t::multi_chip_t(section_config_t m_section_config) :
     data(NULL),
     double_buffer(false),
+    nop_multicast(true),
     equal_output_tile(false),
     duplicated_input(0),
     exist_temporal_buffer(true),
@@ -156,6 +157,8 @@ void multi_chip_t::init(section_config_t m_section_config) {
         std::cerr << "Error: multi_chip supports only bus or mesh NoP timing models" << std::endl;
         exit(1);
     }
+    // L7: multicast delivery of broadcast tiles; see multi_chip_t::nop_multicast.
+    m_section_config.get_setting("nop_multicast", &nop_multicast);
 
     // Initialize skip transfer signal
     skip_transfer.reserve(data_type_t::NUM_DATA_TYPES);
@@ -413,51 +416,102 @@ void multi_chip_t::fill_data() {
 
 void multi_chip_t::account_descriptor_dense_distribution(data_type_t type, size_t distinct_chunks) {
     num_data_transfer[type]++;
-    // P2-3 NoP multicast/source sharing: chip i's tile is a fresh, distinct chunk
-    // only the first time its (i % distinct_chunks) index appears -- i.e. for
-    // i < distinct_chunks -- exactly mirroring the i % {type}_offset_multi_chip.size()
-    // wraparound the functional data-movement path already uses to decide whether
-    // chip i shares chip 0's tile. A broadcast datatype (distinct_chunks == 1, e.g. a
-    // weight tile that doesn't depend on the CHIPS_X/CHIPS_Y-split dimension) pays its
-    // shared source read once instead of once per active chip; each chip's own link
-    // delivery and destination-buffer write remain per-chip (still physically real).
-    for(unsigned i = 0; i < get_number_of_active_chips(); ++i) {
+    const unsigned active_chips = get_number_of_active_chips();
+    if(active_chips == 0) return;
+
+    // P2-3/L7 NoP delivery contract. chip i's tile is a fresh, distinct chunk only the first
+    // time its (i % distinct_chunks) index appears -- i.e. for i < distinct_chunks -- exactly
+    // mirroring the i % {type}_offset_multi_chip.size() wraparound the functional
+    // data-movement path already uses to decide whether chip i shares chip 0's tile.
+    //
+    // A datatype with ONE distinct chunk is a broadcast (e.g. a weight tile that does not
+    // depend on the CHIPS_X/CHIPS_Y-split dimension). It pays its source read once, and --
+    // L7 -- the fabric forwards ONE copy of it rather than a separate copy per chip: on a
+    // bus a single transmission is physically seen by every receiver, and a multicast-capable
+    // mesh fans out along a tree whose links each carry one copy. Distinct chunks still
+    // serialize one copy per chip at the shared package ingress (routed unicast).
+    //
+    // The route depth is charged ONCE per delivery, not once per chip: concurrent routes
+    // pipeline their hops instead of queueing behind each other (SP1).
+    const bool broadcast = distinct_chunks <= 1;
+    const nop_delivery_cost_t delivery = nop_delivery_cost(nop_type, width, active_chips,
+                                                           broadcast && nop_multicast);
+    // Every chip receives the same tile size (global_buffer_t::update_tile_size() assigns one
+    // scheduler tile to all of them), so one descriptor describes the shared delivery.
+    const datatype_transfer_timing_t shared = datatype_transfer_timing(
+        type, chips[0]->tile_size[type], line_size[type], chips[0]->line_size[type], bitwidth);
+    if(shared.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
+        std::cerr << "Error: multi_chip pipeline transaction count overflow" << std::endl;
+        exit(1);
+    }
+
+    // Fabric cost: the busiest link sets the serialized busy time, the sum over links sets
+    // energy, and the route depth is a one-time fill.
+    const double hop_fill = delivery.fill_hops*nop_cycle;
+    const double delivered_link_transactions =
+        delivery.bottleneck_link_tiles*static_cast<double>(shared.link_transactions);
+    transfer_cycle[type] += delivered_link_transactions*nop_cycle + hop_fill;
+    transfer_energy[type] += delivery.total_link_traversals
+                            *static_cast<double>(shared.link_transactions)*nop_energy;
+    const size_t reported_link_transactions = static_cast<size_t>(delivered_link_transactions);
+    payload_link_transactions[type] += static_cast<size_t>(
+        delivery.bottleneck_link_tiles*static_cast<double>(shared.payload_link_transactions));
+    metadata_link_transactions[type] += static_cast<size_t>(
+        delivery.bottleneck_link_tiles*static_cast<double>(shared.metadata_link_transactions));
+    storage_link_transactions[type] += reported_link_transactions;
+
+    // Source reads: once per distinct chunk. Destination writes: once per chip (each chip's
+    // own global buffer is physically written), unless that chip bypasses the GLB.
+    size_t fresh_chunks = 0;
+    size_t staged_destination_accesses = 0;
+    double destination_write_cycle = 0.0;
+    for(unsigned i = 0; i < active_chips; ++i) {
         const datatype_transfer_timing_t timing = datatype_transfer_timing(
             type, chips[i]->tile_size[type], line_size[type], chips[i]->line_size[type], bitwidth);
-        payload_link_transactions[type] += timing.payload_link_transactions;
-        metadata_link_transactions[type] += timing.metadata_link_transactions;
-        storage_link_transactions[type] += timing.link_transactions;
         const bool fresh_chunk = i < distinct_chunks;
+        // P1-B GLB bypass = bypass the GLB STORAGE: a bypassed datatype is streamed through
+        // the chip to the PE array without ever being written into the GLB SRAM, so there is
+        // no fill (write) access to charge here. The NoP source read and link transfer above
+        // still happen -- the tile does cross the package -- and the on-chip delivery to the
+        // array is charged on the GLB->PE-array leg
+        // (global_buffer_t::account_descriptor_dense_transfer()).
+        const bool glb_bypassed = chips[i]->bypass[type];
         if(fresh_chunk) {
+            ++fresh_chunks;
             access_energy[type] += timing.source_accesses*u_read_energy[type];
+            if(!chips[i]->double_buffer) {
+                access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+            }
         }
         // GLB fill (write) side: separate accumulator so it can scale with the
         // per-datatype off-chip supply it mirrors (not the full GLB repetition).
-        chips[i]->fill_access_energy[type] += timing.destination_accesses*chips[i]->u_write_energy[type];
-        if(!chips[i]->double_buffer) {
-            if(fresh_chunk) {
-                access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+        if(!glb_bypassed) {
+            chips[i]->fill_access_energy[type] += timing.destination_accesses*chips[i]->u_write_energy[type];
+            if(!chips[i]->double_buffer) {
+                chips[i]->fill_access_cycle[type] += timing.destination_accesses*chips[i]->u_write_cycle[type];
             }
-            chips[i]->fill_access_cycle[type] += timing.destination_accesses*chips[i]->u_write_cycle[type];
-        }
-        // R2: routed-unicast mesh -- each chip's stream burns per-hop energy per
-        // transaction and pays its Manhattan route depth as a one-time pipeline fill
-        // (SP1 contract). On the serialized bus hops == 1, so nothing changes.
-        const unsigned hops = nop_hops_for_chip(i);
-        const double hop_fill = static_cast<double>(hops - 1)*nop_cycle;
-        transfer_cycle[type] += timing.link_transactions*nop_cycle + hop_fill;
-        transfer_energy[type] += timing.link_transactions*nop_energy*hops;
-        if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
-            std::cerr << "Error: multi_chip pipeline transaction count overflow" << std::endl;
-            exit(1);
-        }
-        if(exist_temporal_buffer) {
-            cycle_temporal_chips[type] += pipelined_transfer_cycles(
-                fresh_chunk ? timing.source_accesses : static_cast<size_t>(0), u_read_cycle[type],
-                timing.link_transactions, nop_cycle,
-                timing.destination_accesses, chips[i]->u_write_cycle[type]) + hop_fill;
+            if(timing.destination_accesses > staged_destination_accesses) {
+                staged_destination_accesses = timing.destination_accesses;
+                destination_write_cycle = chips[i]->u_write_cycle[type];
+            }
         }
         chips[i]->skip_transfer[type] = false;
+    }
+
+    if(exist_temporal_buffer) {
+        // L2: pipeline the physical packet decomposition of the shared delivery. The source
+        // stage is present only if some chunk was actually re-read, and the destination stage
+        // only for the chips that stage the tile in their GLB (the slowest such write sets
+        // the stage cost, since the writes happen concurrently on separate chips).
+        transfer_packet_groups_t groups = shared.groups;
+        if(fresh_chunks == 0) groups = groups.without_source();
+        if(staged_destination_accesses == 0) {
+            groups = groups.without_destination();
+        } else {
+            groups = groups.with_destination_total(staged_destination_accesses);
+        }
+        cycle_temporal_chips[type] += pipelined_transfer_cycles(
+            groups, u_read_cycle[type], nop_cycle, destination_write_cycle) + hop_fill;
     }
 }
 
@@ -484,6 +538,8 @@ void multi_chip_t::account_output_writeback_to_dram() {
     dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
     dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
     dram->account_row_activations(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    // L8: an output write-back drives the bus in the write direction.
+    dram->account_bus_turnaround(data_type_t::OUTPUT, true);
     dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
     dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
     dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;

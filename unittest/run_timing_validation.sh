@@ -23,3 +23,9 @@ done
 "$repo_dir/npusim.sh" run eyeriss alexnet silicon >/dev/null
 
 python3 "$repo_dir/validation/check_timing.py" --check-baseline
+
+# P4-12: SCALE-Sim v2 cross-simulator gate. The third external reference we hold had never run
+# automatically, so a model change could move it unnoticed. SCALE-Sim's own reports are
+# committed under validation/phase1/out, so no SCALE-Sim installation is needed here.
+"$repo_dir/npusim.sh" run scalesim alexnet matched >/dev/null
+python3 "$repo_dir/validation/phase1/gate.py" --check-baseline

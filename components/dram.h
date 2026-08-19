@@ -1,6 +1,7 @@
 #ifndef __DRAM_H__
 #define __DRAM_H__
 
+#include <string>
 #include "def.h"
 #include "scheduler.h"
 #include "multi_chip.h"
@@ -97,8 +98,22 @@ public:
     double t_ras_cycle;
     double t_rp_cycle;
     unsigned num_banks;
+    // L8: data-bus turnaround. Flipping the bus between reads and writes costs tWTR/tRTW,
+    // and unlike bank conflicts this needs NO per-request address -- the model already knows
+    // whether it is serving a load or an output write-back. Charged on each direction change
+    // between accounted streams. Default 0 (disabled), so existing configs are unaffected.
+    double t_wtr_cycle;
+    double t_rtw_cycle;
+    // Direction of the last accounted stream: -1 none yet, 0 read (load), 1 write (store).
+    int last_bus_direction;
     // Charge the row activations of one dense stream (used by load and write-back).
     void account_row_activations(data_type_t type, size_t elements);
+    // L8: charge a bus turnaround if this stream flips the bus direction.
+    void account_bus_turnaround(data_type_t type, bool is_write);
+    // L8: one-line description of the analytical DRAM contract in force, for the report.
+    std::string describe_timing_model() const;
+    // L8: what the analytical model does NOT capture, for the report.
+    std::string describe_timing_limits() const;
 
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory

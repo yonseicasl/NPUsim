@@ -9,6 +9,7 @@
 
 #include "scheduler.h"
 #include "pe_array.h"
+#include "pe_lane.h"
 
 class pe_array_t;
 class pe_t {
@@ -99,8 +100,13 @@ public:
 
     std::vector<bool> bypass;                               // Check if bypass is applied at the local buffer
     bool edge_accumulation;                                 // V3: outputs accumulate at the array edge; OUTPUT exempt from LB capacity
-    bool double_buffer;                                     // LB7: single-buffered LB serializes tile load against compute; default true (overlap)
+    bool double_buffer;                                     // LB7/P1-A: timing-only overlap of the LB<->MAC transfer with compute (single buffer serializes it); one resident tile copy in BOTH modes -- see the capacity contract in pe_t::init()
     unsigned index;                                         // Index of PE in PE array.
+    // L9/PE1-PE2: the ACTIVE lane state this layer's mapping resolves to (how many
+    // accumulators are live and how many lanes feed the last one). The lane->accumulator
+    // reduction is charged against this, not against the structural mac_width -- see
+    // lane_reduction_fill_cycles()/lane_reduction_energy() in utils/pe_lane.h.
+    mac_lane_state_t lane_state;
 
     std::vector<bool> skip_transfer;                        // Check whether skip data transfer from local buffer to MAC unit
 

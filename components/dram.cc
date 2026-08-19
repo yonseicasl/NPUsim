@@ -140,9 +140,19 @@ void dram_t::init(section_config_t m_section_config) {
     t_ras_cycle = 0.0;
     t_rp_cycle = 0.0;
     num_banks = 1;
+    // L8: data-bus turnaround, disabled by default (see dram_t::t_wtr_cycle).
+    t_wtr_cycle = 0.0;
+    t_rtw_cycle = 0.0;
+    last_bus_direction = -1;
     m_section_config.get_setting("t_ras_cycle", &t_ras_cycle);
     m_section_config.get_setting("t_rp_cycle", &t_rp_cycle);
     m_section_config.get_setting("num_banks", &num_banks);
+    m_section_config.get_setting("t_wtr_cycle", &t_wtr_cycle);
+    m_section_config.get_setting("t_rtw_cycle", &t_rtw_cycle);
+    if(t_wtr_cycle < 0.0 || t_rtw_cycle < 0.0) {
+        std::cerr << "Error: dram bus turnaround cycles must be non-negative" << std::endl;
+        exit(1);
+    }
     if(t_ras_cycle < 0.0 || t_rp_cycle < 0.0) {
         std::cerr << "Error: dram tRAS/tRP must be non-negative" << std::endl;
         exit(1);
@@ -208,23 +218,67 @@ bool dram_t::is_idle() {
     return done;
 }
 
+// L8: the analytical DRAM contract, stated explicitly rather than left to be inferred from
+// the code. The audit asked for one of two resolutions -- bound the analytical model's scope
+// and report it, or wire an address trace to DRAMSim3 as the official memory-bound gate. This
+// is the first: the model covers SEQUENTIAL, CONFLICT-FREE streams, and says so in the report
+// so nobody reads its bank parallelism as a conflict model.
+std::string dram_t::describe_timing_model() const {
+    if(row_buffer_bytes == 0) {
+        return "flat per-access (no row-buffer model)";
+    }
+    const bool jedec = t_ras_cycle > 0.0 && t_rp_cycle > 0.0;
+    std::string model = jedec ? "analytical open-page, JEDEC tRC=tRAS+tRP"
+                              : "analytical open-page, flat row-miss cost";
+    if(num_banks > 1) model += ", ideal bank interleaving";
+    if(t_wtr_cycle > 0.0 || t_rtw_cycle > 0.0) model += ", bus turnaround";
+    return model;
+}
+
+std::string dram_t::describe_timing_limits() const {
+    if(row_buffer_bytes == 0) {
+        return "row activations, bank/row state, queueing, turnaround, burst scheduling";
+    }
+    std::string limits = "request queueing, address-based bank conflicts, burst scheduling,"
+                         " strided/random access";
+    if(num_banks > 1) {
+        limits += " (row misses are spread evenly across banks, not mapped by address)";
+    }
+    if(t_wtr_cycle <= 0.0 && t_rtw_cycle <= 0.0) limits += ", bus turnaround";
+    return limits;
+}
+
+// L8: flipping the data bus between reads and writes costs a turnaround. This is the one
+// piece of detailed DRAM timing that needs NO per-request address -- the model already knows
+// whether it is serving a load or an output write-back -- so it is charged exactly, unlike
+// bank conflicts which would require fabricating addresses the timing path does not have.
+void dram_t::account_bus_turnaround(data_type_t type, bool is_write) {
+    const int direction = is_write ? 1 : 0;
+    if(last_bus_direction >= 0 && last_bus_direction != direction) {
+        transfer_cycle[type] += is_write ? t_rtw_cycle : t_wtr_cycle;
+    }
+    last_bus_direction = direction;
+}
+
 // DR2/P4-1: charge the row activations of one dense sequential stream. This is an
 // open-page approximation -- random/strided access patterns and per-request bank
 // conflicts are not modeled (use DRAMSIM3 for cycle-accurate DRAM); row misses are
-// assumed evenly spread round-robin across num_banks independent banks.
+// assumed evenly spread round-robin across num_banks independent banks. The active
+// contract and its limits are reported via describe_timing_model()/describe_timing_limits().
 void dram_t::account_row_activations(data_type_t type, size_t elements) {
     if(row_buffer_bytes == 0 || elements == 0) return;
     const size_t stream_bytes = runtime_datatypes().storage_bytes(type, elements);
-    const size_t row_misses = (stream_bytes + row_buffer_bytes - 1)/row_buffer_bytes;
     // JEDEC tRC = tRAS + tRP row-cycle time, when calibrated, replaces the flat
     // row_miss_cycle per-activation cost. Cycles benefit from bank parallelism (the
-    // busiest of num_banks banks serializes ceil(row_misses/num_banks) activations);
-    // energy does not -- every activation costs energy regardless of overlap.
+    // busiest of num_banks banks serializes its share of the activations); energy does
+    // not -- every activation costs energy regardless of overlap. The arithmetic lives in
+    // dram_row_activations() so it is covered by hand-computed unit tests.
     const double row_activation_cycle = (t_ras_cycle > 0.0 && t_rp_cycle > 0.0)
         ? t_ras_cycle + t_rp_cycle : u_row_miss_cycle;
-    const size_t busiest_bank_misses = (row_misses + num_banks - 1)/num_banks;
-    transfer_cycle[type] += static_cast<double>(busiest_bank_misses)*row_activation_cycle;
-    transfer_energy[type] += static_cast<double>(row_misses)*u_row_miss_energy;
+    const dram_row_activation_cost_t rows = dram_row_activations(stream_bytes, row_buffer_bytes,
+                                                                num_banks);
+    transfer_cycle[type] += static_cast<double>(rows.busiest_bank)*row_activation_cycle;
+    transfer_energy[type] += static_cast<double>(rows.activations)*u_row_miss_energy;
 }
 
 void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
@@ -244,15 +298,17 @@ void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
     transfer_cycle[type] += timing.link_transactions*u_transfer_cycle;
     transfer_energy[type] += timing.link_transactions*u_transfer_energy;
     account_row_activations(type, elements);
+    // L8: a load reads the bus.
+    account_bus_turnaround(type, false);
     if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
         std::cerr << "Error: DRAM pipeline transaction count overflow" << std::endl;
         exit(1);
     }
     if(multi_chip->exist_temporal_buffer) {
+        // L2: pipeline the physical packet decomposition of the DRAM->multi-chip stream.
         cycle_chip_dram[type] += pipelined_transfer_cycles(
-            timing.source_accesses, u_read_cycle[type],
-            timing.link_transactions, u_transfer_cycle,
-            timing.destination_accesses, multi_chip->u_write_cycle[type]);
+            timing.groups, u_read_cycle[type], u_transfer_cycle,
+            multi_chip->u_write_cycle[type]);
     }
     multi_chip->skip_transfer[type] = false;
 }

@@ -141,23 +141,35 @@ void global_buffer_t::request_data() {
     }
 }
 
+// P1-B GLB bypass contract (end to end): a bypassed datatype bypasses the GLB's
+// STORAGE, not the chip's physical interconnect. The tile still arrives over the NoP
+// (charged in multi_chip_t::account_descriptor_dense_distribution()) and still has to
+// be delivered across the on-chip GLB<->PE-array fabric to reach the array, but it is
+// never written into nor read back out of the GLB SRAM. So a bypassed datatype:
+//   * pays NO GLB write (fill) access -- dropped in multi_chip_t::account_descriptor_dense_distribution()
+//   * pays NO GLB read access        -- dropped below
+//   * DOES pay the GLB<->PE-array link transactions and the PE-array destination write
+//     (the wires and the temporal buffer are physically traversed either way)
+// The previous behavior was the exact inverse -- it kept the mc->GLB fill and dropped
+// the GLB->PE-array link/destination -- which charged the storage it claimed to bypass
+// while making the delivery that actually happens free, and left the bypassed stream
+// with zero on-chip traffic for the T4/T5 checks to validate.
 void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
-    // GLB bypass = direct stream: a bypassed datatype flows straight from the source
-    // to the PE array without an intervening GLB stage, so none of the GLB-side
-    // access/transfer accounting below applies to it.
-    if(bypass[type]) {
-        pe_array->skip_transfer[type] = false;
-        return;
-    }
+    // A bypassed stream is sourced by the chip's NoP ingress, not by the GLB SRAM, so
+    // its transaction counts come off the upstream line width and no GLB read is charged.
+    const bool bypassed = bypass[type];
+    const size_t source_line = bypassed ? multi_chip->line_size[type] : line_size[type];
     const datatype_transfer_timing_t timing = datatype_transfer_timing(
-        type, pe_array->tile_size[type], line_size[type], pe_array->line_size[type], bitwidth);
+        type, pe_array->tile_size[type], source_line, pe_array->line_size[type], bitwidth);
 
     num_data_transfer[type]++;
     payload_link_transactions[type] += timing.payload_link_transactions;
     metadata_link_transactions[type] += timing.metadata_link_transactions;
     storage_link_transactions[type] += timing.link_transactions;
-    access_cycle[type] += timing.source_accesses*u_read_cycle[type];
-    access_energy[type] += timing.source_accesses*u_read_energy[type];
+    if(!bypassed) {
+        access_cycle[type] += timing.source_accesses*u_read_cycle[type];
+        access_energy[type] += timing.source_accesses*u_read_energy[type];
+    }
     // A pass-through PE array (no temporal buffer) imposes no buffer write cost;
     // the stream lands directly in the PE local buffers.
     if(pe_array->exist_temporal_buffer) {
@@ -173,12 +185,15 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
     // A pass-through PE array has no temporal-buffer write stage (see above): drop the
     // destination leg from the overlap pipeline too, so cycle_pe_array_global_buffer
     // doesn't charge for a stage that doesn't exist.
-    const size_t destination_transactions = pe_array->exist_temporal_buffer ? timing.destination_accesses : 0;
-    const double destination_stage = pe_array->exist_temporal_buffer ? pe_array->u_write_cycle[type] : 0.0;
+    // L2: pipeline the physical packet decomposition. P1-B: a bypassed stream has no GLB
+    // read stage here (its source stage is the NoP delivery already charged upstream), and
+    // a pass-through PE array has no temporal-buffer write stage -- drop absent stages
+    // rather than charging them at zero cost, which would still make them pipeline stages.
+    transfer_packet_groups_t groups = timing.groups;
+    if(bypassed) groups = groups.without_source();
+    if(!pe_array->exist_temporal_buffer) groups = groups.without_destination();
     cycle_pe_array_global_buffer[type] += pipelined_transfer_cycles(
-        timing.source_accesses, u_read_cycle[type],
-        timing.link_transactions, u_transfer_cycle,
-        destination_transactions, destination_stage);
+        groups, u_read_cycle[type], u_transfer_cycle, pe_array->u_write_cycle[type]);
     pe_array->skip_transfer[type] = false;
 }
 
@@ -189,22 +204,30 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
 // counts, so the off-chip output store no longer reports zero timing/energy and no
 // longer depends on host-pointer address granularity.
 void global_buffer_t::account_output_writeback_link() {
-    // GLB bypass = direct stream: a bypassed OUTPUT flows straight from the PE array
-    // to multi-chip without an intervening GLB write-back stage.
-    if(bypass[data_type_t::OUTPUT]) return;
+    // P1-B: a bypassed OUTPUT bypasses the GLB SRAM, not the write-back path itself --
+    // the tile still leaves the chip over the NoP and still lands in the multi-chip
+    // temporal buffer. Only this chip's GLB read is dropped. (Returning early, as this
+    // used to, silently deleted the whole off-chip output store for a bypassed OUTPUT.)
+    const bool bypassed = bypass[data_type_t::OUTPUT];
+    const size_t source_line = bypassed ? pe_array->line_size[data_type_t::OUTPUT]
+                                        : line_size[data_type_t::OUTPUT];
     const datatype_transfer_timing_t timing = datatype_transfer_timing(
-        data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
+        data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], source_line,
         multi_chip->line_size[data_type_t::OUTPUT], multi_chip->get_bitwidth());
 
     // GB3: buffer access cycles are hidden when the destination (multi-chip temporal
     // buffer) is double-buffered, matching the load-path convention. Energy always charged.
     if(!multi_chip->double_buffer) {
-        access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
-        write_back_cycle += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+        if(!bypassed) {
+            access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+            write_back_cycle += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
+        }
         multi_chip->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
         multi_chip->write_back_cycle += timing.destination_accesses*multi_chip->u_write_cycle[data_type_t::OUTPUT];
     }
-    access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
+    if(!bypassed) {
+        access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
+    }
     multi_chip->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_energy[data_type_t::OUTPUT];
 
     // Serialized NoP link transfer over the GLB<->multi-chip fabric. On a mesh NoP the

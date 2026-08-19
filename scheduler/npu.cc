@@ -533,6 +533,9 @@ void npu_t::print_total_result(const std::string m_accelerator_config, const std
     std::ofstream output_file;
     output_file.open(output_file_name, std::ios::out);
 
+    // L11/P4-14: hand the rollup its timing scope before printing, so the scope line appears
+    // next to the latency it qualifies rather than only as a trailing warning.
+    network_stats->excluded_timing_layers = num_skipped_timing_layers;
     network_stats->print_results(output_file);
     if(num_skipped_timing_layers > 0) {
         const std::string warning = "WARNING: partial timing result; " +

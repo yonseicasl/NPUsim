@@ -160,6 +160,12 @@ protected:
     stationary_type_t stationary_type;          // Stationary type at the chip-level processor (equal to global buffer stationary type)
     std::string parameter_order;                // Order of parameters used in data transfer
     noc_type_t nop_type;                        // NoP type (Mesh)
+    // L7: does the NoP forward ONE copy of a broadcast tile along a multicast tree (1) or
+    // send a separate copy to every chip (0)? Default 1: on a bus one transmission is
+    // physically seen by every receiver, so charging it per chip was never right, and a
+    // mesh with multicast routers behaves the same way at the shared package ingress. Set
+    // to 0 to model a package whose routers only do unicast.
+    bool nop_multicast;
     memory_type_t memory_type;                  // Memory type of global buffer
 
     unsigned height;                            // Y-dimension of chip-level processors
