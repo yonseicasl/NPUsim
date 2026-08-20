@@ -1,6 +1,7 @@
 #include <iomanip>
 #include "adder_tree.h"
 #include "interconnect_timing.h"
+#include "energy_units.h"
 
 adder_tree_t::adder_tree_t(section_config_t m_section_config) :
     pe_array_t(m_section_config) {
@@ -241,6 +242,7 @@ void adder_tree_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t el
     // This write-back's share of the element-granular internal-tree work: summed over
     // all fan-in contributors it totals exactly distinct_outputs*(fan_in-1) additions.
     const double adds_share = static_cast<double>(elements)*cost.num_additions/fan_in;
+    reduction_additions += adds_share;
     transfer_energy[data_type_t::OUTPUT] += adds_share*(noc_energy + u_adder_energy);
     // Pipeline fill through the ceil(log2(fan_in)) sequential tree levels; the
     // element-stream serialization itself is the base link accounting.
@@ -1542,11 +1544,11 @@ void adder_tree_t::print_specification() {
     std::cout << "NoC cycle          :" << std::setw(17) 
                                         << noc_cycle << " cycles" << std::endl;
     std::cout << "NoC energy         :" << std::setw(21)
-                                        << noc_energy << " pJ" << std::endl;
+                                        << noc_energy << " " << energy_units().label() << std::endl;
     std::cout << "Adder cycle        :" << std::setw(17)
                                         << u_adder_cycle << " cycles" << std::endl;
     std::cout << "Adder energy       :" << std::setw(21)
-                                        << u_adder_energy << " pJ" << std::endl;
+                                        << u_adder_energy << " " << energy_units().label() << std::endl;
 	std::cout << std::endl;
 }
 

@@ -5,6 +5,7 @@
 #include "global_buffer.h"
 #include "datatype.h"
 #include "interconnect_timing.h"
+#include "energy_units.h"
 
 
 namespace {
@@ -28,6 +29,8 @@ global_buffer_t::global_buffer_t(section_config_t /*m_section_config*/) :
     multi_chip(NULL),
     data(NULL),
     double_buffer(false),
+    output_cast_bytes(0),
+    output_cast_energy(0.0),
     index(0),
     duplicated_input(0),
     u_transfer_cycle(0.0),
@@ -80,6 +83,28 @@ memory_type_t global_buffer_t::get_memory_type() { return memory_type;}
 
 // Get global buffer's size
 double global_buffer_t::get_buffer_size() { return size; }
+bool global_buffer_t::can_retain_input_halo(size_t input_working_set_elements) const {
+    if(bypass[data_type_t::INPUT] || input_working_set_elements == 0) return false;
+    const size_t copies = double_buffer ? 2 : 1;
+    const size_t input_bytes = runtime_datatypes().storage_bytes(data_type_t::INPUT,
+                                                                 input_working_set_elements);
+    if(input_bytes > std::numeric_limits<size_t>::max()/copies) return false;
+    if(memory_type == memory_type_t::SEPARATE) {
+        return static_cast<double>(copies*input_bytes) <= capacity_per_type[data_type_t::INPUT];
+    }
+    size_t working_bytes = input_bytes;
+    for(unsigned i = data_type_t::WEIGHT; i < data_type_t::NUM_DATA_TYPES; ++i) {
+        const data_type_t type = static_cast<data_type_t>(i);
+        if(!bypass[type]) {
+            const size_t resident_bytes = runtime_datatypes().storage_bytes(type, tile_size[type]);
+            if(resident_bytes > std::numeric_limits<size_t>::max() - working_bytes) return false;
+            working_bytes += resident_bytes;
+        }
+    }
+    if(working_bytes > std::numeric_limits<size_t>::max()/copies) return false;
+    return static_cast<double>(copies*working_bytes) <= size;
+}
+
 
 // Get global buffer's bitwidth
 unsigned global_buffer_t::get_bitwidth() { return bitwidth; }
@@ -229,6 +254,10 @@ void global_buffer_t::account_output_writeback_link() {
         access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
     }
     multi_chip->access_energy[data_type_t::OUTPUT] += timing.destination_accesses*multi_chip->u_write_energy[data_type_t::OUTPUT];
+    // RE1: the final cast is NOT charged here either. The GLB reads the output out once per
+    // reduction pass (4 passes in the GEMM fixture's GLB-level C split), so a cast charged at this
+    // boundary counts 4x the final output elements. It is charged at the off-chip output store,
+    // the one boundary DR6/T1 establish fires exactly once per output element.
 
     // Serialized NoP link transfer over the GLB<->multi-chip fabric. On a mesh NoP the
     // stream burns per-hop energy and pays this chip's route depth as a one-time fill.
@@ -1641,6 +1670,9 @@ double global_buffer_t::modeled_elapsed_cycles() const {
 }
 
 void global_buffer_t::reset() {
+    // RE1: the final-cast counters reset with the layer.
+    output_cast_bytes = 0;
+    output_cast_energy = 0.0;
     std::fill_n(data, ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
     
     idle = false;
@@ -1826,6 +1858,7 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
+    // RE1: the final output cast/pack unit cost, charged per output byte read out.
 
     m_section_config.get_setting("transfer_cycle", &u_transfer_cycle);
     m_section_config.get_setting("transfer_energy", &u_transfer_energy);
@@ -1943,11 +1976,11 @@ void separate_buffer_t::print_specification() {
     
     std::cout << "Access energy (read/write)" << std::endl;
     std::cout << " * Input buffer    :" << std::setw(16) << std::setprecision(2)
-                                        << u_read_energy[data_type_t::INPUT] << "/" << u_write_energy[data_type_t::INPUT] << " pJ" << std::endl;
+                                        << u_read_energy[data_type_t::INPUT] << "/" << u_write_energy[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     std::cout << " * Weight buffer   :" << std::setw(16) << std::setprecision(2)
-                                        << u_read_energy[data_type_t::WEIGHT] << "/" << u_write_energy[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                        << u_read_energy[data_type_t::WEIGHT] << "/" << u_write_energy[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     std::cout << " * Output buffer   :" << std::setw(16) << std::setprecision(2)
-                                        << u_read_energy[data_type_t::OUTPUT] << "/" << u_write_energy[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                        << u_read_energy[data_type_t::OUTPUT] << "/" << u_write_energy[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
 
     std::cout << "Access cycle (read/write)" << std::endl;
     std::cout << " * Input buffer    :" << std::setw(13) << std::setprecision(1)
@@ -2103,6 +2136,7 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     u_static_energy.reserve(data_type_t::NUM_DATA_TYPES);
     u_static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     m_section_config.get_vector_setting("static_energy", &u_static_energy);
+    // RE1: the final output cast/pack unit cost, charged per output byte read out.
 
     payload_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -2200,7 +2234,7 @@ void shared_buffer_t::print_specification() {
     
     std::cout << "Access energy (read/write)" << std::endl;
     std::cout << " * Global buffer   :" << std::setw(16) << std::setprecision(2) 
-                                        << u_read_energy[data_type_t::INPUT] << "/" << u_write_energy[data_type_t::INPUT] << " pJ" << std::endl;
+                                        << u_read_energy[data_type_t::INPUT] << "/" << u_write_energy[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     
     std::cout << "Access cycle (read/write) " << std::endl;
     std::cout << " * Global buffer    :" << std::setw(13) << std::setprecision(1)

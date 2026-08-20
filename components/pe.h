@@ -2,6 +2,7 @@
 #define __PE_H__
 
 #include <cstddef>
+#include <string>
 
 #include "def.h"
 #include "utils.h"
@@ -15,6 +16,11 @@ class pe_array_t;
 class pe_t {
 
 public:
+
+    // Phase-5: the component's clock in MHz. Power needs a single authoritative clock
+    // across the modeled components (the timeline is one shared cycle axis), so stats_t
+    // compares these and reports power as unsupported when they disagree.
+    double clock_mhz() const { return static_cast<double>(frequency); }
     pe_t(section_config_t m_section_config);
     virtual ~pe_t();
 
@@ -132,6 +138,51 @@ public:
 
     double u_computation_cycle;                             // The unit MAC cycle
     double u_computation_energy;                            // The unit MAC energy
+    // E3: MAC energy used to be ONE scalar for every operand precision, so switching
+    // input/weight formats changed the memory traffic and left the compute energy identical --
+    // an INT4 multiply cost exactly what an FP16 multiply cost, and nothing flagged it. A config
+    // may now declare a per-precision cost, keyed by the operand format pair:
+    //     mac_energy_<input format>_<weight format>    e.g. mac_energy_int8_int8
+    // When the running pair has no declared entry the scalar is still used (so existing configs
+    // are unaffected), but the result is reported as UNCALIBRATED for that precision rather than
+    // presented as a precision-aware number. `compute_energy_basis` names whichever key supplied
+    // the value.
+    // RE1: the final output cast is charged at the OFF-CHIP STORE, so its unit cost lives in
+    // multi_chip_t, not here. Two earlier placements -- the PE's write_output (262,144 casts, one
+    // per MAC issue) and the GLB readout (16,384, one per GLB pass) -- were both wrong, and each
+    // left a `u_output_cast_*` pair behind in the component it had been tried in. Those pairs were
+    // still parsed from the config and consumed by nothing, which is the exact defect the
+    // dead-knob scan (validation/knobs KN9) exists to catch. They are gone; only the multi-chip
+    // pair is real.
+    // E4/RE1: the accumulator/output event counts, kept apart because they are DIFFERENT EVENTS
+    // on different precisions and at different boundaries.
+    //
+    // RE1: these used to be produced together, unconditionally, by account_format_events(OUTPUT)
+    // on every output request -- before that function could even tell whether the request was a
+    // fresh zero-initialized accumulator or a genuine partial-sum reload. The consequence was that
+    // the "final cast" count followed the MAC count (262,144 on GEMM 64x64x64) instead of the
+    // final output element count (4,096), and a zero-init paid reload energy it never spent. The
+    // four events are now generated at their own boundaries:
+    //   CREATE  -- request_to_lb[OUTPUT] with no prior value: clear_output_accumulators(), free
+    //   RELOAD  -- request_to_lb[OUTPUT] with a prior value: accumulator-precision read
+    //   SPILL   -- MAC -> LB write-back of a partial sum: accumulator-precision write
+    //   CAST    -- the output leaving the PE for good: output-precision pack, once per element
+    size_t accumulator_reload_bytes;
+    size_t accumulator_spill_bytes;
+    size_t accumulator_create_events;
+    // E20-4: passes where a prior partial sum existed but the output tile was already resident in
+    // the MAC, so no LB->MAC read-back occurred. These used to be charged as reloads.
+    size_t accumulator_retained_events;
+    // RE1: the accumulator's own energy, kept separate from the format-IP energy so it can be
+    // attributed to the component that OWNS the accumulator. With edge_accumulation the
+    // accumulator lives at the array edge, not in the PE, so this energy is handed to the
+    // PE array instead of being charged here.
+    double accumulator_energy;
+    // E4: lane->accumulator reduction energy, split out of computation_energy so the adder-tree
+    // work is visible on its own axis instead of being folded into the MAC total.
+    double reduction_energy;
+    std::string compute_energy_basis;
+    bool compute_energy_precision_calibrated;
     // P4-2/PE2: unit energy of one lane->accumulator adder-tree addition (see
     // lane_reduction_energy()). Defaults to 0 (no-op) until a config calibrates it,
     // mirroring adder_tree_t's u_adder_energy convention.
@@ -208,6 +259,12 @@ public:
     std::vector<unsigned> mask_bits_mac;                    // Mask bits
     std::vector<unsigned> mask_bits_lb;                     // Mask bits
 
+    // E20-2: the Format-IP transaction counts, per stream. The energy axis alone cannot say
+    // whether a zero means "no format work" or "format work whose unit cost was never
+    // declared".
+    std::vector<size_t> format_payload_events;
+    std::vector<size_t> format_metadata_events;
+
 protected:
 
     pe_array_t *pe_array;
@@ -247,6 +304,13 @@ protected:
     unsigned count_nonzero_mac_operations(scheduler_t *m_scheduler) const;
 
     void account_format_events(data_type_t type, size_t elements);
+
+    // RE1: the four output-accumulator events, separated so each is generated at its own
+    // boundary instead of all of them firing on every output request.
+    void account_accumulator_create(size_t elements);
+    void account_accumulator_reload(size_t elements);
+    void account_accumulator_spill(size_t elements);
+    void charge_accumulator_bytes(size_t bytes);
     void account_descriptor_dense_mac_transfer(data_type_t type, size_t elements, bool to_mac);
 };
 

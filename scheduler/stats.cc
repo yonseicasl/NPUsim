@@ -5,6 +5,8 @@
 #include "stats.h"
 #include <limits>
 #include "interconnect_timing.h"
+#include "energy_units.h"
+#include "datatype.h"
 #include "pe_lane.h"
 
 namespace {
@@ -36,6 +38,24 @@ stats_t::stats_t() :
     min_computation_cycle(0.0),
     avg_computation_cycle(0.0),
     computation_energy(0.0),
+    reduction_energy(0.0),
+    weight_fold_energy(0.0),
+    layer_setup_energy(0.0),
+    weight_fold_events(0.0),
+    layer_setup_events(0.0),
+    accumulator_reload_bytes(0),
+    accumulator_spill_bytes(0),
+    accumulator_create_events(0),
+    accumulator_retained_events(0),
+    output_cast_bytes(0),
+    accumulator_energy(0.0),
+    output_cast_energy(0.0),
+    output_cast_cycle(0.0),
+    row_activation_events(0),
+    format_payload_events(0),
+    format_metadata_events(0),
+    reduction_additions(0.0),
+    pe_array_accumulator_energy(0.0),
     mac_busy_cycle(0.0),
     mac_available_cycle(0.0),
     utilization_mac(0.0),
@@ -138,6 +158,8 @@ void stats_t::init() {
     static_energy_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     utilization_pe_array_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     utilization_pe_array_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    utilization_multi_chip_buffer.reserve(data_type_t::NUM_DATA_TYPES);
+    utilization_multi_chip_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     format_cycle_pe.reserve(data_type_t::NUM_DATA_TYPES);
     format_cycle_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -211,6 +233,13 @@ void stats_t::init() {
     stage_fill_access_global_buffer = 0.0;
     global_buffer_bypass.assign(data_type_t::NUM_DATA_TYPES, false);
     network_rollup = false;
+    output_tile_array_resident = false;
+    compute_energy_basis = "computation_energy";
+    authoritative_frequency_mhz = 0.0;
+    single_clock_domain = false;
+    clock_domain_note.clear();
+    compute_energy_precision_calibrated = false;
+    operand_precision.clear();
     network_timing_layers = 0;
     excluded_timing_layers = 0;
     chip_access_cycle_global_buffer.clear();
@@ -220,6 +249,18 @@ void stats_t::init() {
     timeline_boundary_overlap[2] = timeline_boundary_overlap[3] = true;
     timeline_physical_macs = 0.0;
     offchip_repetition_tiles = 1;
+    input_halo_overlap = false;
+    input_halo_capacity_sufficient = false;
+    input_halo_reuse_applied = false;
+    input_halo_unique_elements = 0;
+    input_halo_replicated_elements = 0;
+    input_halo_working_set_bytes = 0;
+    input_halo_pre_dram_transactions = 0;
+    dram_input_link_bits = 0;
+    dram_input_source_line_bits = 0;
+    dram_input_read_cycle = 0.0;
+    dram_input_read_energy = 0.0;
+    dram_input_access_hidden = false;
     for(unsigned s = 0; s < 5; ++s) timeline_stall[s] = 0.0;
     for(unsigned b = 0; b < 4; ++b) timeline_boundary_depth[b] = 1;
     temporal_repetition_tiles = 1;
@@ -489,10 +530,61 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     // latency is the segment-combined result: max within an overlapped run of stages,
     // summed across serialized boundaries.
     busy_cycle_dram = m_dram->modeled_elapsed_cycles();
+    // Phase-5: establish the clock contract. Every modeled component must share one frequency
+    // for the shared cycle axis to be convertible to time; otherwise power is unsupported and
+    // says so rather than being computed against an arbitrary domain.
+    {
+        const double frequencies[5] = {
+            m_pe_array[0]->pes[0]->clock_mhz(),
+            m_pe_array[0]->clock_mhz(),
+            m_global_buffer[0]->clock_mhz(),
+            m_multi_chip->clock_mhz(),
+            m_dram->clock_mhz()};
+        const char *names[5] = {"PE", "PE array", "global buffer", "multi-chip", "DRAM"};
+        single_clock_domain = true;
+        authoritative_frequency_mhz = frequencies[0];
+        std::string mismatch;
+        for(unsigned f = 1; f < 5; ++f) {
+            if(frequencies[f] != frequencies[0]) {
+                single_clock_domain = false;
+                mismatch += std::string(mismatch.empty() ? "" : ", ") + names[f] + " " +
+                            std::to_string(frequencies[f]) + " MHz";
+            }
+        }
+        if(frequencies[0] <= 0.0) {
+            single_clock_domain = false;
+            clock_domain_note = "no positive component frequency is declared";
+        } else if(single_clock_domain) {
+            clock_domain_note = "all modeled components share one clock";
+        } else {
+            clock_domain_note = "mixed clock domains (PE " + std::to_string(frequencies[0]) +
+                                " MHz vs " + mismatch +
+                                "); the timeline is one shared cycle axis, so cycles from"
+                                " different domains are not comparable";
+            authoritative_frequency_mhz = 0.0;
+        }
+    }
     // L8: record the analytical DRAM contract so the report can state its scope.
+    row_activation_events = m_dram->row_activation_events;
+    dram_input_link_bits = m_dram->get_bitwidth();
+    dram_input_source_line_bits = m_dram->line_size[data_type_t::INPUT];
+    dram_input_read_cycle = m_dram->u_read_cycle[data_type_t::INPUT];
+    dram_input_read_energy = m_dram->u_read_energy[data_type_t::INPUT];
+    dram_input_access_hidden = m_multi_chip->double_buffer;
     dram_timing_model = m_dram->describe_timing_model();
+    // RE6: record which links each fabric's noc_energy prices, so the reported energy can be
+    // checked against an actual edge count instead of guessed at.
+    if(!m_pe_array.empty()) {
+        array_noc_link_contract = m_pe_array[0]->describe_noc_link_contract();
+        output_tile_array_resident = m_pe_array[0]->output_tile_is_array_resident();
+    }
+    nop_link_contract = m_multi_chip->describe_nop_link_contract();
     dram_timing_limits = m_dram->describe_timing_limits();
     busy_cycle_multi_chip = m_multi_chip->modeled_elapsed_cycles();
+    // RE1: the final output cast, charged at the off-chip output store.
+    output_cast_bytes = m_multi_chip->output_cast_bytes;
+    output_cast_energy = m_multi_chip->output_cast_energy;
+    output_cast_cycle = m_multi_chip->output_cast_cycle;
     busy_cycle_global_buffer = 0.0;
     busy_cycle_pe_array = 0.0;
     bool global_buffer_double_buffer = false;
@@ -556,6 +648,13 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             // Update computation energy
             computation_energy += m_pe_array[i]->pes[j]->computation_energy;
+            // E4: the reduction axis and the two format event counts add across PEs.
+            reduction_energy += m_pe_array[i]->pes[j]->reduction_energy;
+            accumulator_reload_bytes += m_pe_array[i]->pes[j]->accumulator_reload_bytes;
+            accumulator_spill_bytes += m_pe_array[i]->pes[j]->accumulator_spill_bytes;
+            accumulator_create_events += m_pe_array[i]->pes[j]->accumulator_create_events;
+            accumulator_retained_events += m_pe_array[i]->pes[j]->accumulator_retained_events;
+            accumulator_energy += m_pe_array[i]->pes[j]->accumulator_energy;
 
             // Account for scalar-MAC cycles that actually execute operations.
             mac_busy_cycle += static_cast<double>(m_pe_array[i]->pes[j]->num_computation) *
@@ -606,6 +705,10 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
                 format_cycle_pe[k] = std::max(format_cycle_pe[k], m_pe_array[i]->pes[j]->format_cycle[k]);
                 pe_format_types += m_pe_array[i]->pes[j]->format_cycle[k];
+                // E20-2: sum the Format-IP transaction counts over every PE, so an active but
+                // unpriced format path is visible even when its energy axis reads 0.
+                format_payload_events += m_pe_array[i]->pes[j]->format_payload_events[k];
+                format_metadata_events += m_pe_array[i]->pes[j]->format_metadata_events[k];
                 format_energy_pe[k] += m_pe_array[i]->pes[j]->format_energy[k];
 
                 // Update overlapped cycle between local buffer and computing unit
@@ -617,6 +720,17 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             }
 
             local_buffer_type = m_pe_array[i]->pes[j]->get_memory_type();
+            // E3: every PE reads the same config, so record the compute-energy basis once, with the
+            // operand precision it applies to.
+            compute_energy_basis = m_pe_array[i]->pes[j]->compute_energy_basis;
+            compute_energy_precision_calibrated =
+                m_pe_array[i]->pes[j]->compute_energy_precision_calibrated;
+            // RE4: the precision a MAC's energy depends on is all THREE widths, so the label
+            // names the accumulator too. Reporting only the operands made an INT8 x INT8 -> FP32
+            // MAC and an INT8 x INT8 -> FP16 MAC look like the same calibrated case.
+            operand_precision = runtime_datatypes().format(data_type_t::INPUT).name + " x " +
+                                runtime_datatypes().format(data_type_t::WEIGHT).name + " -> " +
+                                runtime_datatypes().accumulator_format().name;
             pe_double_buffer = pe_double_buffer && m_pe_array[i]->pes[j]->double_buffer;
 
             // CE4: reduce THIS PE's own datatype-combined value into the running
@@ -732,6 +846,21 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         // V2: fold fill serializes on the compute schedule (max across parallel arrays).
         fold_fill_cycle_pe_array = std::max(fold_fill_cycle_pe_array, m_pe_array[i]->fold_fill_cycle);
         layer_setup_cycle_pe_array = std::max(layer_setup_cycle_pe_array, m_pe_array[i]->u_layer_setup_cycle);
+        // E5: fold energy accumulates across arrays like the events that produced it; the
+        // per-layer schedule setup fires once per array.
+        weight_fold_energy += m_pe_array[i]->weight_fold_energy;
+        pe_array_accumulator_energy += m_pe_array[i]->accumulator_energy;
+        weight_fold_events += m_pe_array[i]->weight_fold_events;
+        reduction_additions += m_pe_array[i]->reduction_additions;
+        // RE3: the setup EVENT comes from the setup actually executing -- a declared setup cycle
+        // cost -- not from its energy being priced. Keying the event off the energy made an
+        // uncalibrated setup report "0.00 pJ over 0 setup event(s)", which reads as "no setup
+        // happened" when the schedule in fact pays 2270 cycles for one. The converse (energy with
+        // no setup execution) is rejected at config load; see validate_energy_settings().
+        if(m_pe_array[i]->u_layer_setup_cycle > 0.0) {
+            layer_setup_energy += m_pe_array[i]->u_layer_setup_energy;
+            layer_setup_events += 1.0;
+        }
     }
 
     // Guard the per-PE averages against a mapping that activates zero PEs (avoids NaN).
@@ -828,6 +957,10 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     
     // Update utilization of chip-level processor
     utilization_multi_chip = std::max(utilization_multi_chip, m_multi_chip->utilization);
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+        utilization_multi_chip_buffer[i] = std::max(utilization_multi_chip_buffer[i],
+                                                   m_multi_chip->buffer_utilization[i]);
+    }
 
 }
 
@@ -866,11 +999,27 @@ void scale_costs(std::vector<double> *values, unsigned repetitions) {
         values->at(i) *= repetitions;
     }
 }
+size_t rescale_counter_ratio(size_t value, size_t numerator, size_t denominator,
+                             const char *label) {
+    if(value == 0 || numerator == denominator) return value;
+    if(denominator == 0) {
+        std::cerr << "Error: zero denominator while scaling " << label << std::endl;
+        exit(1);
+    }
+    const long double scaled = static_cast<long double>(value)*numerator/denominator;
+    if(scaled > static_cast<long double>(std::numeric_limits<size_t>::max())) {
+        std::cerr << "Error: size overflow while scaling " << label << std::endl;
+        exit(1);
+    }
+    return static_cast<size_t>(scaled + 0.5L);
 
+}
 } // namespace
 
 void stats_t::scale_serial_repetitions(unsigned m_repetitions,
-                                       const std::vector<unsigned> &m_datatype_repetitions) {
+                                       const std::vector<unsigned> &m_datatype_repetitions,
+                                       const input_halo_reuse_t &m_input_halo,
+                                       bool m_halo_capacity_sufficient) {
     if(m_repetitions == 0) {
         std::cerr << "Error: temporal repetition count must be non-zero" << std::endl;
         exit(1);
@@ -881,6 +1030,15 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
             exit(1);
         }
     }
+    input_halo_overlap = m_input_halo.active;
+    input_halo_capacity_sufficient = m_input_halo.active && m_halo_capacity_sufficient;
+    input_halo_unique_elements = m_input_halo.unique_elements;
+    input_halo_replicated_elements = m_input_halo.replicated_elements;
+    input_halo_working_set_bytes = runtime_datatypes().storage_bytes(
+        data_type_t::INPUT, m_input_halo.working_set_elements);
+    input_halo_reuse_applied = false;
+    input_halo_pre_dram_transactions = 0;
+
     // P3: record the tile count for finalize_layer_timeline()'s fill+bottleneck
     // combination, covering both branches below.
     temporal_repetition_tiles = m_repetitions;
@@ -912,6 +1070,14 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     mac_busy_cycle *= m_repetitions;
     mac_available_cycle *= m_repetitions;
     computation_energy *= m_repetitions;
+    reduction_energy *= m_repetitions;
+    accumulator_reload_bytes = scale_counter(accumulator_reload_bytes, m_repetitions,
+                                             "accumulator reload bytes");
+    accumulator_spill_bytes = scale_counter(accumulator_spill_bytes, m_repetitions,
+                                                   "accumulator spill bytes");
+    accumulator_create_events = scale_counter(accumulator_create_events, m_repetitions,
+                                              "accumulator create events");
+    accumulator_energy *= m_repetitions;
 
     scale_counters(&num_request_pe, m_repetitions, "PE request count");
     scale_counters(&num_data_transfer_pe, m_repetitions, "PE transfer count");
@@ -958,6 +1124,11 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     // V2: fold fill repeats with every global-buffer repetition; the per-layer setup
     // (config/flush/DMA prologue) is a one-time cost added after scaling.
     fold_fill_cycle_pe_array = fold_fill_cycle_pe_array*m_repetitions + layer_setup_cycle_pe_array;
+    // E5: the same split on the energy side -- per-fold energy repeats with every GLB
+    // repetition, the one-time layer setup does not.
+    weight_fold_energy *= m_repetitions;
+    pe_array_accumulator_energy *= m_repetitions;
+    weight_fold_events *= m_repetitions;
 
     scale_counters(&num_request_global_buffer, m_repetitions, "global-buffer request count");
     scale_counters(&num_data_transfer_global_buffer, m_repetitions, "global-buffer transfer count");
@@ -1007,6 +1178,16 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
         transfer_cycle_dram[i] *= repetitions;
         transfer_energy_dram[i] *= repetitions;
 
+        // RE1: the final output cast is committed at the off-chip store, so it scales with the
+        // OUTPUT datatype's repetition factor -- not the uniform GLB repetition. A GLB repetition
+        // over a reduction dimension (the C loop here) re-accumulates the SAME output rather than
+        // producing a new one, so scaling the cast by it would multiply the final element count by
+        // the reduction depth (4x on the GEMM fixture).
+        if(i == data_type_t::OUTPUT) {
+            output_cast_bytes = scale_counter(output_cast_bytes, repetitions, "output cast bytes");
+            output_cast_energy *= repetitions;
+            output_cast_cycle *= repetitions;
+        }
         // GLB fill (write) side mirrors the off-chip supply, so it scales with the
         // same per-datatype factor before folding into the GLB access totals.
         fill_access_cycle_global_buffer[i] *= repetitions;
@@ -1014,6 +1195,61 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
         // CE4/P1-D: same factor on the per-chip copies, which keep the entity dimension.
         for(unsigned chip = 0; chip < chip_fill_access_cycle_global_buffer.size(); ++chip) {
             chip_fill_access_cycle_global_buffer[chip][i] *= repetitions;
+        }
+    }
+    // E20-3: the live descriptor pass charged every legacy-GLB P/Q window independently.
+    // When the GLB can hold the ring-buffer working set, keep the logical requests but coalesce
+    // their overlapping dense payload to the exact union footprint. Cycle and energy on every
+    // physical off-chip side use the same ratio, so traffic cannot change without its costs.
+    if(input_halo_overlap && input_halo_capacity_sufficient && dram_input_link_bits > 0) {
+        const unsigned input = data_type_t::INPUT;
+        const size_t before = storage_link_transactions_dram[input];
+        const size_t target_payload = runtime_datatypes().payload_transactions(
+            data_type_t::INPUT, input_halo_unique_elements, dram_input_link_bits);
+        const size_t target_metadata = runtime_datatypes().metadata_transactions(
+            data_type_t::INPUT, input_halo_unique_elements, dram_input_link_bits);
+        const size_t target_storage = runtime_datatypes().storage_transactions(
+            data_type_t::INPUT, input_halo_unique_elements, dram_input_link_bits);
+        input_halo_pre_dram_transactions = before;
+        if(before > 0 && target_storage < before) {
+            const double ratio = static_cast<double>(target_storage)/static_cast<double>(before);
+
+            payload_link_transactions_multi_chip[input] = rescale_counter_ratio(
+                payload_link_transactions_multi_chip[input], target_storage, before,
+                "halo-aware multi-chip payload transactions");
+            metadata_link_transactions_multi_chip[input] = rescale_counter_ratio(
+                metadata_link_transactions_multi_chip[input], target_storage, before,
+                "halo-aware multi-chip metadata transactions");
+            storage_link_transactions_multi_chip[input] = rescale_counter_ratio(
+                storage_link_transactions_multi_chip[input], target_storage, before,
+                "halo-aware multi-chip storage transactions");
+
+            payload_link_transactions_dram[input] = target_payload;
+            metadata_link_transactions_dram[input] = target_metadata;
+            storage_link_transactions_dram[input] = target_storage;
+
+            access_cycle_multi_chip[input] *= ratio;
+            access_energy_multi_chip[input] *= ratio;
+            transfer_cycle_multi_chip[input] *= ratio;
+            transfer_energy_multi_chip[input] *= ratio;
+            // Rebuild DRAM source accesses from the exact coalesced union. Unlike multiplying the
+            // descriptor aggregate by `ratio`, this preserves an integer physical access count
+            // and the access-energy/access-cycle unit-cost identity (energy E5a).
+            const size_t target_source_accesses = runtime_datatypes().storage_transactions(
+                data_type_t::INPUT, input_halo_unique_elements, dram_input_source_line_bits);
+            access_cycle_dram[input] = dram_input_access_hidden
+                ? 0.0 : static_cast<double>(target_source_accesses)*dram_input_read_cycle;
+            access_energy_dram[input] =
+                static_cast<double>(target_source_accesses)*dram_input_read_energy;
+            cycle_chip_dram[input] *= ratio;
+            transfer_cycle_dram[input] *= ratio;
+            transfer_energy_dram[input] *= ratio;
+            fill_access_cycle_global_buffer[input] *= ratio;
+            fill_access_energy_global_buffer[input] *= ratio;
+            for(unsigned chip = 0; chip < chip_fill_access_cycle_global_buffer.size(); ++chip) {
+                chip_fill_access_cycle_global_buffer[chip][input] *= ratio;
+            }
+            input_halo_reuse_applied = true;
         }
     }
     merge_global_buffer_fill();
@@ -1245,9 +1481,20 @@ void stats_t::update_network_stats(stats_t *m_source) {
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
         if(m_source->global_buffer_bypass[i]) global_buffer_bypass[i] = true;
     }
+    // Phase-5: the clock contract is a config property, identical across layers.
+    authoritative_frequency_mhz = m_source->authoritative_frequency_mhz;
+    single_clock_domain = m_source->single_clock_domain;
+    clock_domain_note = m_source->clock_domain_note;
+    // E3: the compute-energy basis is a config property, identical across layers.
+    compute_energy_basis = m_source->compute_energy_basis;
+    compute_energy_precision_calibrated = m_source->compute_energy_precision_calibrated;
+    operand_precision = m_source->operand_precision;
     // L8: the DRAM contract is a config property, identical across layers; carry it so the
     // network report states the same scope as its layers.
     dram_timing_model = m_source->dram_timing_model;
+    array_noc_link_contract = m_source->array_noc_link_contract;
+    output_tile_array_resident = m_source->output_tile_array_resident;
+    nop_link_contract = m_source->nop_link_contract;
     dram_timing_limits = m_source->dram_timing_limits;
     // L5: layers run serially, so their back-pressure stalls add like layer_latency does.
     for(unsigned stage = 0; stage < 5; ++stage) timeline_stall[stage] += m_source->timeline_stall[stage];
@@ -1268,6 +1515,24 @@ void stats_t::update_network_stats(stats_t *m_source) {
     min_computation_cycle += m_source->min_computation_cycle;
     avg_computation_cycle += m_source->avg_computation_cycle;
     computation_energy += m_source->computation_energy;
+    reduction_energy += m_source->reduction_energy;
+    weight_fold_energy += m_source->weight_fold_energy;
+    pe_array_accumulator_energy += m_source->pe_array_accumulator_energy;
+    layer_setup_energy += m_source->layer_setup_energy;
+    weight_fold_events += m_source->weight_fold_events;
+    layer_setup_events += m_source->layer_setup_events;
+    accumulator_reload_bytes += m_source->accumulator_reload_bytes;
+    accumulator_spill_bytes += m_source->accumulator_spill_bytes;
+    accumulator_create_events += m_source->accumulator_create_events;
+    accumulator_retained_events += m_source->accumulator_retained_events;
+    output_cast_bytes += m_source->output_cast_bytes;
+    accumulator_energy += m_source->accumulator_energy;
+    output_cast_energy += m_source->output_cast_energy;
+    output_cast_cycle += m_source->output_cast_cycle;
+    row_activation_events += m_source->row_activation_events;
+    format_payload_events += m_source->format_payload_events;
+    format_metadata_events += m_source->format_metadata_events;
+    reduction_additions += m_source->reduction_additions;
     mac_busy_cycle += m_source->mac_busy_cycle;
     mac_available_cycle += m_source->mac_available_cycle;
     utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
@@ -1416,6 +1681,324 @@ void stats_t::update_network_stats(stats_t *m_source) {
     }
 }
 
+// E1: energy summary -- component subtotals and the layer total.
+//
+// WHY THIS EXISTS. Three energy accumulators were never printed at all, and even the printed
+// ones could not be added up into a layer total: there was no statement of which accumulators
+// belong to which component, so a reader could not tell whether summing them double-counted a
+// shared event. Without a total there is also nothing for a checker to re-derive, which is why
+// a formula change could not be regression-tested.
+//
+// NO-DOUBLE-COUNTING BOUNDARY (the contract that makes the sum well defined). Every transfer
+// in this model charges three DISTINCT physical resources, and each one is billed to the
+// component that OWNS it:
+//   * the source buffer's read port  -> the SOURCE component's access energy
+//   * the link/fabric crossed        -> the component that owns that link
+//   * the destination buffer's write -> the DESTINATION component's access energy
+// So a GLB->PE-array transfer charges the GLB's read, the GLB<->array link (owned by the GLB),
+// and the PE-array temporal buffer's write -- three different resources, three different
+// owners, no event counted twice. Summing the subtotals is therefore exact, not an estimate.
+// Leakage is modeled per physical component and is kept on its own axis, because it is a
+// function of the layer's wall-clock rather than of any event count.
+void stats_t::print_energy_summary(std::ofstream &m_output_file) {
+    auto sum_types = [](const std::vector<double> &values) {
+        double total = 0.0;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) total += values[i];
+        return total;
+    };
+    // MAC: the compute itself, the MAC register file, and the format IP on the LB<->MAC path.
+    // E4: the reduction tree is its own axis now, but it is still the MAC component's energy --
+    // include it in the subtotal so the layer total stays complete.
+    // RE1: the PE-side accumulator energy (when the accumulator is IN the PE) and the final
+    // output cast belong to the MAC/PE datapath component. With edge_accumulation the accumulator
+    // energy was handed to the PE array instead and appears in that row.
+    const double mac_dynamic = computation_energy + reduction_energy +
+                               sum_types(access_energy_mac) + sum_types(format_energy_pe) +
+                               accumulator_energy;
+    // PE: the local buffer's own ports and the LB<->MAC bus. Leakage is modeled for the whole
+    // PE (MAC included), so it is reported on this row.
+    const double pe_dynamic = sum_types(access_energy_lb) + sum_types(transfer_energy_pe);
+    const double pe_static = sum_types(static_energy_pe);
+    // PE array: its temporal buffer's ports and the array's own distribution fabric.
+    // E5: the fold/setup control energy is the PE array's own activity (weight reload, schedule
+    // setup), so it belongs to that component's subtotal rather than sitting outside the total.
+    const double pe_array_dynamic = sum_types(access_energy_pe_array) +
+                                    sum_types(transfer_energy_pe_array) +
+                                    weight_fold_energy + layer_setup_energy +
+                                    pe_array_accumulator_energy;
+    const double pe_array_static = sum_types(static_energy_pe_array);
+    // GLB: its SRAM ports (the multi-chip fill write is already folded in by
+    // merge_global_buffer_fill()) and the GLB<->PE-array link.
+    const double global_buffer_dynamic = sum_types(access_energy_global_buffer) +
+                                         sum_types(fill_access_energy_global_buffer) +
+                                         sum_types(transfer_energy_global_buffer);
+    const double global_buffer_static = sum_types(static_energy_global_buffer);
+    // Multi-chip: its temporal buffer's ports and the NoP fabric.
+    // RE1: the final output cast/pack is committed at the off-chip store, so it belongs to the
+    // multi-chip component's subtotal.
+    const double multi_chip_dynamic = sum_types(access_energy_multi_chip) +
+                                      sum_types(transfer_energy_multi_chip) + output_cast_energy;
+    const double multi_chip_static = sum_types(static_energy_multi_chip);
+    // DRAM: its device access energy and the off-chip link plus row activations.
+    const double dram_dynamic = sum_types(access_energy_dram) + sum_types(transfer_energy_dram);
+
+    const double dynamic_total = mac_dynamic + pe_dynamic + pe_array_dynamic +
+                                 global_buffer_dynamic + multi_chip_dynamic + dram_dynamic;
+    const double static_total = pe_static + pe_array_static + global_buffer_static +
+                                multi_chip_static;
+
+    const std::vector<std::string> unpriced = unpriced_active_events();
+    m_output_file << "============= Energy summary ============" << std::endl;
+    // E3: name the key the MAC energy came from, and say plainly when it is not precision
+    // calibrated -- otherwise the same scalar silently prices INT4 and FP16 identically.
+    m_output_file << "MAC energy basis      : " << compute_energy_basis;
+    if(compute_energy_precision_calibrated) {
+        m_output_file << " (declared for " << operand_precision << ")";
+    } else {
+        m_output_file << " -- NOT calibrated for " << operand_precision
+                      << " (declare mac_energy_<input>_<weight>_<accumulator> for it)";
+    }
+    m_output_file << std::endl;
+    // E7: state the unit and its provenance right above the numbers. A normalized fixture's
+    // absolute total is not meaningful, and nothing else in the report said so.
+    m_output_file << "Energy unit           : " << energy_units().describe() << std::endl;
+    const char *rows[6] = {"MAC (compute+format)", "PE (local buffer)", "PE array",
+                           "Global buffer", "Multi-chip (NoP)", "DRAM"};
+    const double row_dynamic[6] = {mac_dynamic, pe_dynamic, pe_array_dynamic,
+                                   global_buffer_dynamic, multi_chip_dynamic, dram_dynamic};
+    const double row_static[6] = {0.0, pe_static, pe_array_static, global_buffer_static,
+                                  multi_chip_static, 0.0};
+    m_output_file << std::left << std::setw(24) << "Component" << std::right
+                  << std::setw(17) << "dynamic" << std::setw(17) << "static"
+                  << std::setw(17) << "total" << std::endl;
+    for(unsigned i = 0; i < 6; ++i) {
+        const bool has_energy = row_dynamic[i] != 0.0 || row_static[i] != 0.0;
+        m_output_file << " * " << std::left << std::setw(21) << rows[i] << std::right
+                      << std::setw(17) << std::setprecision(2) << row_dynamic[i]
+                      << std::setw(17) << row_static[i]
+                      << std::setw(17) << row_dynamic[i] + row_static[i]
+                      // RE5: the annotation now comes from the component's DECLARATION state, not
+                      // from the subtotal being zero. A bare 0 used to mean any of "not modeled",
+                      // "half-priced", "deliberately free" and "never exercised".
+                      << energy_cost_schema().annotate(static_cast<energy_component_t>(i),
+                                                       has_energy)
+                      << std::endl;
+    }
+    // E12: at network scope, state how many layers the total actually covers. Unsupported
+    // layers (pooling, activation, normalization) are excluded from accelerator accounting
+    // entirely, so their energy is ABSENT from this total -- not estimated, not zero. Without
+    // this line a partial rollup reads as an end-to-end network energy, exactly the way the
+    // timing rollup did before L11.
+    if(network_rollup) {
+        const unsigned total_layers = network_timing_layers + excluded_timing_layers;
+        m_output_file << "Energy scope          : " << network_timing_layers << " of "
+                      << total_layers << " layers";
+        if(excluded_timing_layers > 0) {
+            m_output_file << "  (PARTIAL: " << excluded_timing_layers
+                          << " unsupported layer(s) excluded; this is NOT an end-to-end network"
+                          << " energy)";
+        } else {
+            m_output_file << "  (complete: every layer is supported)";
+        }
+        m_output_file << std::endl;
+    }
+    // RE7: at network scope these are network totals, not layer ones. The rollup printed the
+    // same "Layer ..." labels as a single-layer report, so a network file's total read as one
+    // layer's -- and any checker matching on the label could not tell the two scopes apart.
+    const char *scope = network_rollup ? "Network" : "Layer";
+    m_output_file << std::left << std::setw(22) << (std::string(scope) + " dynamic energy")
+                  << std::right << ":" << std::setw(18) << std::setprecision(2)
+                  << dynamic_total << " " << energy_units().label() << std::endl;
+    m_output_file << std::left << std::setw(22) << (std::string(scope) + " static energy")
+                  << std::right << ":" << std::setw(18) << std::setprecision(2)
+                  << static_total << " " << energy_units().label() << std::endl;
+    m_output_file << std::left << std::setw(22) << (std::string(scope) + " total energy")
+                  << std::right << ":" << std::setw(18) << std::setprecision(2)
+                  << dynamic_total + static_total << " " << energy_units().label();
+    // RE2/E20-1: say plainly when the total's SCALE is not established, so it is never read as
+    // measured. Three independent reasons, any one of which is enough: the unit is not declared
+    // absolute with provenance, the compute cost is not calibrated for the running precision, or an
+    // event fired whose price nobody declared (E20-2). The third is the one that let a fixture with
+    // externally derived SRAM and DRAM costs still be missing its setup, accumulator and cast
+    // charges while claiming absolute pJ.
+    if(!energy_units().is_absolute() || !compute_energy_precision_calibrated ||
+       !unpriced.empty() || energy_cost_schema().undercounted() > 0) {
+        m_output_file << "   (ESTIMATED: not calibrated for absolute comparison)";
+    }
+    m_output_file << std::endl;
+    // RE5: an UNDERCOUNT warning keyed off the declaration. A component priced 0 on purpose does
+    // not make the total suspect; one whose cost is missing does, whether or not it came out at 0.
+    if(!unpriced.empty()) {
+        m_output_file << "Unpriced active events: " << unpriced.size()
+                      << " -- these FIRED and the config declares no cost for them, so the total"
+                      << " above is missing a charge of undeclared size" << std::endl;
+        for(unsigned i = 0; i < unpriced.size(); ++i) {
+            m_output_file << "  * " << unpriced[i] << std::endl;
+        }
+        m_output_file << "  (declare the key as 0 to state a modeled zero; an ABSENT key is not the"
+                      << " same statement)" << std::endl;
+    }
+    const unsigned undercounted = energy_cost_schema().undercounted();
+    if(undercounted > 0) {
+        m_output_file << "Uncosted components   : " << undercounted << " of "
+                      << NUM_ENERGY_COMPONENTS << " have a missing or absent energy cost, so this"
+                      << " total is an UNDERCOUNT (see the rows marked above)" << std::endl;
+    }
+    m_output_file << std::endl;
+
+    print_power_summary(m_output_file, dynamic_total, static_total);
+}
+
+// E20-1/E20-2: which events fired without a declared price.
+//
+// The rule is uniform: an event is ACTIVE if its own counter is non-zero, and PRICED if the config
+// declares the key -- with any value, zero included. An absent key and a declared zero are
+// different statements and are treated as such; that distinction is why a count is needed at all,
+// since both produce an energy of 0.
+//
+// PE local-buffer leakage is the one conditional entry: it counts as active only when the PE's own
+// `static_energy` is declared, i.e. when the config has put leakage in scope at all. A config that
+// models no leakage is not missing a leakage charge.
+std::vector<std::string> stats_t::unpriced_active_events() const {
+    std::vector<std::string> out;
+    const energy_cost_schema_t &schema = energy_cost_schema();
+    struct entry_t { bool active; const char *event; const char *section; const char *key; };
+    const double accumulator_bytes = static_cast<double>(accumulator_reload_bytes) +
+                                     static_cast<double>(accumulator_spill_bytes);
+    const entry_t entries[] = {
+        { layer_setup_events > 0.0,   "layer setup",                "pe_array",
+          "layer_setup_energy" },
+        { weight_fold_events > 0.0,   "weight fold",                "pe_array",
+          "weight_fold_fill_energy" },
+        { accumulator_bytes > 0.0,    "accumulator reload/spill",   "pe_array",
+          "accumulator_spill_energy" },
+        { output_cast_bytes > 0,      "final output cast",          "multi_chip",
+          "output_cast_energy" },
+        { row_activation_events > 0,  "DRAM row activation",        "dram",
+          "row_miss_energy" },
+        { format_payload_events > 0,  "Format-IP payload",          "pe_array",
+          "format_payload_energy" },
+        { format_metadata_events > 0, "Format-IP metadata",         "pe_array",
+          "format_metadata_energy" },
+        { reduction_additions > 0.0,  "array reduction additions",  "pe_array",
+          "adder_energy" },
+        { schema.is_declared("pe_array", "static_energy"),
+                                      "PE local-buffer leakage",    "pe_array",
+          "lb_static_energy" },
+    };
+    for(unsigned i = 0; i < sizeof(entries)/sizeof(entries[0]); ++i) {
+        if(!entries[i].active) continue;
+        if(schema.is_declared(entries[i].section, entries[i].key)) continue;
+        out.push_back(std::string(entries[i].event) + " fired but [" + entries[i].section +
+                      "] " + entries[i].key + " is not declared");
+    }
+    return out;
+}
+
+// Phase-5: average power, EDP/ED2P, and an explicit statement of what power does NOT include.
+//
+// The contract is deliberately small and complete rather than large and partly founded:
+//
+//   time      = critical-path cycles / authoritative frequency
+//   power     = energy / time
+//   EDP       = energy x time,   ED2P = energy x time^2
+//
+// Three preconditions, each reported rather than assumed:
+//   * ONE CLOCK. The timeline is a single shared cycle axis, so cycles convert to seconds only if
+//     every modeled component runs on the same clock (see stats_t::single_clock_domain). A
+//     mixed-domain config gets "unsupported", not a number divided by an arbitrary domain.
+//   * ABSOLUTE ENERGY. A normalized energy fixture has no watts. Power is therefore only reported
+//     when energy_unit = pJ (see E7); otherwise it says why not.
+//   * AVERAGE ONLY. Peak power needs the concurrency of individual events, which this model does
+//     not resolve -- the per-tile timeline places stage-level work, not per-event overlap. Peak is
+//     explicitly unsupported instead of being approximated by a sum of maxima.
+//
+// static_energy is pJ/CYCLE in the config and is already integrated over the layer's final
+// wall-clock (see the leakage rescale in finalize_layer_timeline()), so dividing it by the same
+// time window gives leakage power without double counting the duration.
+void stats_t::print_power_summary(std::ofstream &m_output_file, double dynamic_total,
+                                 double static_total) {
+    m_output_file << "============= Power summary =============" << std::endl;
+    m_output_file << "Clock domain          : " << clock_domain_note << std::endl;
+    if(single_clock_domain) {
+        m_output_file << "Authoritative clock   :" << std::setw(15) << std::setprecision(1)
+                      << authoritative_frequency_mhz << " MHz" << std::endl;
+    }
+    // What power never includes here, stated next to the numbers so a chip-level comparison is
+    // not attempted against a core-datapath figure.
+    m_output_file << "Not included          : DRAM background/refresh and I/O termination, clock"
+                  << " network, controller/DMA, PHY; core datapath only" << std::endl;
+    m_output_file << "Peak power            : unsupported (needs per-event concurrency; this model"
+                  << " resolves stage-level overlap only)" << std::endl;
+
+    if(!single_clock_domain) {
+        m_output_file << "Average power         : unsupported for this config (see the clock domain"
+                      << " above)" << std::endl;
+        m_output_file << std::endl;
+        return;
+    }
+    // RE2: absolute power requires the energy to BE absolute -- a declared pJ unit with declared
+    // provenance -- and it requires the compute cost to be calibrated for the precision actually
+    // running. A fallback scalar shared by every precision is not a calibrated compute cost, so a
+    // config using it does not qualify however its unit is labelled.
+    if(!energy_units().is_absolute()) {
+        m_output_file << "Average power         : unsupported (" << energy_units().label()
+                      << " energy) -- " << energy_units().calibration_note() << std::endl;
+        m_output_file << std::endl;
+        return;
+    }
+    if(!compute_energy_precision_calibrated) {
+        m_output_file << "Average power         : unsupported -- the compute cost is not calibrated"
+                      << " for the precision in use (" << operand_precision << "; basis "
+                      << compute_energy_basis << ")" << std::endl;
+        m_output_file << std::endl;
+        return;
+    }
+    // E20-1: absolute power additionally requires that nothing in the numerator is missing. A
+    // component whose cost is half declared (RE5's PARTIAL/NOT_MODELED) makes the total an
+    // undercount; an event that fired unpriced makes it an undercount of unstated size. Either way
+    // the division is arithmetic, not a wattage.
+    const unsigned undercounted = energy_cost_schema().undercounted();
+    const std::vector<std::string> unpriced = unpriced_active_events();
+    if(undercounted > 0 || !unpriced.empty()) {
+        m_output_file << "Average power         : unsupported -- the energy total is an UNDERCOUNT ("
+                      << undercounted << " component(s) with a missing cost, " << unpriced.size()
+                      << " active event(s) with no declared price), so energy/time is not a power"
+                      << std::endl;
+        if(!unpriced.empty()) {
+            m_output_file << "  first unpriced        : " << unpriced[0] << std::endl;
+        }
+        m_output_file << std::endl;
+        return;
+    }
+
+    const double seconds = layer_latency/(authoritative_frequency_mhz*1.0e6);
+    if(seconds <= 0.0) {
+        m_output_file << "Average power         : unsupported (non-positive elapsed time)"
+                      << std::endl;
+        m_output_file << std::endl;
+        return;
+    }
+    // Energy is pJ; pJ/s is pW, so scale to mW for a readable figure.
+    const double to_milliwatt = 1.0e-9;
+    const double total_energy = dynamic_total + static_total;
+    m_output_file << "Elapsed time          :" << std::setw(15) << std::setprecision(6)
+                  << seconds*1.0e3 << " ms  (" << std::setprecision(1) << layer_latency
+                  << " cycles / " << authoritative_frequency_mhz << " MHz)" << std::endl;
+    m_output_file << "Average dynamic power :" << std::setw(15) << std::setprecision(3)
+                  << dynamic_total*to_milliwatt/seconds << " mW" << std::endl;
+    m_output_file << "Average leakage power :" << std::setw(15) << std::setprecision(3)
+                  << static_total*to_milliwatt/seconds << " mW" << std::endl;
+    m_output_file << "Average total power   :" << std::setw(15) << std::setprecision(3)
+                  << total_energy*to_milliwatt/seconds << " mW" << std::endl;
+    // EDP/ED2P in pJ-based units: pJ*s and pJ*s^2.
+    m_output_file << "EDP                   :" << std::setw(15) << std::setprecision(6)
+                  << total_energy*seconds << " pJ*s" << std::endl;
+    m_output_file << "ED2P                  :" << std::setw(15) << std::setprecision(6)
+                  << total_energy*seconds*seconds << " pJ*s^2" << std::endl;
+    m_output_file << std::endl;
+}
+
 // Print out the result of simulation.
 void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << std::fixed;
@@ -1524,6 +2107,8 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << std::endl;
     m_output_file << std::endl;
 
+    print_energy_summary(m_output_file);
+
     /* PE result */
     m_output_file << "============== MAC result ===============" << std::endl;
     m_output_file << "# of computations     :" << std::setw(18) 
@@ -1583,7 +2168,7 @@ void stats_t::print_results(std::ofstream &m_output_file) {
 
     m_output_file << "Energy" << std::endl;
     m_output_file << "Computation energy    :" << std::setw(15) << std::setprecision(2) 
-                                               << computation_energy << " pJ" << std::endl;
+                                               << computation_energy << " " << energy_units().label() << std::endl;
     m_output_file << "Format-IP cycle (payload/metadata/spill)" << std::endl;
     m_output_file << " * Input               :" << std::setw(11) << std::setprecision(1)
                   << format_cycle_pe[data_type_t::INPUT] << " cycles" << std::endl;
@@ -1591,20 +2176,67 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                   << format_cycle_pe[data_type_t::WEIGHT] << " cycles" << std::endl;
     m_output_file << " * Output              :" << std::setw(11) << std::setprecision(1)
                   << format_cycle_pe[data_type_t::OUTPUT] << " cycles" << std::endl;
+    // E4: the reduction tree's own energy, and the two format event counts on their two
+    // different precisions. A merged "format energy" number could not show that an fp32
+    // accumulator spill moves 4x what an int8 output cast moves.
+    // E5: the fold/setup control energy and the events it was charged from, so the identity
+    // (events x unit cost) closes from the report alone.
+    m_output_file << "Weight-fold energy    :" << std::setw(15) << std::setprecision(2)
+                                               << weight_fold_energy << " "
+                                               << energy_units().label() << " over "
+                                               << std::setprecision(0) << weight_fold_events
+                                               << " fold event(s)" << std::endl;
+    m_output_file << "Layer-setup energy    :" << std::setw(15) << std::setprecision(2)
+                                               << layer_setup_energy << " "
+                                               << energy_units().label() << " over "
+                                               << std::setprecision(0) << layer_setup_events
+                                               << " setup event(s)";
+    // RE3: separate "no setup in this schedule" from "a setup runs but its unit cost is not
+    // priced". Both used to print as zero events.
+    if(layer_setup_events > 0.0 && layer_setup_energy == 0.0) {
+        m_output_file << " [unit cost UNCALIBRATED: the setup executes for "
+                      << std::setprecision(0) << layer_setup_cycle_pe_array
+                      << " cycle(s) but no layer_setup_energy is declared]";
+    } else if(layer_setup_events == 0.0) {
+        m_output_file << " [no layer setup is modeled for this architecture]";
+    }
+    m_output_file << std::endl;
+    m_output_file << "Reduction energy      :" << std::setw(15) << std::setprecision(2)
+                                               << reduction_energy << " " << energy_units().label()
+                                               << std::endl;
+    // RE1: the four accumulator/output events, each from its own boundary. A create is a
+    // zero-initialized accumulator and is deliberately free -- shown so that "0 energy" is
+    // visibly a modeled decision rather than a missing charge.
+    m_output_file << "Accumulator retained events   :" << std::setw(10)
+                  << accumulator_retained_events
+                  << "   (prior partial sum already in the MAC: no LB->MAC read-back, so no reload)"
+                  << std::endl;
+    m_output_file << "Accumulator create events     :" << std::setw(10)
+                                               << accumulator_create_events << std::endl;
+    m_output_file << "Accumulator reload bytes      :" << std::setw(10)
+                                               << accumulator_reload_bytes << std::endl;
+    m_output_file << "Accumulator spill bytes       :" << std::setw(10)
+                                               << accumulator_spill_bytes << std::endl;
+    // RE1: the PE-side accumulator energy. It is 0 when edge_accumulation moves the accumulator to
+    // the array edge -- the energy then appears on the PE-array row, where the config says the
+    // accumulator lives.
+    m_output_file << "Accumulator energy (PE):" << std::setw(14) << std::setprecision(2)
+                                               << accumulator_energy << " "
+                                               << energy_units().label() << std::endl;
     m_output_file << "Format-IP energy" << std::endl;
     m_output_file << " * Input               :" << std::setw(15) << std::setprecision(2)
-                  << format_energy_pe[data_type_t::INPUT] << " pJ" << std::endl;
+                  << format_energy_pe[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight              :" << std::setw(15) << std::setprecision(2)
-                  << format_energy_pe[data_type_t::WEIGHT] << " pJ" << std::endl;
+                  << format_energy_pe[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output              :" << std::setw(15) << std::setprecision(2)
-                  << format_energy_pe[data_type_t::OUTPUT] << " pJ" << std::endl;
+                  << format_energy_pe[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << "Access energy" << std::endl;
     m_output_file << " * Input register     :" << std::setw(15) << std::setprecision(2)
-                                               << access_energy_mac[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << access_energy_mac[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight register    :" << std::setw(15) << std::setprecision(2)
-                                               << access_energy_mac[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << access_energy_mac[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output register    :" << std::setw(15) << std::setprecision(2)
-                                               << access_energy_mac[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << access_energy_mac[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     // MAC utilization over the PE-modeled layer duration.
@@ -1671,11 +2303,11 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << "Energy" << std::endl;
     m_output_file << "Access energy" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
-                                               << access_energy_lb[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << access_energy_lb[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
-                                               << access_energy_lb[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << access_energy_lb[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << access_energy_lb[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << access_energy_lb[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     // Local buffer utilization
@@ -1738,20 +2370,20 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << "Energy" << std::endl;
     m_output_file << "Transfer energy" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2) 
-                                               << transfer_energy_pe[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << transfer_energy_pe[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
-                                               << transfer_energy_pe[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << transfer_energy_pe[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << transfer_energy_pe[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << transfer_energy_pe[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_pe[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << static_energy_pe[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_pe[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << static_energy_pe[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_pe[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << static_energy_pe[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "============ PE array result ============" << std::endl;
@@ -1767,6 +2399,15 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                 payload_link_transactions_pe_array,
                                 metadata_link_transactions_pe_array,
                                 storage_link_transactions_pe_array);
+    // RE6 condition 4: state the link contract next to the traffic it prices.
+    m_output_file << "NoC link contract     : " << array_noc_link_contract << std::endl;
+    m_output_file << "Output tile residency : "
+                  << (output_tile_array_resident
+                      ? "ARRAY-RESIDENT -- the array's output tile equals the GLB's, so"
+                        " intermediate write-backs are skipped until the drain"
+                      : "written back to the GLB during the layer")
+                  << std::endl;
+    m_output_file << std::endl;
 
     m_output_file << "# of request to Global buffer" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18) 
@@ -1801,22 +2442,44 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << std::endl;
 
     m_output_file << "Energy" << std::endl;
+    // E1: the PE-array temporal buffer's own access energy was accumulated and summed into
+    // the network totals but never printed, so a reader could not reconstruct this
+    // component's energy -- and any config that gave the temporal buffer a non-zero
+    // read/write energy saw no effect in the results at all.
+    m_output_file << "Access energy (temporal buffer)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << access_energy_pe_array[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << access_energy_pe_array[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << access_energy_pe_array[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
+    m_output_file << std::endl;
+
     m_output_file << "Interconnection energy" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2) 
-                                               << transfer_energy_pe_array[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << transfer_energy_pe_array[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
-                                               << transfer_energy_pe_array[data_type_t::WEIGHT] << " pJ" <<  std::endl;
+                                               << transfer_energy_pe_array[data_type_t::WEIGHT] << " " << energy_units().label() <<  std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2) 
-                                               << transfer_energy_pe_array[data_type_t::OUTPUT] << " pJ" <<  std::endl;
+                                               << transfer_energy_pe_array[data_type_t::OUTPUT] << " " << energy_units().label() <<  std::endl;
     m_output_file << std::endl;
+
+    // RE1: accumulator energy handed over by the PEs when edge_accumulation puts the accumulator at
+    // the array edge. Reported here because this is the component that owns it.
+    m_output_file << "Accumulator energy (edge):" << std::setw(12) << std::setprecision(2)
+                                               << pe_array_accumulator_energy << " "
+                                               << energy_units().label() << std::endl;
+    m_output_file << "Weight-fold energy    :" << std::setw(15) << std::setprecision(2)
+                                               << weight_fold_energy << " "
+                                               << energy_units().label() << std::endl;
 
     m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_pe_array[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << static_energy_pe_array[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_pe_array[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << static_energy_pe_array[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_pe_array[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << static_energy_pe_array[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     // PE utilization
@@ -1890,27 +2553,27 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << "Energy" << std::endl;
     m_output_file << "Access energy" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2) 
-                                               << access_energy_global_buffer[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << access_energy_global_buffer[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
-                                               << access_energy_global_buffer[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << access_energy_global_buffer[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << access_energy_global_buffer[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << access_energy_global_buffer[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << "Interconnection energy" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
-                                               << transfer_energy_global_buffer[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << transfer_energy_global_buffer[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
-                                               << transfer_energy_global_buffer[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << transfer_energy_global_buffer[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << transfer_energy_global_buffer[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << transfer_energy_global_buffer[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_global_buffer[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << static_energy_global_buffer[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_global_buffer[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << static_energy_global_buffer[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_global_buffer[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << static_energy_global_buffer[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     // Global buffer utilization
@@ -1980,6 +2643,8 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                 payload_link_transactions_multi_chip,
                                 metadata_link_transactions_multi_chip,
                                 storage_link_transactions_multi_chip);
+    m_output_file << "NoP link contract     : " << nop_link_contract << std::endl;
+    m_output_file << std::endl;
 
     m_output_file << "# of request to off-chip memory" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18) 
@@ -2016,28 +2681,57 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << std::endl;
 
     m_output_file << "Energy" << std::endl;
+    // E1: same gap on the multi-chip temporal buffer -- accumulated, summed, never printed.
+    m_output_file << "Access energy (temporal buffer)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << access_energy_multi_chip[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << access_energy_multi_chip[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << access_energy_multi_chip[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
+    m_output_file << std::endl;
+
     m_output_file << "Interconnection energy" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2) 
-                                               << transfer_energy_multi_chip[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << transfer_energy_multi_chip[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
-                                               << transfer_energy_multi_chip[data_type_t::WEIGHT] << " pJ" <<  std::endl;
+                                               << transfer_energy_multi_chip[data_type_t::WEIGHT] << " " << energy_units().label() <<  std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << transfer_energy_multi_chip[data_type_t::OUTPUT] << " pJ" <<  std::endl;
+                                               << transfer_energy_multi_chip[data_type_t::OUTPUT] << " " << energy_units().label() <<  std::endl;
     m_output_file << std::endl;
+
+    // RE1: the final output cast/pack is committed here (the off-chip output store fires exactly
+    // once per output element), so both the count and its energy are reported on this component.
+    m_output_file << "Output cast bytes     :" << std::setw(18) << output_cast_bytes << std::endl;
+    m_output_file << "Output cast energy    :" << std::setw(15) << std::setprecision(2)
+                                               << output_cast_energy << " "
+                                               << energy_units().label() << std::endl;
+    m_output_file << "Output cast cycle     :" << std::setw(15) << std::setprecision(1)
+                                               << output_cast_cycle << " cycles"
+                                               << "  [enters the fabric's busy time as a MAX"
+                                               << " against its access/transfer axes, not a serial"
+                                               << " addition]" << std::endl;
 
     m_output_file << "Static energy (leakage over layer elapsed cycles)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_multi_chip[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << static_energy_multi_chip[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_multi_chip[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                               << static_energy_multi_chip[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
-                                               << static_energy_multi_chip[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                               << static_energy_multi_chip[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     // Multi-chip utilization
     m_output_file << "Utilization" << std::endl;
     m_output_file << "Chip utilization      :" << std::setw(16) << std::setprecision(1)
                                                << utilization_multi_chip*100 << " %" << std::endl;
+    m_output_file << "Temporal-buffer occupancy" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(16) << std::setprecision(1)
+                                               << utilization_multi_chip_buffer[data_type_t::INPUT]*100 << " %" << std::endl;
+    m_output_file << " * Weight             :" << std::setw(16) << std::setprecision(1)
+                                               << utilization_multi_chip_buffer[data_type_t::WEIGHT]*100 << " %" << std::endl;
+    m_output_file << " * Output data        :" << std::setw(16) << std::setprecision(1)
+                                               << utilization_multi_chip_buffer[data_type_t::OUTPUT]*100 << " %" << std::endl;
     m_output_file << std::endl;
 
 
@@ -2047,7 +2741,34 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     // the numbers below are only meaningful within that scope: this is an approximation for
     // sequential, conflict-free streams, not a cycle-accurate DRAM. Build with DRAMSIM3 for
     // request-level channel/rank/bank/row timing.
+    if(!network_rollup) {
+        m_output_file << "Input halo reuse      : ";
+        if(input_halo_reuse_applied) {
+            m_output_file << "applied; " << input_halo_replicated_elements << " -> "
+                          << input_halo_unique_elements << " input elements, working set "
+                          << input_halo_working_set_bytes << " B fits GLB, DRAM serialized "
+                          << input_halo_pre_dram_transactions << " -> "
+                          << storage_link_transactions_dram[data_type_t::INPUT];
+        } else if(input_halo_overlap) {
+            if(input_halo_capacity_sufficient)
+                m_output_file << "not applied; coalesced target did not reduce DRAM traffic";
+            else
+                m_output_file << "not applied; working set " << input_halo_working_set_bytes
+                              << " B does not fit the resident GLB allocation";
+        } else {
+            m_output_file << "not needed; no overlapping legacy-GLB P/Q windows";
+        }
+        m_output_file << std::endl;
+    }
     m_output_file << "DRAM timing model     : " << dram_timing_model << std::endl;
+    // E20-5: one contract, stated. `dram_config` names a DRAMsim3 device file and is read ONLY in a
+    // -DDRAMSIM3 build (npusim.sh defaults to DRAMSIM3=0). It never derives an energy or a latency
+    // for the analytical path -- those come from the declared [dram] keys and from nowhere else. So
+    // a config naming an HBM2 part and a config naming a DDR3 part are charged identically unless
+    // their keys differ, and the device name must not be read as provenance for the numbers.
+    m_output_file << "DRAM cost provenance  : the [dram] unit costs, verbatim. `dram_config` selects"
+                  << " a DRAMsim3 device model in a -DDRAMSIM3 build only and derives no cost here"
+                  << std::endl;
     m_output_file << "  not modeled here    : " << dram_timing_limits << std::endl;
     m_output_file << "# of data transfer to multi chip (loads)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18)
@@ -2075,11 +2796,24 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     m_output_file << "Energy" << std::endl;
     m_output_file << "Access energy" << std::endl;
     m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2) 
-                                               << access_energy_dram[data_type_t::INPUT] << " pJ" << std::endl;
+                                               << access_energy_dram[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2) 
-                                               << access_energy_dram[data_type_t::WEIGHT] << " pJ" <<  std::endl;
+                                               << access_energy_dram[data_type_t::WEIGHT] << " " << energy_units().label() <<  std::endl;
     m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2) 
-                                               << access_energy_dram[data_type_t::OUTPUT] << " pJ" <<  std::endl;
+                                               << access_energy_dram[data_type_t::OUTPUT] << " " << energy_units().label() <<  std::endl;
+    m_output_file << std::endl;
+
+    // E1: the off-chip link energy AND the open-page row-activation energy both accumulate
+    // into transfer_energy_dram, which was never printed. That made the row_miss_energy knob
+    // invisible: gemmini_dram_detail.cfg sets it to 20 pJ/activation and the results showed
+    // no trace of it.
+    m_output_file << "Interconnection energy (link + row activation)" << std::endl;
+    m_output_file << " * Input data         :" << std::setw(15) << std::setprecision(2)
+                                               << transfer_energy_dram[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
+    m_output_file << " * Weight             :" << std::setw(15) << std::setprecision(2)
+                                               << transfer_energy_dram[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
+    m_output_file << " * Output data        :" << std::setw(15) << std::setprecision(2)
+                                               << transfer_energy_dram[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "======Multi chips - Off-chip memory======" << std::endl;

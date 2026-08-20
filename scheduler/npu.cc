@@ -1,6 +1,7 @@
 #include <thread>
 
 #include "npu.h"
+#include "energy_units.h"
 #include "config.h"
 #include "datatype.h"
 
@@ -57,6 +58,11 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
         accelerator_sections++;
         runtime_datatypes().configure(section_config);
+        // E7: what the energy numbers mean (absolute pJ vs normalized) and where they came
+        // from. Printed with the energy summary so a relative fixture cannot be read as an
+        // absolute one.
+        energy_units().configure(section_config);
+        std::cout << "# Energy unit: " << energy_units().describe() << std::endl;
         std::cout << "# Runtime formats: input=" << runtime_datatypes().describe(data_type_t::INPUT)
                   << " weight=" << runtime_datatypes().describe(data_type_t::WEIGHT)
                   << " output=" << runtime_datatypes().describe(data_type_t::OUTPUT)
@@ -67,6 +73,16 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             exit(1);
         }
     }
+    // E8: reject unusable energy unit costs before any component reads them, so a bad config
+    // fails fast instead of producing negative or NaN energy that looks like a result.
+    const std::string energy_error = validate_energy_settings(accelerator_config);
+    if(!energy_error.empty()) {
+        std::cerr << "Error: invalid energy unit cost: " << energy_error << std::endl;
+        exit(1);
+    }
+    // RE5: derive each component's DECLARATION state now, so the energy breakdown can tell a
+    // modeled zero from a missing cost from a component the layer simply never touched.
+    energy_cost_schema().configure(accelerator_config);
     if(accelerator_sections != 1 || num_processors == 0) {
         std::cerr << "Error: accelerator config requires exactly one non-zero [accelerator] section"
                   << std::endl;
@@ -364,8 +380,13 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 // DR6: store the layer's final resident output tile.
                 multi_chip->flush_output_writeback();
                 layer_stats[index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
+                const input_halo_reuse_t input_halo =
+                    scheduler->mapping_table->input_halo_reuse();
+                const bool halo_capacity_sufficient = !global_buffers.empty() &&
+                    global_buffers[0]->can_retain_input_halo(input_halo.working_set_elements);
                 layer_stats[index]->scale_serial_repetitions(global_buffer_repetitions,
-                    scheduler->mapping_table->datatype_repetitions());
+                    scheduler->mapping_table->datatype_repetitions(), input_halo,
+                    halo_capacity_sufficient);
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
                 //dram->disconnect_layer();
 			}
@@ -566,5 +587,6 @@ void npu_t::update_tile_size() {
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         global_buffers[i]->update_tile_size(scheduler);
         pe_arrays[i]->update_tile_size(scheduler);
+        pe_arrays[i]->set_psum_retention_scope(scheduler);
     }
 }

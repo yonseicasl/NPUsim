@@ -13,6 +13,21 @@ unsigned checked_multiply(unsigned lhs, unsigned rhs, const char *context) {
     }
     return static_cast<unsigned>(product);
 }
+size_t checked_multiply_size(size_t lhs, size_t rhs, const char *context) {
+    if(lhs != 0 && rhs > std::numeric_limits<size_t>::max()/lhs) {
+        std::cerr << "Error: size overflow while calculating " << context << std::endl;
+        exit(1);
+    }
+    return lhs*rhs;
+}
+size_t checked_add_size(size_t lhs, size_t rhs, const char *context) {
+    if(rhs > std::numeric_limits<size_t>::max() - lhs) {
+        std::cerr << "Error: size overflow while calculating " << context << std::endl;
+        exit(1);
+    }
+    return lhs + rhs;
+}
+
 
 unsigned checked_extent(unsigned output, unsigned stride, unsigned filter, const char *context) {
     if(output == 0 || stride == 0 || filter == 0) {
@@ -163,6 +178,17 @@ std::vector<unsigned> mapping_table_t::calculate_total_parameter_size() {
         parameters[j] = checked_multiply(parameters[j], legacy_global_buffer_mapping[j],
                                          "total parameter size");
     }
+    // INPUT_HEIGHT/WIDTH are derived extents, not multiplicative loop factors. Recompute them
+    // after applying the legacy P/Q/R/S coverage so diagnostics see the same full convolution
+    // footprint as the halo model.
+    parameters[parameter_type_t::INPUT_HEIGHT] =
+        checked_extent(parameters[parameter_type_t::OUTPUT_HEIGHT],
+                       parameters[parameter_type_t::STRIDE],
+                       parameters[parameter_type_t::FILTER_HEIGHT], "total input height");
+    parameters[parameter_type_t::INPUT_WIDTH] =
+        checked_extent(parameters[parameter_type_t::OUTPUT_WIDTH],
+                       parameters[parameter_type_t::STRIDE],
+                       parameters[parameter_type_t::FILTER_WIDTH], "total input width");
     return parameters;
 }
 
@@ -198,6 +224,92 @@ std::vector<unsigned> mapping_table_t::datatype_repetitions() {
     }
     return repetitions;
 }
+input_halo_reuse_t mapping_table_t::input_halo_reuse() const {
+    input_halo_reuse_t reuse;
+    const std::vector<unsigned> &glb = legacy_global_buffer_mapping;
+
+    // A filter loop in the legacy row partitions R/S rather than moving an adjacent output
+    // window. Its input-union and loop-order semantics are different; do not silently apply the
+    // P/Q contract to it.
+    if(glb[parameter_type_t::FILTER_HEIGHT] != 1 ||
+       glb[parameter_type_t::FILTER_WIDTH] != 1) return reuse;
+
+    // Rebuild the cumulative DRAM-level tile without mutating the table. The legacy GLB row is
+    // deliberately absent from calculate_parameter_size(DRAM), which is exactly the one live
+    // pass whose off-chip counters are later repetition-scaled.
+    std::vector<unsigned> base(parameter_type_t::NUM_PARAMETER_TYPES, 1);
+    for(unsigned level = 0; level <= component_type_t::DRAM; ++level) {
+        for(unsigned dim = 0; dim < parameter_type_t::NUM_PARAMETER_TYPES; ++dim) {
+            base[dim] = checked_multiply(base[dim], mapping_table[level][dim],
+                                         "input halo base parameter");
+        }
+    }
+    base[parameter_type_t::STRIDE] =
+        mapping_table[component_type_t::DRAM][parameter_type_t::STRIDE];
+    const unsigned base_h = checked_extent(base[parameter_type_t::OUTPUT_HEIGHT],
+                                           base[parameter_type_t::STRIDE],
+                                           base[parameter_type_t::FILTER_HEIGHT],
+                                           "input halo base height");
+    const unsigned base_w = checked_extent(base[parameter_type_t::OUTPUT_WIDTH],
+                                           base[parameter_type_t::STRIDE],
+                                           base[parameter_type_t::FILTER_WIDTH],
+                                           "input halo base width");
+    const unsigned full_p = checked_multiply(base[parameter_type_t::OUTPUT_HEIGHT],
+                                             glb[parameter_type_t::OUTPUT_HEIGHT],
+                                             "input halo full output height");
+    const unsigned full_q = checked_multiply(base[parameter_type_t::OUTPUT_WIDTH],
+                                             glb[parameter_type_t::OUTPUT_WIDTH],
+                                             "input halo full output width");
+    const unsigned full_h = checked_extent(full_p, base[parameter_type_t::STRIDE],
+                                           base[parameter_type_t::FILTER_HEIGHT],
+                                           "input halo full height");
+    const unsigned full_w = checked_extent(full_q, base[parameter_type_t::STRIDE],
+                                           base[parameter_type_t::FILTER_WIDTH],
+                                           "input halo full width");
+
+    size_t nonspatial = checked_multiply_size(base[parameter_type_t::BATCH_SIZE],
+                                              base[parameter_type_t::INPUT_CHANNEL],
+                                              "input halo nonspatial tile");
+    const size_t legacy_nonspatial = checked_multiply_size(
+        checked_multiply_size(glb[parameter_type_t::BATCH_SIZE],
+                              glb[parameter_type_t::INPUT_CHANNEL],
+                              "input halo legacy nonspatial"),
+        glb[parameter_type_t::GROUP], "input halo legacy groups");
+    reuse.unique_elements = checked_multiply_size(
+        checked_multiply_size(nonspatial, legacy_nonspatial, "input halo unique elements"),
+        checked_multiply_size(full_h, full_w, "input halo unique spatial footprint"),
+        "input halo unique elements");
+    reuse.replicated_elements = checked_multiply_size(
+        checked_multiply_size(nonspatial, legacy_nonspatial,
+                              "input halo replicated elements"),
+        checked_multiply_size(
+            checked_multiply_size(base_h, base_w, "input halo base spatial footprint"),
+            checked_multiply_size(glb[parameter_type_t::OUTPUT_HEIGHT],
+                                  glb[parameter_type_t::OUTPUT_WIDTH],
+                                  "input halo spatial repetitions"),
+            "input halo replicated spatial footprint"),
+        "input halo replicated elements");
+
+    // Q sliding needs one base tile. Crossing a legacy-P boundary additionally retains the
+    // overlapping rows across the full Q width; only the new rows of the current base tile add
+    // storage. This is the ring-buffer working set, not the whole layer input tensor.
+    const unsigned p_shift = checked_multiply(base[parameter_type_t::OUTPUT_HEIGHT],
+                                              base[parameter_type_t::STRIDE],
+                                              "input halo P shift");
+    const unsigned overlap_h = glb[parameter_type_t::OUTPUT_HEIGHT] > 1 && base_h > p_shift
+                             ? base_h - p_shift : 0;
+    const size_t working_spatial = overlap_h
+        ? checked_add_size(
+              checked_multiply_size(overlap_h, full_w, "input halo retained rows"),
+              checked_multiply_size(base_h - overlap_h, base_w, "input halo new tile rows"),
+              "input halo working rows")
+        : checked_multiply_size(base_h, base_w, "input halo working tile");
+    reuse.working_set_elements = checked_multiply_size(nonspatial, working_spatial,
+                                                        "input halo working set");
+    reuse.active = reuse.unique_elements < reuse.replicated_elements;
+    return reuse;
+}
+
 
 // Calculate the number of active components (i.e., MAC, PE, Chips)
 unsigned mapping_table_t::calculate_active_component(component_type_t m_component_type) {
@@ -230,4 +342,22 @@ void mapping_table_t::print() {
         }
         std::cout << std::endl;
     }
+}
+
+// E20-3: see the header. A reduction factor above the array means a psum is revisited after other
+// tiles have passed through, so it cannot be retained.
+bool mapping_table_t::reduction_tiled_above_array() const {
+    static const parameter_type_t REDUCTION[] = { parameter_type_t::INPUT_CHANNEL,
+                                                  parameter_type_t::FILTER_HEIGHT,
+                                                  parameter_type_t::FILTER_WIDTH };
+    static const component_type_t ABOVE_ARRAY[] = { component_type_t::GLOBAL_BUFFER,
+                                                    component_type_t::CHIPS_X,
+                                                    component_type_t::CHIPS_Y,
+                                                    component_type_t::DRAM };
+    for(unsigned level = 0; level < sizeof(ABOVE_ARRAY)/sizeof(ABOVE_ARRAY[0]); ++level) {
+        for(unsigned dim = 0; dim < sizeof(REDUCTION)/sizeof(REDUCTION[0]); ++dim) {
+            if(mapping_table[ABOVE_ARRAY[level]][REDUCTION[dim]] > 1) return true;
+        }
+    }
+    return false;
 }

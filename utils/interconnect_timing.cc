@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <cmath>
+#include <set>
+#include <utility>
 #include <iostream>
 #include "interconnect_timing.h"
 #include "datatype.h"
@@ -101,18 +103,81 @@ bool is_valid_memory_line_bits(size_t width_bits) {
     return width_bits >= 8 && (width_bits & (width_bits - 1)) == 0;
 }
 
-spatial_noc_cost_t spatial_noc_cost(noc_type_t topology,
-                                    unsigned active_height, unsigned active_width) {
+const char *spatial_noc_link_contract(noc_type_t topology, bool multicast) {
+    if(topology != noc_type_t::MESH) {
+        return "one traversal of the shared medium per transaction (bus/crossbar); the GLB attach"
+               " link and each PE's buffer write are charged to their own components";
+    }
+    return multicast
+        ? "router-to-router links only: a spanning tree over N active routers = N-1 edges (the GLB"
+          " attach link is charged by the GLB's transfer_energy, each PE's ejection by its buffer"
+          " write)"
+        : "router-to-router links only: each PE's average dimension-order route to the corner"
+          " egress router, (h-1)/2 + (w-1)/2 hops";
+}
+
+const char *nop_link_contract(noc_type_t topology, bool multicast) {
+    if(topology != noc_type_t::MESH) {
+        return multicast
+            ? "one traversal of the shared package medium per transaction (a bus transmission is"
+              " physically seen by every chip); each chip's GLB write is charged to the GLB"
+            : "one traversal of the shared package medium per receiving chip (unicast routers);"
+              " each chip's GLB write is charged to the GLB";
+    }
+    return multicast
+        ? "the staging-buffer ingress link into chip 0 plus the DISTINCT chip-to-chip links the"
+          " union of the dimension-order routes covers (a multicast tree forwards one copy per"
+          " link, not one per chip)"
+        : "the staging-buffer ingress link plus every chip-to-chip link on each chip's own"
+          " dimension-order route, summed over the chips";
+}
+
+unsigned spatial_multicast_edge_count(unsigned active_height, unsigned active_width) {
+    if(active_height == 0 || active_width == 0) return 0;
+    // Enumerate the dimension-order spanning tree rooted at (0,0) as an explicit edge set: the
+    // root row is reached by walking right along row 0, and each column is reached by walking down
+    // from its row-0 router. Deduplicated through a set so a shape that revisits a link cannot
+    // inflate the count.
+    std::set<std::pair<unsigned, unsigned> > edges;   // (from, to) router ids
+    for(unsigned x = 1; x < active_width; ++x) {
+        edges.insert(std::make_pair(x - 1, x));                     // row-0 horizontal links
+    }
+    for(unsigned x = 0; x < active_width; ++x) {
+        for(unsigned y = 1; y < active_height; ++y) {
+            edges.insert(std::make_pair((y - 1)*active_width + x, y*active_width + x));
+        }
+    }
+    return static_cast<unsigned>(edges.size());
+}
+
+spatial_noc_cost_t spatial_noc_cost(noc_type_t topology, unsigned active_height,
+                                    unsigned active_width, bool multicast) {
     spatial_noc_cost_t cost = {0.0, 1.0};
-    if(active_height == 0 || active_width == 0 || topology != noc_type_t::MESH) {
+    if(active_height == 0 || active_width == 0) return cost;
+    if(topology != noc_type_t::MESH) {
+        // A bus transmission is seen by every receiver and a crossbar is a direct path: one
+        // link traversal per transaction either way, no route depth.
         return cost;
     }
     const unsigned endpoints = active_height*active_width;
+    (void)endpoints;
     const unsigned max_hops = (active_height - 1) + (active_width - 1);
-    const double sum_hops = static_cast<double>(active_width)*active_height*(active_height - 1)/2.0 +
-                            static_cast<double>(active_height)*active_width*(active_width - 1)/2.0;
     cost.latency_fill_hops = static_cast<double>(std::max(1U, max_hops)) - 1.0;
-    cost.energy_multiplier = std::max(1.0, sum_hops/static_cast<double>(endpoints));
+    if(multicast) {
+        // E2/RE6: the fanout is a spanning TREE over the active routers, so it costs one
+        // traversal per tree EDGE. A tree over N routers has N-1 edges -- not N. The Nth link a
+        // receiver-counting model would add is the GLB <-> array attach link, and that one is
+        // already charged by the GLB's own transfer_energy, so counting it here billed one wire
+        // twice. See spatial_noc_link_contract() for the full statement.
+        cost.link_traversals = static_cast<double>(spatial_multicast_edge_count(active_height,
+                                                                               active_width));
+    } else {
+        // Per-source unicast: each transaction travels its own Manhattan route to the edge.
+        const double sum_hops =
+            static_cast<double>(active_width)*active_height*(active_height - 1)/2.0 +
+            static_cast<double>(active_height)*active_width*(active_width - 1)/2.0;
+        cost.link_traversals = std::max(1.0, sum_hops/static_cast<double>(endpoints));
+    }
     return cost;
 }
 

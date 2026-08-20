@@ -13,6 +13,11 @@ class pe_t;
 class pe_array_t {
 
 public:
+
+    // Phase-5: the component's clock in MHz. Power needs a single authoritative clock
+    // across the modeled components (the timeline is one shared cycle axis), so stats_t
+    // compares these and reports power as unsupported when they disagree.
+    double clock_mhz() const { return static_cast<double>(frequency); }
     
     pe_array_t(section_config_t m_section_config);
     virtual ~pe_array_t();
@@ -139,6 +144,24 @@ public:
     // Both default to 0 (off) so legacy configurations are unchanged.
     double u_weight_fold_fill_cycle;                        // Cycles per weight-element residency (fold)
     double u_layer_setup_cycle;                             // One-time per-layer setup cycles
+    // E5: the ENERGY counterparts of those two latency bubbles. Calibrating the latency of a
+    // weight reload or a layer setup used to make the schedule more accurate while leaving the
+    // same activity FREE on the energy side (leakage aside) -- so the more precise the latency
+    // model got, the more asymmetric energy became. A config declares these per event:
+    //     weight_fold_fill_energy   per weight-element residency (fold)
+    //     layer_setup_energy        once per layer
+    // Both default to 0, so existing configs are unaffected. The EVENT COUNTS are recorded
+    // separately from the energy so the identity (events x unit cost) is checkable, and the
+    // selection rule mirrors the latency side exactly: a calibrated fold cost wins over the
+    // analytical drain, and the two are never charged together.
+    double u_weight_fold_fill_energy;
+    double u_layer_setup_energy;
+    // Accumulated fold/setup events and their energy for this layer.
+    double weight_fold_events;
+    double weight_fold_energy;
+    // RE1: accumulator energy handed over by the PEs when edge_accumulation puts the accumulator
+    // at the array edge. It is the array's own storage, so it belongs to the array's subtotal.
+    double accumulator_energy;
     double fold_fill_cycle;                                 // Accumulated fold-fill + setup cycles (per layer)
     // V3: outputs accumulate at the array edge (Gemmini-style accumulator) instead of
     // residing in per-PE local buffers -- exempt OUTPUT from per-PE/array capacity checks.
@@ -149,6 +172,28 @@ public:
     std::vector<unsigned> line_size;
     std::vector<unsigned> mask_bits;
     
+
+    // RE6: which links this array's noc_energy prices, for the report. Two conventions give
+    // different numbers for the same fabric, so the output has to say which one it used.
+    std::string describe_noc_link_contract() const;
+
+    // Whether the array's output tile equals the global buffer's. Under output stationary that
+    // makes the tile array-resident, so intermediate write-backs are skipped until the drain. It is
+    // reported because it changes what the array->GLB output request count means -- though it is
+    // NOT the only reason that count can be 0 (see validation/hierarchy, which records the open
+    // question: simba and fsd report 0 with neither edge accumulation nor an equal tile).
+    bool output_tile_is_array_resident() const { return equal_output_tile; }
+
+    // E20-2: array-level reduction additions. Only an [adder_tree] array performs any, and
+    // its `adder_energy` was unreachable for two reasons at once (validation/knobs KN9); a
+    // count is what lets an unpriced-but-active tree be told from an absent one.
+    double reduction_additions;
+
+    // E20-3: may a partial sum stay resident in the array between passes? Only when the reduction
+    // for a tile completes before the array moves on -- see mapping_table_t::reduction_tiled_above_array().
+    // Recorded once per layer, where a scheduler is in hand, because request_data() has none.
+    bool psum_retention_valid;
+    void set_psum_retention_scope(scheduler_t *m_scheduler);
 
 protected:
 
@@ -171,6 +216,7 @@ protected:
     // the config calibrates weight_fold_fill_cycle from RTL -- see
     // account_descriptor_dense_distribution().
     virtual double weight_fold_bubble_cycles() const { return 0.0; }
+
 
     global_buffer_t *global_buffer;                         // Global buffer to connect
 

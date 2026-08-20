@@ -88,6 +88,23 @@ void config_t::parse(std::string m_config_name) {
     }
 }
 
+// A declared setting that cannot be used is a config error. Naming the section, the key and the
+// value is the whole point: the failure this replaces was silent.
+void section_config_t::reject_setting(const std::string &m_key, const std::string &m_value,
+                                      const char *m_why) const {
+    std::cerr << "Error: [" << name << "] " << m_key << " = '" << m_value << "' " << m_why
+              << std::endl;
+    exit(1);
+}
 
-
-
+// A string setting is the whole value, trimmed -- not the first whitespace-delimited token.
+bool section_config_t::get_setting(std::string m_key, std::string *m_var) {
+    std::map<std::string, std::string>::iterator it = settings.find(lowercase(m_key));
+    if(it == settings.end() || it->second.empty()) return false;
+    std::string value = it->second;
+    const size_t first = value.find_first_not_of(" \t");
+    const size_t last = value.find_last_not_of(" \t");
+    if(first == std::string::npos) return false;
+    *m_var = value.substr(first, last - first + 1);
+    return true;
+}

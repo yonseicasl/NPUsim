@@ -124,6 +124,7 @@ void dram_t::init(section_config_t m_section_config) {
     // `row_miss_cycle`/`row_miss_energy`. All default to 0 (model disabled).
     double row_buffer_kb = 0.0;
     row_buffer_bytes = 0;
+    row_activation_events = 0;
     u_row_miss_cycle = 0.0;
     u_row_miss_energy = 0.0;
     m_section_config.get_setting("row_buffer_size", &row_buffer_kb);
@@ -277,6 +278,7 @@ void dram_t::account_row_activations(data_type_t type, size_t elements) {
         ? t_ras_cycle + t_rp_cycle : u_row_miss_cycle;
     const dram_row_activation_cost_t rows = dram_row_activations(stream_bytes, row_buffer_bytes,
                                                                 num_banks);
+    row_activation_events += rows.activations;
     transfer_cycle[type] += static_cast<double>(rows.busiest_bank)*row_activation_cycle;
     transfer_energy[type] += static_cast<double>(rows.activations)*u_row_miss_energy;
 }

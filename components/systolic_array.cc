@@ -2,6 +2,7 @@
 #include "systolic_array.h"
 #include "interconnect_timing.h"
 #include "datatype.h"
+#include "energy_units.h"
 
 systolic_array_t::systolic_array_t(section_config_t m_section_config) :
     pe_array_t(m_section_config) {
@@ -233,9 +234,10 @@ void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
     // noc label: route-depth fill = (active_x-1)+(active_y-1) hop cycles per stream,
     // and per-hop energy = average Manhattan distance per transaction. Active-shape
     // changes now move the fill/drain latency (1xN vs NxM differ).
-    const spatial_noc_cost_t wavefront = spatial_noc_cost(noc_type_t::MESH, num_active_pe_y, num_active_pe_x);
+    const spatial_noc_cost_t wavefront = spatial_noc_cost(noc_type_t::MESH, num_active_pe_y, num_active_pe_x,
+                                                       /* multicast = */ true);
     account_descriptor_dense_distribution(m_scheduler, noc_cycle,
-                                          noc_energy*wavefront.energy_multiplier,
+                                          noc_energy*wavefront.link_traversals,
                                           wavefront.latency_fill_hops*noc_cycle);
     return;
 #endif
@@ -910,7 +912,7 @@ void systolic_array_t::print_specification() {
     std::cout << "NoC cycle          :" << std::setw(17)
                                         << noc_cycle << " cycles" << std::endl;
     std::cout << "NoC energy         :" << std::setw(21) 
-                                        << noc_energy << " pJ" << std::endl;
+                                        << noc_energy << " " << energy_units().label() << std::endl;
 	std::cout << std::endl;
 }
 

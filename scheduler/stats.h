@@ -37,13 +37,21 @@ public:
     // window, and MAC availability from the FINAL (repetition-scaled) cycle vectors.
     void finalize_layer_timeline();
     void scale_serial_repetitions(unsigned m_repetitions,
-                                  const std::vector<unsigned> &m_datatype_repetitions);
+                                  const std::vector<unsigned> &m_datatype_repetitions,
+                                  const input_halo_reuse_t &m_input_halo = input_halo_reuse_t(),
+                                  bool m_halo_capacity_sufficient = false);
 
     // Update network stats.
     void update_network_stats(stats_t *m_source);
 
     // Print out the result of simulation.
     void print_results(std::ofstream &m_output_file);
+    // E1: component energy subtotals and the layer total. See the no-double-counting boundary
+    // documented at the definition.
+    void print_energy_summary(std::ofstream &m_output_file);
+    // Phase-5: average power, EDP/ED2P and the explicit scope of what power does NOT include.
+    void print_power_summary(std::ofstream &m_output_file, double dynamic_total,
+                             double static_total);
 	
     /* Layer timeline (A1): per-level busy time on a shared analytical timeline and the
        segment-combined critical-path latency (overlap at double-buffered boundaries). */
@@ -70,6 +78,25 @@ public:
     // is what lets a rate-mismatched stage take part in the timeline at all -- the previous
     // closed form had to fall back to a flat max() whenever a run touched stage 0 or 1.
     unsigned offchip_repetition_tiles;
+    // E20-3: dense input-window reuse at the off-chip boundary. The logical tile requests remain
+    // visible, but their overlapping payload is coalesced to the exact union footprint when the
+    // GLB can retain the required sliding working set.
+    bool input_halo_overlap;
+    bool input_halo_capacity_sufficient;
+    bool input_halo_reuse_applied;
+    size_t input_halo_unique_elements;
+    size_t input_halo_replicated_elements;
+    size_t input_halo_working_set_bytes;
+    size_t input_halo_pre_dram_transactions;
+    unsigned dram_input_link_bits;
+    // Exact source-access reconstruction for a coalesced input union. Scaling an already rounded
+    // descriptor aggregate by a floating ratio makes the physical access count fractional and can
+    // break the read-energy/read-cycle unit identity even when both print the same rounded value.
+    unsigned dram_input_source_line_bits;
+    double dram_input_read_cycle;
+    double dram_input_read_energy;
+    bool dram_input_access_hidden;
+
     // L5: per-stage time spent blocked specifically by a full downstream buffer, from the
     // final per-tile timeline. Reported so the reader can see WHERE the pipeline stalled,
     // not only how long the layer took.
@@ -149,6 +176,44 @@ public:
     double mac_available_cycle;                                         // Sum of scalar-MAC available cycles.
     std::vector<double> format_cycle_pe;                                // PE format-IP cycle by tensor type.
     std::vector<double> format_energy_pe;                               // PE format-IP energy by tensor type.
+    // E4: the lane->accumulator reduction's own energy axis (split out of computation_energy so
+    // the adder-tree work is visible), and the two format event counts kept apart because they
+    // move DIFFERENT precisions -- accumulator-format spills vs output-format casts.
+    double reduction_energy;
+    // E5: fold and setup dynamic energy, kept APART because they scale differently -- exactly as
+    // their latency counterparts do. A weight residency repeats with every GLB repetition; the
+    // per-layer schedule setup fires once. The event counts are recorded alongside so the
+    // identity (events x unit cost) is checkable from the report.
+    double weight_fold_energy;
+    double layer_setup_energy;
+    double weight_fold_events;
+    double layer_setup_events;
+    // RE1: the four accumulator/output events, each from its own boundary. The create count is
+    // reported so the deliberately-free zero-init path is visible rather than implied.
+    size_t accumulator_reload_bytes;
+    size_t accumulator_spill_bytes;
+    size_t accumulator_create_events;
+    size_t accumulator_retained_events;      // E20-4: retained, not reloaded
+    size_t output_cast_bytes;
+    double accumulator_energy;
+    double output_cast_energy;
+    double output_cast_cycle;
+    // E20-2: activity counts for the events whose cost keys are optional. An energy of 0 cannot
+    // say whether the event happened; these can.
+    size_t row_activation_events;
+    size_t format_payload_events;
+    size_t format_metadata_events;
+    double reduction_additions;
+
+    // E20-1/E20-2: events that FIRED while the key pricing them was absent from the config.
+    // Crossing an activity count with the declaration is the only way to see this: the energy axis
+    // reads 0 whether the event was free, absent, or simply unpriced. Every entry is a charge the
+    // total is missing, of an amount nobody stated -- so a total carrying any of them is not
+    // absolute, and a wattage derived from it is not either.
+    std::vector<std::string> unpriced_active_events() const;
+    // RE1: accumulator energy the PEs handed to the PE array because edge_accumulation puts the
+    // accumulator at the array edge. Reported on the array's row, not the PE's.
+    double pe_array_accumulator_energy;
 
     std::vector<unsigned> num_request_pe;                               // Number of request to local buffer of PE.
     std::vector<unsigned> num_data_transfer_pe;                         // Number of data transfer to MAC unit of PE.
@@ -211,7 +276,32 @@ public:
     // condition for the analytical path is that its supported scope is stated in the output
     // rather than left to be inferred -- an idealized bank-interleaved row model must not be
     // read as a bank-conflict model.
+    // E3: which config key supplied the MAC energy, and whether it was declared for the operand
+    // precision actually in use. Reported with the energy summary so a compute-energy number is
+    // never read as precision-aware when the same scalar would have been used for any precision.
+    std::string compute_energy_basis;
+    bool compute_energy_precision_calibrated;
+    std::string operand_precision;
+    // E10/Phase-5: the clock contract that turns cycles into seconds, and therefore energy into
+    // power.
+    //
+    // The layer timeline places every stage on ONE shared cycle axis (see pipeline_timeline_cycles),
+    // so a cycle count is only convertible to time if every modeled component runs on the same
+    // clock. When they do, that frequency is authoritative and power is well defined. When they do
+    // NOT, the honest answer is that power is unsupported for this config: dividing a mixed-domain
+    // cycle count by any one component's frequency would invent a number. Reported either way, so
+    // the reader is never left guessing which case they are in.
+    double authoritative_frequency_mhz;
+    bool single_clock_domain;
+    std::string clock_domain_note;
     std::string dram_timing_model;
+    // RE6: which links `noc_energy` prices, stated in the report. Two conventions give different
+    // numbers for the same fabric (a spanning tree over N endpoints has N-1 edges, while counting
+    // one link per receiver gives N), and nothing in the output said which one produced the
+    // energy -- so the number could not be checked against a physical link count at all.
+    std::string array_noc_link_contract;
+    bool output_tile_array_resident;   // see pe_array_t::output_tile_is_array_resident()
+    std::string nop_link_contract;
     std::string dram_timing_limits;
     // L3: true only on the network rollup object. Layer and network scope have DIFFERENT
     // axis contracts and the report must say which one it is printing:
@@ -261,6 +351,7 @@ public:
     std::vector<double> access_cycle_multi_chip;                        // Total access cycle to Multi-chip.
     std::vector<double> access_energy_multi_chip;                       // Total access energy to Multi-chip.
     double utilization_multi_chip;
+    std::vector<double> utilization_multi_chip_buffer;                   // NoP temporal-buffer occupancy per data type.
 
     std::vector<double> transfer_cycle_multi_chip;                      // Total data transfer cycle between Multi-chip and global buffer.
     std::vector<double> transfer_energy_multi_chip;                     // Total data transfer energy between Multi-chip and global buffer.

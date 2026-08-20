@@ -13,6 +13,11 @@ class multi_chip_t;
 class global_buffer_t {
 
 public:
+
+    // Phase-5: the component's clock in MHz. Power needs a single authoritative clock
+    // across the modeled components (the timeline is one shared cycle axis), so stats_t
+    // compares these and reports power as unsupported when they disagree.
+    double clock_mhz() const { return static_cast<double>(frequency); }
     global_buffer_t(section_config_t m_section_config);
     virtual ~global_buffer_t();
 
@@ -38,6 +43,10 @@ public:
     // Get memory type
     memory_type_t get_memory_type();
     // Get global buffer size
+    // E20-3: whether the physical GLB can hold the ring-buffer working set required to reuse
+    // overlapping convolution input windows. Shared buffers also reserve the currently resident
+    // weight/output tiles; separate buffers use the input partition only.
+    bool can_retain_input_halo(size_t input_working_set_elements) const;
     double get_buffer_size();
     // Get global buffer bitwidth
     unsigned get_bitwidth();
@@ -85,6 +94,14 @@ public:
     data_t *data;
     bool              double_buffer;                        // Check whether the accelerator uses single buffer or double buffer
     std::vector<bool> bypass;                               // Check if the accelerator uses bypass at the global buffer
+    // RE1: the FINAL output cast/pack. This is charged where the completed accumulation is read
+    // out of the chip, not inside the PE: a PE writes the same output tile back once per
+    // reduction pass, so charging the cast there made its count follow the MAC count (262,144 on
+    // GEMM 64x64x64) instead of the final output element count (4,096). With edge_accumulation the
+    // GLB output partition IS the accumulator, so this is also its physical owner; without it the
+    // output still leaves through here, so the pack happens at this boundary either way.
+    size_t output_cast_bytes;
+    double output_cast_energy;
     unsigned index;
 
     std::vector<bool> skip_transfer;                        // Determine whether transfer data to PE array or not.

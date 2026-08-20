@@ -12,6 +12,35 @@ class dram_t;
 class multi_chip_t {
 
 public:
+
+    // RE1: the FINAL output cast/pack to output precision, charged at the off-chip output store.
+    //
+    // Every earlier boundary fires more than once per output element: a PE writes its tile back
+    // once per reduction pass, and the GLB reads it out once per GLB-level reduction pass. Charging
+    // the cast at either made its count follow the MAC count (262,144 on GEMM 64x64x64) or a
+    // multiple of the output count (16,384) instead of the 4,096 final elements. The off-chip store
+    // is the boundary DR6/T1 establish happens exactly once per output element, and it is where the
+    // value is committed in OUTPUT precision -- so it is both the correct count and a defensible
+    // owner.
+    std::vector<double> u_output_cast_cycle;
+    std::vector<double> u_output_cast_energy;
+    // RE6: which links this NoP's noc_energy prices, for the report.
+    std::string describe_nop_link_contract() const;
+
+    // The multi-chip temporal buffer's occupancy per datatype (peak over the layer). Every other
+    // level reports this -- the PE local buffer, the PE-array temporal buffer and the GLB all do --
+    // and the multi-chip level was the only one that did not, which left `memory_size` consumed
+    // ONLY by the capacity check: shrinking it 16x changed no reported number at all. Found by the
+    // dead-knob sweep (validation/knobs).
+    std::vector<double> buffer_utilization;
+
+    size_t output_cast_bytes;
+    double output_cast_energy;
+
+    // Phase-5: the component's clock in MHz. Power needs a single authoritative clock
+    // across the modeled components (the timeline is one shared cycle axis), so stats_t
+    // compares these and reports power as unsupported when they disagree.
+    double clock_mhz() const { return static_cast<double>(frequency); }
     
     multi_chip_t(section_config_t m_section_config);
     ~multi_chip_t();
@@ -139,6 +168,12 @@ public:
 
     double utilization;                         // Utilization of chip-level processor
 
+    // RE1 latency half: the final cast's TIME, kept on its own counter. It also enters
+    // write_back_cycle, which reaches the fabric's busy time only as a MAX against the access and
+    // transfer axes -- so a cast cheaper than those axes is invisible in the critical path. Keeping
+    // and reporting the raw figure is what makes `output_cast_cycle` checkable at all; before this
+    // the knob was read from the config and observable nowhere (validation/knobs KN9).
+    double output_cast_cycle;
     double write_back_cycle;                    //
     double overlapped_transfer_cycle;           //
 
@@ -166,6 +201,15 @@ protected:
     // mesh with multicast routers behaves the same way at the shared package ingress. Set
     // to 0 to model a package whose routers only do unicast.
     bool nop_multicast;
+    // RE1: the FINAL output cast/pack to output precision, charged at the off-chip output store.
+    //
+    // Every earlier boundary fires more than once per output element: a PE writes its tile back
+    // once per reduction pass, and the GLB reads it out once per GLB-level reduction pass. Charging
+    // the cast at either made its count follow the MAC count (262,144 on GEMM 64x64x64) or a
+    // multiple of the output count (16,384) instead of the 4,096 final elements. The off-chip store
+    // is the boundary DR6/T1 establish happens exactly once per output element, and it is where the
+    // value is committed in OUTPUT precision -- so it is both the correct count and a defensible
+    // owner.
     memory_type_t memory_type;                  // Memory type of global buffer
 
     unsigned height;                            // Y-dimension of chip-level processors
@@ -181,9 +225,15 @@ protected:
 
     // Buffer size
     unsigned memory_size;                       // Temporal buffer size
-    unsigned input_size;                        // Temporal input buffer size
-    unsigned weight_size;                       // Temporal weight buffer size
-    unsigned output_size;                       // Temporal output buffer size
+    // KB, so FRACTIONAL: Eyeriss v2 declares 4.5 KB / 7.5 KB buffers. global_buffer_t has always
+    // stored these as double; multi_chip_t stored them as unsigned, so `input_size = 4.5` failed
+    // the unsigned parse and SILENTLY left the buffer at 0 -- which made eyerissv2.cfg unrunnable
+    // (every tile "exceeded" a zero buffer) and went unnoticed because no gate ran that config.
+    // The two components now agree on the type. validation/knobs KN11 rejects the silent-drop
+    // class outright.
+    double input_size;                          // Temporal input buffer size
+    double weight_size;                         // Temporal weight buffer size
+    double output_size;                         // Temporal output buffer size
 
     bool     initial;                           // 
     double nop_cycle;                           // NoP cycle

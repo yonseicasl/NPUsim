@@ -9,6 +9,7 @@
 #include "datatype.h"
 #include "interconnect_timing.h"
 #include "pe_lane.h"
+#include "energy_units.h"
 
 namespace {
 
@@ -128,6 +129,14 @@ pe_t::pe_t(section_config_t m_section_config) :
     /* Unit stats */
     u_computation_cycle(0.0),
     u_computation_energy(0.0),
+    accumulator_reload_bytes(0),
+    accumulator_spill_bytes(0),
+    accumulator_create_events(0),
+    accumulator_retained_events(0),
+    accumulator_energy(0.0),
+    reduction_energy(0.0),
+    compute_energy_basis("computation_energy"),
+    compute_energy_precision_calibrated(false),
     u_mac_reduction_energy(0.0),
     u_transfer_cycle(0.0),
     u_transfer_energy(0.0),
@@ -396,6 +405,40 @@ void pe_t::init(section_config_t m_section_config) {
     // Initialize the MAC unit cycle and energy.
     m_section_config.get_setting("computation_cycle", &u_computation_cycle);
     m_section_config.get_setting("computation_energy", &u_computation_energy);
+    // E3/RE4: prefer a per-precision MAC energy for the precisions actually in use. The key names
+    // all THREE datapath widths that set a MAC's energy:
+    //
+    //     mac_energy_<input>_<weight>_<accumulator>
+    //
+    // The first version of this used only the two operand formats, which made an INT8 x INT8 MAC
+    // accumulating into FP32 cost exactly the same as one accumulating into FP16 -- the adder and
+    // the accumulator register are a large part of a MAC's energy, and that difference was
+    // invisible. The two-operand key is still honoured as a PARTIAL calibration: it prices the
+    // multiplier for these operands but says nothing about the accumulator, so it does not qualify
+    // the config for absolute power (RE2). Only the three-part key does.
+    const std::string operand_key = "mac_energy_" +
+        runtime_datatypes().format(data_type_t::INPUT).name + "_" +
+        runtime_datatypes().format(data_type_t::WEIGHT).name;
+    const std::string precision_key =
+        operand_key + "_" + runtime_datatypes().accumulator_format().name;
+    double precision_energy = 0.0;
+    if(m_section_config.get_setting(precision_key, &precision_energy)) {
+        u_computation_energy = precision_energy;
+        compute_energy_basis = precision_key;
+        compute_energy_precision_calibrated = true;
+    } else if(m_section_config.get_setting(operand_key, &precision_energy)) {
+        // Operand widths priced, accumulator width not. Use it -- it is closer than the scalar --
+        // but do NOT call the compute cost calibrated: every accumulator format would share it.
+        u_computation_energy = precision_energy;
+        compute_energy_basis = operand_key + " (operands only; accumulator " +
+                               runtime_datatypes().accumulator_format().name + " UNCALIBRATED)";
+        compute_energy_precision_calibrated = false;
+    } else {
+        // No entry for this precision: keep the scalar, but say so instead of implying the
+        // number is precision-aware.
+        compute_energy_basis = "computation_energy";
+        compute_energy_precision_calibrated = false;
+    }
     // P4-2/PE2: unit energy of one lane->accumulator adder-tree addition.
     m_section_config.get_setting("mac_reduction_energy", &u_mac_reduction_energy);
 
@@ -448,6 +491,8 @@ void pe_t::init(section_config_t m_section_config) {
     m_section_config.get_vector_setting("lb_static_energy", &u_lb_static_energy);
 
     // Optional format-IP unit costs. Each value is per packed transaction.
+    format_payload_events.assign(data_type_t::NUM_DATA_TYPES, 0);
+    format_metadata_events.assign(data_type_t::NUM_DATA_TYPES, 0);
     u_format_payload_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     u_format_payload_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     u_format_metadata_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -460,6 +505,8 @@ void pe_t::init(section_config_t m_section_config) {
     m_section_config.get_vector_setting("format_metadata_energy", &u_format_metadata_energy);
     m_section_config.get_vector_setting("accumulator_spill_cycle", &u_accumulator_spill_cycle);
     m_section_config.get_vector_setting("accumulator_spill_energy", &u_accumulator_spill_energy);
+    // E4: the final output cast/pack is a separate event from an accumulator spill, on a
+    // different precision, so it gets its own unit cost instead of reusing the spill's.
 
     /* Initialize PE stats */
 
@@ -776,12 +823,25 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
     if(request_to_lb[data_type_t::OUTPUT]) {
         account_format_events(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT]);
         if(m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()]) {
+            // RE1/E20-4: a prior partial sum exists -- but that alone is not a reload. A reload is
+            // the physical READ-BACK over the LB->MAC path, and that path is skipped when the
+            // output tile is already resident in the MAC. Charging before the guard billed a
+            // read-back that never happened, on every retained pass.
             if(!skip_transfer[data_type_t::OUTPUT]) {
+                account_accumulator_reload(tile_size_mac[data_type_t::OUTPUT]);
                 num_data_transfer_to_mac[data_type_t::OUTPUT]++;
                 account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], true);
+            } else {
+                // E20-4: the accumulator stayed in the MAC. Counted so a retained pass is visible
+                // as a retention, not as an absent event.
+                ++accumulator_retained_events;
             }
             if(tile_size_mac[data_type_t::OUTPUT] == tile_size_lb[data_type_t::OUTPUT]) skip_transfer[data_type_t::OUTPUT] = true;
         } else {
+            // RE1: a fresh accumulator is zero-initialized in place -- nothing is read back, so no
+            // reload energy is charged here. This branch used to pay for a reload that never
+            // happened.
+            account_accumulator_create(tile_size_mac[data_type_t::OUTPUT]);
             clear_output_accumulators();
             m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()] = true;
         }
@@ -1783,7 +1843,12 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
         account_format_events(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT]);
         // Load output data from local buffer to MAC unit.
         if(m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()]) {
+            // RE1/E20-4: a prior partial sum exists -- but that alone is not a reload. A reload is
+            // the physical READ-BACK over the LB->MAC path, and that path is skipped when the
+            // output tile is already resident in the MAC. Charging before the guard billed a
+            // read-back that never happened, on every retained pass.
             if(!skip_transfer[data_type_t::OUTPUT]) {
+                account_accumulator_reload(tile_size_mac[data_type_t::OUTPUT]);
 #ifdef FUNCTIONAL
 
                 // Output data transfer
@@ -1896,6 +1961,10 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
                 // Update data transfer cycle and energy between MAC and local buffer.
                 transfer_cycle[data_type_t::OUTPUT] += num_access_lb*u_transfer_cycle*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth));
                 transfer_energy[data_type_t::OUTPUT] += num_access_lb*u_transfer_energy*ceil((double)(line_size_lb[data_type_t::OUTPUT])/(double)(bitwidth));
+            } else {
+                // E20-4: keep the FUNCTIONAL and analytical paths on the same event contract.
+                // The partial sum stayed in the MAC, so this is retention rather than a reload.
+                ++accumulator_retained_events;
             }
 
             if(tile_size_mac[data_type_t::OUTPUT] == tile_size_lb[data_type_t::OUTPUT]) { skip_transfer[data_type_t::OUTPUT] = true;}
@@ -1904,6 +1973,8 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
         // This output has no prior partial sum: start from zero rather than
         // retaining the accumulator used for the preceding output coordinate.
         else {
+            // RE1: a fresh accumulator is zero-initialized in place -- no reload energy.
+            account_accumulator_create(tile_size_mac[data_type_t::OUTPUT]);
             clear_output_accumulators();
             m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()] = true;
         }
@@ -1985,6 +2056,10 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
         exist_data_lb[data_type_t::OUTPUT] = false;
         write_output = true;
     }
+    // RE1: the final cast is NOT charged here. A PE writes the same output tile back once per
+    // reduction pass, so a cast charged at this boundary would follow the MAC count rather than the
+    // final output element count. It is charged where the completed accumulation is read out of the
+    // chip instead (global_buffer_t::account_output_writeback_link()).
     if(write_output) pe_array->account_descriptor_dense_writeback(this, tile_size_lb[data_type_t::OUTPUT]);
     wait_data();
     input_index = 0;
@@ -2598,7 +2673,7 @@ void pe_t::print_specification() {
     std::cout << "# of MACs          :" << std::setw(24)
                                         << num_macs*mac_width << std::endl;
     std::cout << "Computation energy :" << std::setw(21) << std::setprecision(2)
-                                        << u_computation_energy << " pJ" << std::endl;
+                                        << u_computation_energy << " " << energy_units().label() << std::endl;
     std::cout << "Computation cycle  :" << std::setw(17) << std::setprecision(1)
                                         << u_computation_cycle << " cycles" << std::endl;
 
@@ -2612,7 +2687,7 @@ void pe_t::print_specification() {
 
     std::cout << "Access energy (read/write)" << std::endl;
     std::cout << " * MAC units       :" << std::setw(16) << std::setprecision(2)
-                                        << u_read_energy_mac[data_type_t::INPUT] << "/" << u_write_energy_mac[data_type_t::INPUT] << " pJ" << std::endl;
+                                        << u_read_energy_mac[data_type_t::INPUT] << "/" << u_write_energy_mac[data_type_t::INPUT] << " " << energy_units().label() << std::endl;
     std::cout << "Access cycle (read/write)" << std::endl;
     std::cout << " * MAC units       :" << std::setw(13) << std::setprecision(1)
                                         << u_read_cycle_mac[data_type_t::INPUT] << "/" << u_write_cycle_mac[data_type_t::INPUT] << " cycles" << std::endl;
@@ -2666,11 +2741,11 @@ void pe_t::print_specification() {
     if(memory_type == memory_type_t::SEPARATE) {
         std::cout << "Access energy (read/write)" << std::endl;
         std::cout << " * Input buffer    :" << std::setw(16) << std::setprecision(2)
-                                            << u_read_energy_lb[data_type_t::INPUT]  << "/" << u_write_energy_lb[data_type_t::INPUT]  << " pJ" << std::endl;
+                                            << u_read_energy_lb[data_type_t::INPUT]  << "/" << u_write_energy_lb[data_type_t::INPUT]  << " " << energy_units().label() << std::endl;
         std::cout << " * Weight buffer   :" << std::setw(16) << std::setprecision(2)
-                                            << u_read_energy_lb[data_type_t::WEIGHT] << "/" << u_write_energy_lb[data_type_t::WEIGHT] << " pJ" << std::endl;
+                                            << u_read_energy_lb[data_type_t::WEIGHT] << "/" << u_write_energy_lb[data_type_t::WEIGHT] << " " << energy_units().label() << std::endl;
         std::cout << " * Output buffer   :" << std::setw(16) << std::setprecision(2)
-                                            << u_read_energy_lb[data_type_t::OUTPUT] << "/" << u_write_energy_lb[data_type_t::OUTPUT] << " pJ" << std::endl;
+                                            << u_read_energy_lb[data_type_t::OUTPUT] << "/" << u_write_energy_lb[data_type_t::OUTPUT] << " " << energy_units().label() << std::endl;
 
         std::cout << "Access cycle (read/write)" << std::endl;
         std::cout << " * Input buffer    :" << std::setw(13) << std::setprecision(1)
@@ -2683,7 +2758,7 @@ void pe_t::print_specification() {
     else if(memory_type == memory_type_t::SHARED) {
         std::cout << "Access energy (read/write)" << std::endl;
         std::cout << " * Local buffer    :" << std::setw(16) << std::setprecision(2)
-                                            << u_read_energy_lb[data_type_t::INPUT]  << "/" << u_write_energy_lb[data_type_t::INPUT]  << " pJ" << std::endl;
+                                            << u_read_energy_lb[data_type_t::INPUT]  << "/" << u_write_energy_lb[data_type_t::INPUT]  << " " << energy_units().label() << std::endl;
 
         std::cout << "Access cycle (read/write)" << std::endl;
         std::cout << " * Local buffer    :" << std::setw(13) << std::setprecision(1)
@@ -2695,16 +2770,56 @@ void pe_t::print_specification() {
 void pe_t::account_format_events(data_type_t type, size_t elements) {
     const size_t payload = runtime_datatypes().payload_transactions(type, elements, bitwidth);
     const size_t metadata = runtime_datatypes().metadata_transactions(type, elements, bitwidth);
-    const size_t storage = runtime_datatypes().storage_transactions(type, elements, bitwidth);
 
+    format_payload_events[type] += payload;
+    format_metadata_events[type] += metadata;
     format_cycle[type] += payload*u_format_payload_cycle[type] +
                           metadata*u_format_metadata_cycle[type];
     format_energy[type] += payload*u_format_payload_energy[type] +
                            metadata*u_format_metadata_energy[type];
-    if(type == data_type_t::OUTPUT) {
-        format_cycle[type] += storage*u_accumulator_spill_cycle[type];
-        format_energy[type] += storage*u_accumulator_spill_energy[type];
+}
+
+// RE1: the four output-accumulator events, each generated at its own boundary.
+//
+// All of them are charged per BYTE MOVED rather than per link transaction: a link-transaction
+// count cannot express precision at this granularity (the MAC tile is a handful of elements, so
+// ceil(elements * width / link_bits) rounds to the same 1 for fp32 and fp16 alike), and these are
+// precision conversions on values, not link crossings.
+//
+// OWNERSHIP: with edge_accumulation the accumulator physically lives at the array edge, so its
+// energy is handed to the PE array. Charging it to the PE would put the energy in a component that
+// the config says does not hold the accumulator.
+void pe_t::charge_accumulator_bytes(size_t bytes) {
+    const double energy = bytes*u_accumulator_spill_energy[data_type_t::OUTPUT];
+    format_cycle[data_type_t::OUTPUT] += bytes*u_accumulator_spill_cycle[data_type_t::OUTPUT];
+    // RE1 ownership: with edge_accumulation the accumulator physically sits at the array edge, so
+    // its energy belongs to the PE array. Charging it to the PE would attribute energy to a
+    // component the config says does not hold the accumulator.
+    if(edge_accumulation) {
+        pe_array->accumulator_energy += energy;
+    } else {
+        accumulator_energy += energy;
     }
+}
+
+void pe_t::account_accumulator_create(size_t elements) {
+    // A fresh accumulator is zero-initialized in place: nothing is read back and nothing is
+    // spilled, so there is no reload/spill energy to charge. Counted so the report can show that
+    // these requests exist and are deliberately free.
+    (void)elements;
+    ++accumulator_create_events;
+}
+
+void pe_t::account_accumulator_reload(size_t elements) {
+    const size_t bytes = runtime_datatypes().accumulator_storage_bytes(elements);
+    accumulator_reload_bytes += bytes;
+    charge_accumulator_bytes(bytes);
+}
+
+void pe_t::account_accumulator_spill(size_t elements) {
+    const size_t bytes = runtime_datatypes().accumulator_storage_bytes(elements);
+    accumulator_spill_bytes += bytes;
+    charge_accumulator_bytes(bytes);
 }
 
 double pe_t::modeled_elapsed_cycles() const {
@@ -2768,6 +2883,13 @@ void pe_t::reset() {
 
     computation_cycle = 0;
     computation_energy = 0;
+    // E4: the reduction-energy axis and the two format event counters reset with the layer.
+    reduction_energy = 0.0;
+    accumulator_reload_bytes = 0;
+    accumulator_spill_bytes = 0;
+    accumulator_create_events = 0;
+    accumulator_retained_events = 0;
+    accumulator_energy = 0.0;
     format_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     format_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
@@ -2831,7 +2953,7 @@ void undefined_stationary_t::computation(scheduler_t *m_scheduler) {
         }
         computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 
         exist_data_mac[data_type_t::INPUT] = false, request_to_lb[data_type_t::INPUT] = true;
         exist_data_mac[data_type_t::WEIGHT] = false, request_to_lb[data_type_t::WEIGHT] = true;
@@ -2898,7 +3020,7 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -2907,7 +3029,7 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
 #else
@@ -2917,13 +3039,15 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 #endif
         } else {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
             exit(1);
         }
 #ifndef FUNCTIONAL
+        // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
+        account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
         account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
         exist_data_mac[data_type_t::WEIGHT] = false;
         request_to_lb[data_type_t::WEIGHT] = true;
@@ -3105,7 +3229,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -3114,7 +3238,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
 #else
@@ -3124,7 +3248,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 #endif
         }
         else {
@@ -3132,6 +3256,8 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
             exit(1);
         }
 #ifndef FUNCTIONAL
+        // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
+        account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
         account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
         exist_data_mac[data_type_t::INPUT] = false;
         request_to_lb[data_type_t::INPUT] = true;
@@ -3315,7 +3441,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 }
                 computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
             }
             else {
                 const unsigned nonzero_operations = count_nonzero_mac_operations(m_scheduler);
@@ -3324,7 +3450,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                 if(nonzero_operations > 0) {
                     computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
 #else
@@ -3334,7 +3460,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
             }
             computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
                      lane_reduction_fill_cycles(lane_state, u_computation_cycle);
-                     computation_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
 
 #endif
         }
@@ -3355,7 +3481,9 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
             exist_data_mac[data_type_t::OUTPUT] = false;
             request_to_lb[data_type_t::OUTPUT] = true;
             num_request_to_lb[data_type_t::OUTPUT]++;
-            account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
+            // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
+        account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
+        account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
             if(output_index < m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
                 input_index = 0;
                 weight_index = 0;

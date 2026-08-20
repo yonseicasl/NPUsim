@@ -1,6 +1,7 @@
 #include <iomanip>
 #include "spatial_arch.h"
 #include "interconnect_timing.h"
+#include "energy_units.h"
 
 spatial_arch_t::spatial_arch_t(section_config_t m_section_config) :
     pe_array_t(m_section_config) {
@@ -227,10 +228,11 @@ void spatial_arch_t::update_tile_size(scheduler_t *m_scheduler) {
 }
 
 void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
-    const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x);
+    const spatial_noc_cost_t topology_cost = spatial_noc_cost(noc_type, num_active_pe_y, num_active_pe_x,
+                                                       /* multicast = */ true);
     // Legacy multiplicative view kept for the FUNCTIONAL-only body below.
     const double topology_cycle = noc_cycle*(topology_cost.latency_fill_hops + 1.0);
-    const double topology_energy = noc_energy*topology_cost.energy_multiplier;
+    const double topology_energy = noc_energy*topology_cost.link_traversals;
 #ifndef FUNCTIONAL
     // SP1: hops pipeline -- per-transaction latency stays one link cycle and the mesh
     // route depth is a one-time fill; energy is per-hop per transaction.
@@ -1545,7 +1547,7 @@ void spatial_arch_t::print_specification() {
     std::cout << "NoC cycle          :" << std::setw(17)
                                         << noc_cycle << " cycles" << std::endl;
     std::cout << "NoC energy         :" << std::setw(21)
-                                        << noc_energy << " pJ" << std::endl;
+                                        << noc_energy << " " << energy_units().label() << std::endl;
 	std::cout << std::endl;
 }
 

@@ -167,6 +167,30 @@ size_t runtime_datatypes_t::storage_bytes(data_type_t type, size_t elements) con
     return payload + metadata;
 }
 
+size_t runtime_datatypes_t::accumulator_storage_bits(size_t elements) const {
+    // An accumulator is a dense scalar array of accumulator-format values: no block metadata,
+    // because a partial sum is not stored in a block-scaled encoding.
+    if(elements == 0) return 0;
+    if(accumulator.payload_bits != 0 && elements > std::numeric_limits<size_t>::max()/accumulator.payload_bits) {
+        std::cerr << "Error: accumulator storage size overflow" << std::endl;
+        exit(1);
+    }
+    return elements*accumulator.payload_bits;
+}
+
+size_t runtime_datatypes_t::accumulator_storage_bytes(size_t elements) const {
+    return ceil_div(accumulator_storage_bits(elements), 8);
+}
+
+size_t runtime_datatypes_t::accumulator_storage_transactions(size_t elements,
+                                                            size_t transaction_bits) const {
+    if(transaction_bits == 0) {
+        std::cerr << "Error: accumulator transaction width must be non-zero" << std::endl;
+        exit(1);
+    }
+    return ceil_div(accumulator_storage_bits(elements), transaction_bits);
+}
+
 std::string runtime_datatypes_t::describe(data_type_t type) const {
     const tensor_format_t &value = format(type);
     return value.name;

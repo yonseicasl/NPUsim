@@ -14,6 +14,9 @@ class multi_chip_t;
 class dram_t {
 
 public:
+
+    // Phase-5: the component's clock in MHz (see the other components).
+    double clock_mhz() const { return static_cast<double>(frequency); }
     dram_t(section_config_t m_section_config);
     ~dram_t();
 
@@ -106,6 +109,11 @@ public:
     double t_rtw_cycle;
     // Direction of the last accounted stream: -1 none yet, 0 read (load), 1 write (store).
     int last_bus_direction;
+    // E20-2: how many activations actually fired. Without a COUNT, an activation that happened
+    // while `row_miss_energy` was undeclared is indistinguishable from no activation at all -- the
+    // UNPRICED_ACTIVE state cannot be detected from an energy of 0.
+    size_t row_activation_events;
+
     // Charge the row activations of one dense stream (used by load and write-back).
     void account_row_activations(data_type_t type, size_t elements);
     // L8: charge a bus turnaround if this stream flips the bus direction.

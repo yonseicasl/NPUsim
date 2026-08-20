@@ -55,6 +55,16 @@ public:
     size_t metadata_transactions(data_type_t type, size_t elements, size_t transaction_bits) const;
     size_t storage_transactions(data_type_t type, size_t elements, size_t transaction_bits) const;
     std::string describe(data_type_t type) const;
+    // E4: sizes computed with the ACCUMULATOR format rather than a tensor's format.
+    //
+    // The accumulator format was parsed and printed and then consumed by nothing: an
+    // accumulator spill was sized by the OUTPUT datatype, so `accumulator_format = fp32` and
+    // `= fp16` produced identical traffic and energy. Spilling a partial sum moves
+    // accumulator-precision values; only the final cast/pack moves output-precision ones. These
+    // give the accumulator-precision sizes so the two events can be charged separately.
+    size_t accumulator_storage_bits(size_t elements) const;
+    size_t accumulator_storage_bytes(size_t elements) const;
+    size_t accumulator_storage_transactions(size_t elements, size_t transaction_bits) const;
 
 private:
     std::vector<tensor_format_t> formats;

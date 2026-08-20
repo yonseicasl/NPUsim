@@ -205,15 +205,69 @@ datatype_transfer_timing_t datatype_transfer_timing(data_type_t type, size_t ele
                                                      size_t link_bits);
 // Pipelined-hop contract (SP1): a stream of T transactions to the farthest active
 // destination completes in (T + latency_fill_hops)*noc_cycle -- hops pipeline, so
-// the route depth is a one-time fill, not a per-transaction multiplier. Energy stays
-// per-transaction x avg Manhattan hops (every hop transfer burns link energy).
+// the route depth is a one-time fill, not a per-transaction multiplier.
+//
+// E2: LATENCY and ENERGY need different quantities, and the two DIRECTIONS of traffic across a
+// spatial array need different ones again. Energy is per physical link crossed, so it must
+// count the links a delivery actually uses:
+//
+//   MULTICAST (operand distribution: one tile from the temporal buffer to EVERY active PE).
+//     The fabric forwards one copy along a tree, and every one of the h*w PEs receives it over
+//     its own incoming link -- so h*w links carry a copy of each transaction. The previous
+//     model charged the AVERAGE Manhattan hop count instead (15 on a 16x16 array), which is the
+//     cost of one average unicast, not of a fanout to 256 endpoints. It understated a 16x16
+//     array's distribution energy by roughly 17x. This was invisible because every shipped
+//     config sets noc_energy = 0.
+//   UNICAST (output write-back: each PE sends its OWN partial sum to the array edge).
+//     Here each transaction really does travel one route, so the average Manhattan distance per
+//     transaction IS the right multiplier -- the old formula was correct for this direction.
+//
+// Treating both directions with one formula is what made the distribution case wrong, so the
+// mode is an explicit parameter rather than a default.
 struct spatial_noc_cost_t {
     double latency_fill_hops;   // max(1, max Manhattan hops) - 1; 0 for single-hop fabrics
-    double energy_multiplier;   // average Manhattan hops per delivered transaction
+    double link_traversals;     // fabric links crossed per delivered transaction; see below
 };
 
-spatial_noc_cost_t spatial_noc_cost(noc_type_t topology,
-                                    unsigned active_height, unsigned active_width);
+// RE6: what ONE link traversal IS, for the spatial (intra-array) NoC.
+//
+// `noc_energy` prices ONE traversal of ONE ROUTER-TO-ROUTER LINK INSIDE the array fabric. It does
+// NOT price:
+//   * the GLB <-> PE-array attach link. That link is charged separately by the GLB section's
+//     `transfer_energy` (the report's "PEs - Global buffer" axis), so counting it here would bill
+//     the same wire twice.
+//   * endpoint injection/ejection into a PE. Per the component boundary the model documents -- a
+//     transfer charges the source's read to the SOURCE, the link to its OWNER, and the
+//     destination's write to the DESTINATION -- that is the PE local buffer's write energy.
+//
+// Under that contract the counts are edge sets, not receiver counts:
+//   MULTICAST (operand distribution, one tile to every active PE): a spanning tree over the N
+//     active routers, rooted at the router the GLB attaches to, has exactly N-1 edges. So the
+//     answer to the "N or N-1" question is N-1. N would be right only under a contract that also
+//     prices the attach link, which this model prices elsewhere.
+//   UNICAST (partial-sum write-back, each PE to the array edge): the route from a PE's router to
+//     the corner router, averaged over the active PEs -- (h-1)/2 + (w-1)/2 internal hops.
+// A 1x1 mesh therefore has ZERO internal links: its data arrives entirely over the attach link.
+// A BUS or CROSSBAR is one shared medium: one traversal, no route depth.
+//
+// spatial_noc_link_contract() returns this contract as one line for the report, so a reader can
+// tell which convention produced the number (RE6 completion condition 4).
+const char *spatial_noc_link_contract(noc_type_t topology, bool multicast);
+
+// RE6 condition 3: build the ACTUAL multicast edge set for an active mesh shape and return its
+// size, by enumerating the dimension-order spanning tree rather than evaluating a closed form.
+// spatial_noc_cost() must agree with it for every shape, which is what stops the closed form from
+// drifting away from a physical link count.
+unsigned spatial_multicast_edge_count(unsigned active_height, unsigned active_width);
+
+// RE6: the same statement for the NoP. Its contract DIFFERS from the array's on purpose: the NoP's
+// source is the multi-chip staging buffer, whose link into chip 0 is part of the NoP itself and is
+// priced by no other axis -- so that ingress link IS counted here, and nop_delivery_cost() adds it
+// explicitly. Each chip's own delivery is its GLB's write energy, as always.
+const char *nop_link_contract(noc_type_t topology, bool multicast);
+
+spatial_noc_cost_t spatial_noc_cost(noc_type_t topology, unsigned active_height,
+                                    unsigned active_width, bool multicast);
 
 // SY2/L9: fill and DRAIN of a 2D systolic array of the given ACTIVE shape.
 //

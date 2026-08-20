@@ -5,17 +5,21 @@
 #include "datatype.h"
 #include <limits>
 #include "interconnect_timing.h"
+#include "energy_units.h"
 
 multi_chip_t::multi_chip_t(section_config_t m_section_config) :
     data(NULL),
     double_buffer(false),
     nop_multicast(true),
+    output_cast_bytes(0),
+    output_cast_energy(0.0),
     equal_output_tile(false),
     duplicated_input(0),
     exist_temporal_buffer(true),
     u_transfer_cycle(0.0),
     u_transfer_energy(0.0),
     utilization(0.0),
+    output_cast_cycle(0.0),
     write_back_cycle(0.0),
     overlapped_transfer_cycle(0.0),
     stationary_type(stationary_type_t::UNDEFINED_STATIONARY),
@@ -31,9 +35,10 @@ multi_chip_t::multi_chip_t(section_config_t m_section_config) :
     bandwidth(0.0),
     bitwidth(0),
     memory_size(0),
-    input_size(0),
-    weight_size(0),
-    output_size(0),
+    buffer_utilization(data_type_t::NUM_DATA_TYPES, 0.0),
+    input_size(0.0),
+    weight_size(0.0),
+    output_size(0.0),
     initial(true),
     nop_cycle(0.0),
     nop_energy(0.0) {
@@ -134,7 +139,7 @@ void multi_chip_t::init(section_config_t m_section_config) {
         m_section_config.get_setting("output_size", &output_size);
         
         input_size *= 1024*num_chips, weight_size *= 1024*num_chips, output_size *= 1024*num_chips;
-        memory_size = input_size + weight_size + output_size;
+        memory_size = static_cast<unsigned>(input_size + weight_size + output_size);
     }
     else {
         std::cerr << "Error: Wrong memory type name : " << memory_type << std::endl;
@@ -159,6 +164,11 @@ void multi_chip_t::init(section_config_t m_section_config) {
     }
     // L7: multicast delivery of broadcast tiles; see multi_chip_t::nop_multicast.
     m_section_config.get_setting("nop_multicast", &nop_multicast);
+    // RE1: the final output cast/pack unit cost, charged per output byte committed off chip.
+    u_output_cast_cycle.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    u_output_cast_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    m_section_config.get_vector_setting("output_cast_cycle", &u_output_cast_cycle);
+    m_section_config.get_vector_setting("output_cast_energy", &u_output_cast_energy);
 
     // Initialize skip transfer signal
     skip_transfer.reserve(data_type_t::NUM_DATA_TYPES);
@@ -289,15 +299,67 @@ void multi_chip_t::update_tile_size(scheduler_t *m_scheduler) {
     const size_t required_input = runtime_datatypes().storage_bytes(data_type_t::INPUT, tile_size[data_type_t::INPUT]);
     const size_t required_weight = runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_size[data_type_t::WEIGHT]);
     const size_t required_output = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    // P1-B bypass, at the NoP level. A datatype whose GLB is bypassed is STREAMED from the chip
+    // ingress straight into the PE spads -- it never stages in a chip's global buffer, and it never
+    // stages in the multi-chip temporal buffer either. global_buffer_t already excuses a bypassed
+    // datatype from its own capacity check (see the `&& !bypass[type]` guards there), and this
+    // component already consults chips[i]->bypass[type] when it accounts the delivery traffic; the
+    // capacity check was the one place that did not. The consequence was that eyerissv2.cfg --
+    // which declares `[separate] weight_size = 0` WITH `bypass=0:1:0`, and `[multi_chip]
+    // weight_size = 0` to say the same thing one level up -- could not run at all: any non-zero
+    // weight tile exceeded a zero buffer the design never intended to use.
+    const size_t required[data_type_t::NUM_DATA_TYPES] = { required_input, required_weight,
+                                                           required_output };
+    bool bypassed[data_type_t::NUM_DATA_TYPES] = { false, false, false };
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+        // Bypassed only if EVERY chip bypasses it: a datatype staged by any chip still needs room.
+        bypassed[i] = !chips.empty();
+        for(unsigned c = 0; c < chips.size(); ++c) {
+            bypassed[i] = bypassed[i] && chips[c]->bypass[i];
+        }
+    }
     bool capacity_overflow = false;
     if(memory_type == memory_type_t::SHARED) {
-        capacity_overflow = required_input > memory_size || required_weight > memory_size - required_input ||
-                            required_output > memory_size - required_input - required_weight;
+        // A shared pool is one allocation, so a bypassed datatype simply asks for nothing.
+        const size_t shared_input = bypassed[data_type_t::INPUT] ? 0 : required_input;
+        const size_t shared_weight = bypassed[data_type_t::WEIGHT] ? 0 : required_weight;
+        const size_t shared_output = bypassed[data_type_t::OUTPUT] ? 0 : required_output;
+        capacity_overflow = shared_input > memory_size ||
+                            shared_weight > memory_size - shared_input ||
+                            shared_output > memory_size - shared_input - shared_weight;
     } else {
-        capacity_overflow = required_input > input_size || required_weight > weight_size || required_output > output_size;
+        capacity_overflow =
+            (!bypassed[data_type_t::INPUT] && required_input > input_size) ||
+            (!bypassed[data_type_t::WEIGHT] && required_weight > weight_size) ||
+            (!bypassed[data_type_t::OUTPUT] && required_output > output_size);
+    }
+    // Record the occupancy the capacity check just measured, so the buffer size is visible in the
+    // report rather than only being able to abort the run.
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+        const double capacity = (memory_type == memory_type_t::SHARED)
+                              ? static_cast<double>(memory_size)
+                              : (i == data_type_t::INPUT ? input_size
+                                 : i == data_type_t::WEIGHT ? weight_size : output_size);
+        if(capacity == 0.0 || bypassed[i]) continue;  // a bypassed datatype occupies nothing here
+        buffer_utilization[i] = std::max(buffer_utilization[i],
+                                         static_cast<double>(required[i])/capacity);
     }
     if(capacity_overflow) {
-        std::cerr << "Error: runtime datatype multi-chip tile exceeds temporal-buffer capacity" << std::endl;
+        // Say WHICH datatype and by how much. The bare message named neither, so a config that
+        // does not fit gave no clue where to look.
+        static const char *names[data_type_t::NUM_DATA_TYPES] = { "input", "weight", "output" };
+        const double capacities[data_type_t::NUM_DATA_TYPES] = { input_size, weight_size,
+                                                                 output_size };
+        std::cerr << "Error: runtime datatype multi-chip tile exceeds temporal-buffer capacity"
+                  << std::endl;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+            std::cerr << "  " << names[i] << ": needs " << required[i] << " B, "
+                      << (memory_type == memory_type_t::SHARED
+                          ? "shared pool " + std::to_string(memory_size)
+                          : "buffer " + std::to_string(static_cast<size_t>(capacities[i])))
+                      << " B" << (bypassed[i] ? "  (GLB-bypassed: not staged here)" : "")
+                      << std::endl;
+        }
         exit(1);
     }
 
@@ -317,8 +379,9 @@ void multi_chip_t::update_offset() {
     // Update offsets in the case of separate buffer
     if(memory_type == memory_type_t::SEPARATE) {
         offsets[data_type_t::INPUT] = 0;
-        offsets[data_type_t::WEIGHT] = input_size/sizeof(data_t);
-        offsets[data_type_t::OUTPUT] = input_size/sizeof(data_t) + weight_size/sizeof(data_t);
+        offsets[data_type_t::WEIGHT] = static_cast<size_t>(input_size)/sizeof(data_t);
+        offsets[data_type_t::OUTPUT] = static_cast<size_t>(input_size)/sizeof(data_t) +
+                                       static_cast<size_t>(weight_size)/sizeof(data_t);
     }
 }
 
@@ -538,6 +601,17 @@ void multi_chip_t::account_output_writeback_to_dram() {
     dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
     dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
     dram->account_row_activations(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    // RE1: the output is committed in OUTPUT precision here, exactly once per element (DR6/T1), so
+    // this is where the final cast/pack is charged.
+    {
+        const size_t cast_bytes = runtime_datatypes().storage_bytes(data_type_t::OUTPUT,
+                                                                   tile_size[data_type_t::OUTPUT]);
+        output_cast_bytes += cast_bytes;
+        output_cast_energy += cast_bytes*u_output_cast_energy[data_type_t::OUTPUT];
+        const double cast_cycles = cast_bytes*u_output_cast_cycle[data_type_t::OUTPUT];
+        output_cast_cycle += cast_cycles;
+        write_back_cycle += cast_cycles;
+    }
     // L8: an output write-back drives the bus in the write direction.
     dram->account_bus_turnaround(data_type_t::OUTPUT, true);
     dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
@@ -1885,7 +1959,7 @@ void multi_chip_t::print_specification() {
     std::cout << "NoP cycle          :" << std::setw(17) 
                                         << nop_cycle << " cycles" << std::endl;
     std::cout << "NoP energy         :" << std::setw(21)
-                                        << nop_energy << " pJ" << std::endl;
+                                        << nop_energy << " " << energy_units().label() << std::endl;
     std::cout << std::endl;
 }
 
@@ -1919,6 +1993,10 @@ double multi_chip_t::modeled_elapsed_cycles() const {
 }
 
 void multi_chip_t::reset() {
+    // RE1: the final-cast counters reset with the layer.
+    output_cast_bytes = 0;
+    output_cast_energy = 0.0;
+    output_cast_cycle = 0.0;
     std::fill_n(data, (memory_size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
 
     initial = true;
@@ -1943,3 +2021,6 @@ void multi_chip_t::reset() {
     static_energy.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 }
 
+std::string multi_chip_t::describe_nop_link_contract() const {
+    return nop_link_contract(nop_type, nop_multicast);
+}

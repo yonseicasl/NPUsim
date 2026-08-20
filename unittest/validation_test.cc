@@ -10,6 +10,7 @@
 #include "mapping_table.h"
 #include "pe_lane.h"
 #include "interconnect_timing.h"
+#include "energy_units.h"
 
 namespace {
 
@@ -164,23 +165,20 @@ void validate_parser_contract() {
         fail("scalar vector broadcast");
     }
 
-    unsigned unsigned_value = 0;
-    if(section.get_setting("negative", &unsigned_value)) {
-        fail("negative unsigned value was accepted");
+    // A string setting is the WHOLE value, spaces included -- stream extraction used to stop at
+    // the first space and then fail the eof() check, dropping a multi-word provenance string.
+    section.add_setting("text", "a b c");
+    std::string text;
+    if(!section.get_setting("text", &text) || text != "a b c") {
+        fail("string setting keeps its spaces");
     }
 
-    section_config_t short_vector("test");
-    short_vector.add_setting("value", "1:2");
-    values.assign(3, 0);
-    if(short_vector.get_vector_setting("value", &values)) {
-        fail("short vector was accepted");
-    }
-
-    section_config_t long_vector("test");
-    long_vector.add_setting("value", "1:2:3:4");
-    if(long_vector.get_vector_setting("value", &values)) {
-        fail("long vector was accepted");
-    }
+    // The REJECTION cases -- a negative value for an unsigned setting, a short or long
+    // per-datatype vector, a fractional value for an integer setting, a bool given anything but
+    // 0/1 -- are no longer observable in-process: they used to return false (silently leaving the
+    // caller's default, which is the defect) and now abort with a message naming the section, key
+    // and value. They are verified end to end by validation/knobs KN11, which runs the simulator
+    // on a config carrying each bad value and requires it to fail.
 }
 
 void validate_legacy_glb_mapping_contract() {
@@ -189,6 +187,32 @@ void validate_legacy_glb_mapping_contract() {
     mapping_table_t table(section);
     if(table.calculate_active_component(component_type_t::GLOBAL_BUFFER) != 3) {
         fail("legacy GLB temporal repetition mapping");
+    }
+}
+
+void validate_input_halo_contract() {
+    section_config_t conv3("mapping");
+    conv3.add_setting("pe", "16,1,1,1,4,1,3,0,0,1,1");
+    conv3.add_setting("pe_x", "1,1,13,1,1,1,1,0,0,1,1");
+    conv3.add_setting("pe_y", "4,1,1,1,1,3,1,0,0,1,1");
+    conv3.add_setting("glb", "6,4,1,13,1,1,1,0,0,1,1");
+    conv3.add_setting("dram", "1,1,1,1,64,1,1,0,0,1,1");
+    const input_halo_reuse_t q_only = mapping_table_t(conv3).input_halo_reuse();
+    if(!q_only.active || q_only.replicated_elements != 599040 ||
+       q_only.unique_elements != 230400 || q_only.working_set_elements != 11520) {
+        fail("Q-only input halo union/working-set contract");
+    }
+
+    section_config_t conv2("mapping");
+    conv2.add_setting("pe", "16,1,1,1,1,1,5,0,0,1,1");
+    conv2.add_setting("pe_x", "1,1,14,1,1,1,1,0,0,1,1");
+    conv2.add_setting("pe_y", "1,1,1,1,2,5,1,0,0,1,1");
+    conv2.add_setting("glb", "8,4,2,27,1,1,1,0,0,1,1");
+    conv2.add_setting("dram", "2,1,1,1,48,1,1,0,0,2,1");
+    const input_halo_reuse_t pq = mapping_table_t(conv2).input_halo_reuse();
+    if(!pq.active || pq.replicated_elements != 1866240 ||
+       pq.unique_elements != 380928 || pq.working_set_elements != 18624) {
+        fail("P/Q input halo union/working-set contract");
     }
 }
 
@@ -333,15 +357,66 @@ void validate_pe_lane_contract() {
     }
 }
 
+// RE5: cross-check the declared energy schema for self-consistency.
+bool energy_schema_is_well_formed() {
+    unsigned count = 0;
+    const energy_key_schema_t *keys = energy_key_schema(count);
+    if(count == 0) return false;
+    bool has_unit = false, has_reference = false;
+    for(unsigned i = 0; i < count; ++i) {
+        const std::string name(keys[i].name ? keys[i].name : "");
+        if(name.empty()) return false;
+        if(name.find("energy") == std::string::npos) return false;   // else it is never consulted
+        for(unsigned j = i + 1; j < count; ++j) {
+            if(name == std::string(keys[j].name)) return false;       // duplicate entry
+        }
+        if(keys[i].kind == ENERGY_KEY_PREFIX_SCALAR && name[name.size()-1] != '_') return false;
+        if(name == "energy_unit") has_unit = true;
+        if(name == "energy_reference") has_reference = true;
+    }
+    return has_unit && has_reference;
+}
+
 void validate_spatial_interconnect_contract() {
     if(!is_supported_spatial_noc(noc_type_t::BUS) ||
        !is_supported_spatial_noc(noc_type_t::STORE_AND_FORWARD) ||
        !is_supported_spatial_noc(noc_type_t::MESH) ||
        !is_supported_multi_chip_nop(noc_type_t::BUS) ||
-       // SP1 pipelined-hop contract: 2x3 mesh max hops = 3 -> fill 2; energy avg 1.5.
-       spatial_noc_cost(noc_type_t::MESH, 2, 3).latency_fill_hops != 2.0 ||
-       spatial_noc_cost(noc_type_t::MESH, 2, 3).energy_multiplier != 1.5 ||
-       spatial_noc_cost(noc_type_t::CROSSBAR, 2, 3).latency_fill_hops != 0.0 ||
+       // SP1 pipelined-hop contract: 2x3 mesh max hops = 3 -> fill 2. E2/RE6: the energy quantity
+       // depends on the direction -- a multicast is a spanning TREE over the 6 active routers, so
+       // 5 edges (NOT 6: the 6th link a receiver count adds is the GLB attach link, priced by the
+       // GLB's own transfer_energy), and per-source unicast is the 1.5 average Manhattan distance.
+       spatial_noc_cost(noc_type_t::MESH, 2, 3, true).latency_fill_hops != 2.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 2, 3, true).link_traversals != 5.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 2, 3, false).link_traversals != 1.5 ||
+       // RE6 condition 3: the closed form must equal an ENUMERATED edge set, for degenerate and
+       // rectangular shapes alike. 1x1 has no internal link at all (its data arrives entirely
+       // over the attach link); a 1xN or Nx1 line has N-1; an NxM mesh has N*M-1.
+       spatial_multicast_edge_count(1, 1) != 0 ||
+       spatial_noc_cost(noc_type_t::MESH, 1, 1, true).link_traversals != 0.0 ||
+       spatial_multicast_edge_count(1, 4) != 3 ||
+       spatial_noc_cost(noc_type_t::MESH, 1, 4, true).link_traversals != 3.0 ||
+       spatial_multicast_edge_count(4, 1) != 3 ||
+       spatial_noc_cost(noc_type_t::MESH, 4, 1, true).link_traversals != 3.0 ||
+       spatial_multicast_edge_count(2, 3) != 5 ||
+       spatial_multicast_edge_count(16, 16) != 255 ||
+       spatial_noc_cost(noc_type_t::MESH, 16, 16, true).link_traversals != 255.0 ||
+       // ... and the enumerated tree must be a TREE: exactly one edge per non-root router.
+       spatial_multicast_edge_count(3, 5) != 3*5 - 1 ||
+       spatial_multicast_edge_count(5, 3) != 5*3 - 1 ||
+       // The contract statement must exist and differ by direction, so the report cannot print a
+       // number without saying which convention produced it.
+       std::string(spatial_noc_link_contract(noc_type_t::MESH, true)) ==
+           std::string(spatial_noc_link_contract(noc_type_t::MESH, false)) ||
+       std::string(spatial_noc_link_contract(noc_type_t::MESH, true)).find("N-1") ==
+           std::string::npos ||
+       std::string(nop_link_contract(noc_type_t::MESH, true)).find("ingress") ==
+           std::string::npos ||
+       // RE5: the energy schema itself must be well formed -- a duplicate or empty entry would
+       // make lookups depend on declaration order, and the provenance keys must be present or
+       // every config's `energy_unit` line would be rejected as an unknown key.
+       !energy_schema_is_well_formed() ||
+       spatial_noc_cost(noc_type_t::CROSSBAR, 2, 3, true).latency_fill_hops != 0.0 ||
        // R2: mesh NoP is now a supported routed-unicast model; store-and-forward is not.
        !is_supported_multi_chip_nop(noc_type_t::MESH) ||
        is_supported_multi_chip_nop(noc_type_t::STORE_AND_FORWARD) ||
@@ -382,6 +457,43 @@ void validate_spatial_interconnect_contract() {
        derived_link_bitwidth("test", 2.0, 1.0) != 16 ||
        derived_link_bitwidth("test", 0.9, 1.0) != 7 ||
        derived_link_bitwidth("test", 1.0, 0.0) != 0 ||
+       // E2/RE6 spatial NoC energy: MULTICAST distribution is a spanning TREE over the active
+       // routers, so N-1 internal links; per-source UNICAST write-back is the average Manhattan
+       // distance per transaction. A 16x16 array charges 255 for distribution and 15 for
+       // write-back -- the old single formula used 15 for BOTH, understating distribution energy
+       // ~17x. (The GLB attach link is the one link NOT counted here; it is priced by the GLB's
+       // own transfer_energy, so a receiver count of 256 would bill that wire twice.)
+       spatial_noc_cost(noc_type_t::MESH, 16, 16, true).link_traversals != 255.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 16, 16, false).link_traversals != 15.0 ||
+       // Route depth is a latency quantity and is the same either way.
+       spatial_noc_cost(noc_type_t::MESH, 16, 16, true).latency_fill_hops != 29.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 16, 16, false).latency_fill_hops != 29.0 ||
+       // 1xN row: the tree along the row has N-1 links; a unicast averages (N-1)/2 hops -- for
+       // N=8 that is 3.5, and the fill is 7-1 = 6.
+       spatial_noc_cost(noc_type_t::MESH, 1, 8, true).link_traversals != 7.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 1, 8, false).link_traversals != 3.5 ||
+       spatial_noc_cost(noc_type_t::MESH, 1, 8, true).latency_fill_hops != 6.0 ||
+       // Nx1 column is the mirror image.
+       spatial_noc_cost(noc_type_t::MESH, 8, 1, true).link_traversals != 7.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 8, 1, false).link_traversals != 3.5 ||
+       // NxM asymmetric: 4x2 has 8 routers -> 7 tree links; unicast average = (sum of Manhattan
+       // hops)/8 = (2*4*3/2 + 4*2*1/2)/8 = (12 + 4)/8 = 2.0.
+       spatial_noc_cost(noc_type_t::MESH, 4, 2, true).link_traversals != 7.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 4, 2, false).link_traversals != 2.0 ||
+       // A single PE has NO internal link to cross for a multicast -- its data arrives entirely
+       // over the attach link, which this axis does not price. The unicast branch keeps its floor
+       // of 1 because a write-back still crosses its own router.
+       spatial_noc_cost(noc_type_t::MESH, 1, 1, true).link_traversals != 0.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 1, 1, false).link_traversals != 1.0 ||
+       spatial_noc_cost(noc_type_t::MESH, 1, 1, true).latency_fill_hops != 0.0 ||
+       // A bus transmission reaches every receiver at once and a crossbar is a direct path:
+       // one traversal per transaction, no route depth, same in both directions.
+       spatial_noc_cost(noc_type_t::BUS, 16, 16, true).link_traversals != 1.0 ||
+       spatial_noc_cost(noc_type_t::BUS, 16, 16, false).link_traversals != 1.0 ||
+       spatial_noc_cost(noc_type_t::CROSSBAR, 16, 16, true).link_traversals != 1.0 ||
+       spatial_noc_cost(noc_type_t::BUS, 16, 16, true).latency_fill_hops != 0.0 ||
+       // A degenerate active shape costs nothing rather than underflowing.
+       spatial_noc_cost(noc_type_t::MESH, 0, 8, true).link_traversals != 1.0 ||
        !is_supported_spatial_noc(noc_type_t::CROSSBAR) ||
        !has_valid_active_shape(4, 8, 4, 8) ||
        has_valid_active_shape(4, 8, 5, 8) ||
@@ -625,6 +737,13 @@ void validate_spatial_interconnect_contract() {
 }
 
 void validate_accelerator(config_t &config, const std::string &path) {
+    // E8: every energy unit cost in the file must be a finite, non-negative number. Only 3 of
+    // the 22 energy keys guarded themselves, so a negative or malformed cost used to reach the
+    // model and produce negative/NaN energy that looked like a result.
+    const std::string energy_error = validate_energy_settings(config);
+    if(!energy_error.empty()) {
+        fail(path + ": invalid energy unit cost: " + energy_error);
+    }
     unsigned accelerator_count = 0;
     unsigned pe_array_count = 0;
     unsigned global_buffer_count = 0;
@@ -694,6 +813,7 @@ int main(int argc, char **argv) {
     validate_runtime_datatypes();
     validate_hierarchy_datatype_transactions();
     validate_legacy_glb_mapping_contract();
+    validate_input_halo_contract();
 
     validate_pe_lane_contract();
     validate_spatial_interconnect_contract();

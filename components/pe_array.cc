@@ -13,12 +13,19 @@ pe_array_t::pe_array_t(section_config_t /*m_section_config*/) :
     equal_output_tile(false),
     duplicated_input(0),
     index(0),
+    reduction_additions(0.0),
+    psum_retention_valid(true),
     exist_temporal_buffer(false),
     utilization(0.0),
     write_back_cycle(0.0),
     overlapped_transfer_cycle(0.0),
     u_weight_fold_fill_cycle(0.0),
     u_layer_setup_cycle(0.0),
+    u_weight_fold_fill_energy(0.0),
+    u_layer_setup_energy(0.0),
+    weight_fold_events(0.0),
+    weight_fold_energy(0.0),
+    accumulator_energy(0.0),
     fold_fill_cycle(0.0),
     edge_accumulation(false),
     global_buffer(NULL),
@@ -109,6 +116,9 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
 
     // V2: RTL-calibrated weight-residency fold fill and per-layer setup (default off).
     m_section_config.get_setting("weight_fold_fill_cycle", &u_weight_fold_fill_cycle);
+    // E5: the energy counterparts of the fold/setup latency bubbles.
+    m_section_config.get_setting("weight_fold_fill_energy", &u_weight_fold_fill_energy);
+    m_section_config.get_setting("layer_setup_energy", &u_layer_setup_energy);
     m_section_config.get_setting("layer_setup_cycle", &u_layer_setup_cycle);
     // V3: array-edge output accumulation (Gemmini-style accumulator).
     m_section_config.get_setting("edge_accumulation", &edge_accumulation);
@@ -205,12 +215,24 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
             //     itself). It is therefore a LOWER bound: a design that really does drain per
             //     element must calibrate weight_fold_fill_cycle.
             if(type == data_type_t::WEIGHT) {
+                // E5: the ENERGY of a residency follows the same event as its latency, and the
+                // same selection rule -- a calibrated per-element fold cost is charged per
+                // per-PE weight element, while the analytical drain is a per-tile boundary
+                // bubble. Whichever supplies the latency supplies the event count, so the two
+                // can never be double charged.
                 if(u_weight_fold_fill_cycle > 0.0) {
-                    fold_fill_cycle += u_weight_fold_fill_cycle
-                                      *static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT]);
+                    const double folds =
+                        static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT]);
+                    fold_fill_cycle += u_weight_fold_fill_cycle*folds;
+                    weight_fold_events += folds;
                 } else {
                     fold_fill_cycle += weight_fold_bubble_cycles();
+                    if(weight_fold_bubble_cycles() > 0.0) weight_fold_events += 1.0;
                 }
+                weight_fold_energy += u_weight_fold_fill_energy*
+                    (u_weight_fold_fill_cycle > 0.0
+                        ? static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT])
+                        : (weight_fold_bubble_cycles() > 0.0 ? 1.0 : 0.0));
             }
             // PA1: operands shared by several PEs are read from the temporal buffer and
             // streamed over the fabric ONCE -- the array-level tile is the distinct data
@@ -307,8 +329,9 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
     // a one-time pipeline fill (0 for single-hop fabrics, so BUS/S&F/crossbar
     // unchanged). writeback_noc_type() lets a systolic array force the same MESH
     // diameter treatment its load path already uses (see pe_array.h).
-    const spatial_noc_cost_t topology_cost = spatial_noc_cost(writeback_noc_type(), num_active_pe_y, num_active_pe_x);
-    const double topology_energy = noc_energy*topology_cost.energy_multiplier;
+    const spatial_noc_cost_t topology_cost = spatial_noc_cost(writeback_noc_type(), num_active_pe_y, num_active_pe_x,
+                                                       /* multicast = */ false);
+    const double topology_energy = noc_energy*topology_cost.link_traversals;
     const double link_fill_cycles = topology_cost.latency_fill_hops*noc_cycle;
     transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*noc_cycle + link_fill_cycles;
     transfer_energy[data_type_t::OUTPUT] += timing.link_transactions*topology_energy;
@@ -487,19 +510,31 @@ void pe_array_t::request_data() {
                 global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*link_transactions;
                 global_buffer->overlapped_transfer_cycle += global_buffer->u_transfer_cycle*link_transactions;
                 global_buffer->transfer_energy[data_type_t::OUTPUT] += global_buffer->u_transfer_energy*link_transactions;
+                // Does the TILING alone suggest the array's output tile need not move?
+                bool tiles_suggest_retention = false;
                 if(stationary_type == stationary_type_t::OUTPUT_STATIONARY) {
-                    if(tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT]) {equal_output_tile = true;}
+                    tiles_suggest_retention =
+                        tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT];
                 }
                 else {
                     if(global_buffer->multi_chip->tile_size[data_type_t::OUTPUT] == global_buffer->multi_chip->dram->tile_size[data_type_t::OUTPUT]) {
-                        if(tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT]) {equal_output_tile = true;}
+                        tiles_suggest_retention =
+                            tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT];
                     }
                     else {
-                        if(tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT] &&
-                           tile_size[data_type_t::WEIGHT] != global_buffer->tile_size[data_type_t::WEIGHT]) {equal_output_tile = true;}
+                        tiles_suggest_retention =
+                            tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT] &&
+                            tile_size[data_type_t::WEIGHT] != global_buffer->tile_size[data_type_t::WEIGHT];
                     }
-
                 }
+                // E20-3: equal tiles alone do not justify retention, whatever the stationary type.
+                // The array holds ONE output tile; if a reduction dimension is split ABOVE it, the
+                // loop walks every other tile of that level and comes back, so the psum is
+                // physically read back and written out each time. Retention is real only when the
+                // reduction for a tile finishes before the array moves on. The three branches above
+                // compare one tile while the loop above them iterates many, which is what suppressed
+                // the traffic the measured Eyeriss chip spends most of its GLB bandwidth on.
+                if(tiles_suggest_retention && psum_retention_valid) {equal_output_tile = true;}
             }
             else {
                 initial = 0;
@@ -553,6 +588,10 @@ void pe_array_t::reset() {
     // V2: fold fills accrue per weight residency; the one-time per-layer setup
     // (u_layer_setup_cycle) is added at the stats level AFTER repetition scaling.
     fold_fill_cycle = 0.0;
+    // E5: the fold energy and its event count reset with the layer.
+    weight_fold_energy = 0.0;
+    accumulator_energy = 0.0;
+    weight_fold_events = 0.0;
 
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
 
@@ -572,3 +611,14 @@ void pe_array_t::reset() {
     buffer_utilization.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 }
 
+std::string pe_array_t::describe_noc_link_contract() const {
+    return std::string("distribution -- ") + spatial_noc_link_contract(noc_type, true) +
+           "; write-back -- " + spatial_noc_link_contract(writeback_noc_type(), false);
+}
+
+// E20-3: record whether a psum may stay in the array for this layer. Retention is legitimate only
+// when no reduction dimension is split above the array; otherwise the array walks every other
+// output tile of the outer level and comes back, which is a physical read-back and write-out.
+void pe_array_t::set_psum_retention_scope(scheduler_t *m_scheduler) {
+    psum_retention_valid = !m_scheduler->mapping_table->reduction_tiled_above_array();
+}
