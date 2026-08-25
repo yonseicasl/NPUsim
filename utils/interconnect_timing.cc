@@ -55,18 +55,16 @@ nop_delivery_cost_t nop_delivery_cost(noc_type_t topology, unsigned grid_width,
     // Union of the dimension-order routes: the ingress link, every horizontal link along
     // row 0 up to the rightmost used column, and every vertical link in each used column.
     unsigned tree_links = 1;   // the ingress link into (0,0)
-    unsigned widest_column = 0, tallest_row = 0;
+    unsigned widest_column = 0;
     std::vector<unsigned> column_height(columns, 0);
     for(unsigned chip = 0; chip < active_chips; ++chip) {
         const unsigned x = chip % columns;
         const unsigned y = chip / columns;
         widest_column = std::max(widest_column, x);
-        tallest_row = std::max(tallest_row, y);
         column_height[x] = std::max(column_height[x], y);
     }
     tree_links += widest_column;                       // row-0 horizontal links
     for(unsigned x = 0; x < columns; ++x) tree_links += column_height[x];
-    (void)tallest_row;
     cost.bottleneck_link_tiles = 1.0;
     cost.total_link_traversals = static_cast<double>(tree_links);
     cost.fill_hops = static_cast<double>(max_hops - 1);

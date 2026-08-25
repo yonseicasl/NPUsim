@@ -122,6 +122,12 @@ public:
 
     data_t *data;                               // Temporal buffer of chip-level processor
     bool   double_buffer;                       //
+    // MC2: DBBIF-style outstanding-request limit for the DRAM <-> multi-chip boundary, in
+    // TILES IN FLIGHT. 0 means unset -- the boundary keeps the depth its double_buffer flag
+    // implies (1 or 2), so an absent key changes nothing. A positive value overrides that
+    // depth directly, which is the only way to express "up to N requests outstanding": the
+    // double_buffer flag is a boolean and cannot reach past 2.
+    unsigned max_outstanding_requests;
    
     std::vector<bool> skip_transfer;              
     bool              equal_output_tile;         

@@ -47,6 +47,12 @@ public:
     // overlapping convolution input windows. Shared buffers also reserve the currently resident
     // weight/output tiles; separate buffers use the input partition only.
     bool can_retain_input_halo(size_t input_working_set_elements) const;
+
+    // E20-3b: psum write-backs (PE array -> GLB). Its twin, the psum LOAD, is already counted
+    // as num_data_transfer[OUTPUT]. Reporting both is what makes the round trip checkable: a
+    // psum written out and never read back cannot be accumulated, and the two counters drifting
+    // apart is exactly the defect that understated the GLB traffic bound.
+    size_t psum_writeback_events;
     double get_buffer_size();
     // Get global buffer bitwidth
     unsigned get_bitwidth();

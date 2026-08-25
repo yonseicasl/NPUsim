@@ -1430,10 +1430,26 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
                 transfer_output = true;
             }
 #endif
-            if(pe_array->tile_size[data_type_t::OUTPUT] == tile_size[data_type_t::OUTPUT]) {skip_transfer[data_type_t::OUTPUT] = true;}
+            // E20-3b: the psum LOAD and the psum STORE are one decision -- does the array's
+            // output tile leave and come back? -- so this mirrors the store-side verdict rather
+            // than deriving a second one. It used to LATCH on a bare tile-size comparison and
+            // never reset within a layer, so one early match suppressed every later reload while
+            // the store side kept writing psums out (Eyeriss conv3: 19656 stores against 312
+            // loads). A tile-size comparison is also weaker than pe_array_t's retention test,
+            // which additionally consults the multi-chip/DRAM output tiles, the weight tile and
+            // psum_retention_valid; the two disagreed outright on the 512x512x512 GEMM (96
+            // stores, 0 loads). A psum written out and never read back cannot be accumulated.
+            skip_transfer[data_type_t::OUTPUT] = pe_array->equal_output_tile;
         }
         else {
+            // E20-3b: a first touch means the array is being pointed at a DIFFERENT output tile,
+            // so whatever it was holding is finished and has to be written out. Release the
+            // residency latch here, mirroring what dram_t does for the multi-chip buffer. Without
+            // this the latch, once set, survived the rest of the layer: with no reload to clear it
+            // (the load path is the only other place that does) a retained array wrote its FIRST
+            // finished tile back and then silently kept every later one.
             transfer_output = false;
+            pe_array->equal_output_tile = false;
             m_scheduler->output_read_global_buffer[m_scheduler->output_offset_global_buffer.front()] = true;
             for(auto it = m_scheduler->output_read_pe.begin(); it != m_scheduler->output_read_pe.end(); ++it) {
                 it->second = false;
@@ -1682,6 +1698,7 @@ void global_buffer_t::reset() {
     overlapped_transfer_cycle = 0.0;
 
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
+    psum_writeback_events = 0;
 
     num_request.assign(data_type_t::NUM_DATA_TYPES, 0);
     num_data_transfer.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -1801,6 +1818,7 @@ void separate_buffer_t::init(section_config_t m_section_config) {
 
     skip_transfer.reserve(data_type_t::NUM_DATA_TYPES);
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
+    psum_writeback_events = 0;
     
     // Initialize the tile size of Global buffer.
     tile_size.reserve(data_type_t::NUM_DATA_TYPES);
@@ -2079,6 +2097,7 @@ void shared_buffer_t::init(section_config_t m_section_config) {
 
     skip_transfer.reserve(data_type_t::NUM_DATA_TYPES);
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
+    psum_writeback_events = 0;
 
     // Initialize the tile size of the global buffer
     tile_size.reserve(data_type_t::NUM_DATA_TYPES);

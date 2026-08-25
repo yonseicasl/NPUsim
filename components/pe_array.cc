@@ -15,6 +15,8 @@ pe_array_t::pe_array_t(section_config_t /*m_section_config*/) :
     index(0),
     reduction_additions(0.0),
     psum_retention_valid(true),
+    psum_store_access_cycle(0.0),
+    psum_store_access_energy(0.0),
     exist_temporal_buffer(false),
     utilization(0.0),
     write_back_cycle(0.0),
@@ -447,6 +449,69 @@ void pe_array_t::fill_data() {
     }
 }
 
+// E20-3b: one psum store from the PE-array temporal buffer into the GLB. Shared by the in-loop
+// write-back (a tile being swapped out) and by flush_psum_writeback() (the last tile, which the
+// in-loop path never reaches because it only fires on a tile CHANGE). Keeping one body means the
+// two cannot drift in what they charge -- the same reason multi_chip_t routes its in-loop and
+// final DRAM write-backs through account_output_writeback_to_dram().
+void pe_array_t::account_psum_store_to_global_buffer() {
+            // P1-B: a GLB-bypassed OUTPUT lands in the multi-chip temporal buffer, not in the GLB
+            // SRAM. It still crosses the fabric and is still charged for it -- bypass skips the
+            // storage, not the wires -- so only the GLB access comes off, and the destination line
+            // width is the one downstream. The load path has honoured this since P1-B; this side
+            // never did, which stayed hidden only because the in-loop store does not fire on a
+            // fully bypassed fixture. The end-of-layer flush does, and energy_schema ES4 caught it.
+            const bool bypassed = global_buffer->bypass[data_type_t::OUTPUT];
+            const size_t destination_line = bypassed
+                ? global_buffer->multi_chip->line_size[data_type_t::OUTPUT]
+                : global_buffer->line_size[data_type_t::OUTPUT];
+            const datatype_transfer_timing_t timing = datatype_transfer_timing(
+                data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
+                destination_line, global_buffer->get_bitwidth());
+            const size_t pe_array_lines = timing.source_accesses;
+            const size_t global_buffer_lines = timing.destination_accesses;
+            const size_t link_transactions = timing.link_transactions;
+            global_buffer->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
+            global_buffer->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
+            global_buffer->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
+            global_buffer->psum_writeback_events++;
+
+            // GB3: hide the buffer access cycles when the destination global buffer is
+            // double-buffered, matching the load-path convention (multi_chip.cc
+            // distribution gates on the destination's flag). Energy is always charged.
+            if(!global_buffer->double_buffer) {
+                if(exist_temporal_buffer) {
+                    access_cycle[data_type_t::OUTPUT] += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                    write_back_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                    psum_store_access_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
+                }
+                if(!bypassed) {
+                    global_buffer->access_cycle[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
+                    global_buffer->write_back_cycle += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
+                }
+            }
+            if(exist_temporal_buffer) {
+                access_energy[data_type_t::OUTPUT] += pe_array_lines*u_read_energy[data_type_t::OUTPUT];
+                psum_store_access_energy += pe_array_lines*u_read_energy[data_type_t::OUTPUT];
+            }
+            if(!bypassed)
+                global_buffer->access_energy[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_energy[data_type_t::OUTPUT];
+
+            global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*link_transactions;
+            global_buffer->overlapped_transfer_cycle += global_buffer->u_transfer_cycle*link_transactions;
+            global_buffer->transfer_energy[data_type_t::OUTPUT] += global_buffer->u_transfer_energy*link_transactions;
+}
+
+// E20-3b: store the array's last resident output tile. The in-loop write-back fires when a tile is
+// swapped OUT, so the tile the array still holds when the layer ends is otherwise never written --
+// the same gap DR6 closed one level up, at the multi-chip -> DRAM boundary. Without it the on-chip
+// output volume came out short of the off-chip volume, which is impossible: every output byte
+// reaches DRAM through this boundary.
+void pe_array_t::flush_psum_writeback() {
+    if(initial) return;   // the array never produced an output tile
+    account_psum_store_to_global_buffer();
+}
+
 void pe_array_t::request_data() {
     // The case when at least on PE in PE array request data.
     // Request data from temporal buffer in PE array to Global buffer.
@@ -482,59 +547,26 @@ void pe_array_t::request_data() {
 #endif
                 is_waiting_data[data_type_t::OUTPUT] = true;
                 global_buffer->num_request[data_type_t::OUTPUT]++;
-                const datatype_transfer_timing_t timing = datatype_transfer_timing(
-                    data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
-                    global_buffer->line_size[data_type_t::OUTPUT], global_buffer->get_bitwidth());
-                const size_t pe_array_lines = timing.source_accesses;
-                const size_t global_buffer_lines = timing.destination_accesses;
-                const size_t link_transactions = timing.link_transactions;
-                global_buffer->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
-                global_buffer->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
-                global_buffer->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;
-
-                // GB3: hide the buffer access cycles when the destination global buffer is
-                // double-buffered, matching the load-path convention (multi_chip.cc
-                // distribution gates on the destination's flag). Energy is always charged.
-                if(!global_buffer->double_buffer) {
-                    if(exist_temporal_buffer) {
-                        access_cycle[data_type_t::OUTPUT] += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
-                        write_back_cycle += pe_array_lines*u_read_cycle[data_type_t::OUTPUT];
-                    }
-                    global_buffer->access_cycle[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
-                    global_buffer->write_back_cycle += global_buffer_lines*global_buffer->u_write_cycle[data_type_t::OUTPUT];
-                }
-                if(exist_temporal_buffer)
-                    access_energy[data_type_t::OUTPUT] += pe_array_lines*u_read_energy[data_type_t::OUTPUT];
-                global_buffer->access_energy[data_type_t::OUTPUT] += global_buffer_lines*global_buffer->u_write_energy[data_type_t::OUTPUT];
-
-                global_buffer->transfer_cycle[data_type_t::OUTPUT] += global_buffer->u_transfer_cycle*link_transactions;
-                global_buffer->overlapped_transfer_cycle += global_buffer->u_transfer_cycle*link_transactions;
-                global_buffer->transfer_energy[data_type_t::OUTPUT] += global_buffer->u_transfer_energy*link_transactions;
-                // Does the TILING alone suggest the array's output tile need not move?
-                bool tiles_suggest_retention = false;
-                if(stationary_type == stationary_type_t::OUTPUT_STATIONARY) {
-                    tiles_suggest_retention =
-                        tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT];
-                }
-                else {
-                    if(global_buffer->multi_chip->tile_size[data_type_t::OUTPUT] == global_buffer->multi_chip->dram->tile_size[data_type_t::OUTPUT]) {
-                        tiles_suggest_retention =
-                            tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT];
-                    }
-                    else {
-                        tiles_suggest_retention =
-                            tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT] &&
-                            tile_size[data_type_t::WEIGHT] != global_buffer->tile_size[data_type_t::WEIGHT];
-                    }
-                }
-                // E20-3: equal tiles alone do not justify retention, whatever the stationary type.
-                // The array holds ONE output tile; if a reduction dimension is split ABOVE it, the
-                // loop walks every other tile of that level and comes back, so the psum is
-                // physically read back and written out each time. Retention is real only when the
-                // reduction for a tile finishes before the array moves on. The three branches above
-                // compare one tile while the loop above them iterates many, which is what suppressed
-                // the traffic the measured Eyeriss chip spends most of its GLB bandwidth on.
-                if(tiles_suggest_retention && psum_retention_valid) {equal_output_tile = true;}
+                account_psum_store_to_global_buffer();
+                // May the array keep this output tile instead of writing it back?
+                //
+                // Two conditions, and BOTH are about the loop nest rather than about which
+                // datatype is nominally stationary:
+                //   1. the GLB's output tile is exactly this array tile, so there is no other
+                //      part of a larger GLB tile the array would have to swap in;
+                //   2. no reduction loop above the array has an output loop inside it, so the
+                //      array is not sent off to other output tiles before this one's reduction
+                //      finishes (mapping_table_t::psum_must_leave_array()).
+                //
+                // This replaces three tile-size branches that keyed off the stationary type and,
+                // in one of them, off the WEIGHT tiles differing -- a proxy with no stated
+                // meaning. It got the 512x512x512 GEMM backwards: with the reduction mapped at
+                // the GLB and no output factor under it, the array can simply keep accumulating,
+                // yet the weight-tile clause forced 96 psum stores that were then never read
+                // back (found by traffic gate T12). E20-3 kept the branches and ANDed condition
+                // 2 onto them; the branches themselves were the remaining error.
+                if(tile_size[data_type_t::OUTPUT] == global_buffer->tile_size[data_type_t::OUTPUT] &&
+                   psum_retention_valid) {equal_output_tile = true;}
             }
             else {
                 initial = 0;
@@ -582,6 +614,7 @@ void pe_array_t::reset() {
 
     initial = true;
     equal_output_tile = false;
+    psum_store_access_cycle = 0.0, psum_store_access_energy = 0.0;
 
     utilization = 0.0;
     write_back_cycle = 0.0, overlapped_transfer_cycle = 0.0;
@@ -620,5 +653,5 @@ std::string pe_array_t::describe_noc_link_contract() const {
 // when no reduction dimension is split above the array; otherwise the array walks every other
 // output tile of the outer level and comes back, which is a physical read-back and write-out.
 void pe_array_t::set_psum_retention_scope(scheduler_t *m_scheduler) {
-    psum_retention_valid = !m_scheduler->mapping_table->reduction_tiled_above_array();
+    psum_retention_valid = !m_scheduler->mapping_table->psum_must_leave_array();
 }

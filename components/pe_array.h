@@ -190,10 +190,22 @@ public:
     double reduction_additions;
 
     // E20-3: may a partial sum stay resident in the array between passes? Only when the reduction
-    // for a tile completes before the array moves on -- see mapping_table_t::reduction_tiled_above_array().
+    // for a tile completes before the array moves on -- see mapping_table_t::psum_must_leave_array().
     // Recorded once per layer, where a scheduler is in hand, because request_data() has none.
     bool psum_retention_valid;
     void set_psum_retention_scope(scheduler_t *m_scheduler);
+
+    // E20-3b: one psum store into the GLB, and the end-of-layer flush of the last resident tile.
+    // E20-3b: the part of the array temporal buffer's OUTPUT access cost that belongs to the psum
+    // STORE (reading a finished tile out towards the GLB). Tracked apart from access_cycle/energy
+    // [OUTPUT] because that column mixes two events with different repetition semantics: the
+    // accumulation writes repeat with every reduction pass, while the store happens once per
+    // distinct output tile. Scaling the mixed column by either factor is wrong for the other half.
+    double psum_store_access_cycle;
+    double psum_store_access_energy;
+
+    void account_psum_store_to_global_buffer();
+    void flush_psum_writeback();
 
 protected:
 

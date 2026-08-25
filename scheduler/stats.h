@@ -109,6 +109,10 @@ public:
     // decouple no matter what the GLB's double_buffer flag says). At network scope the min
     // across layers is reported -- a boundary is only as decoupled as its worst layer.
     unsigned timeline_boundary_depth[4];
+    unsigned timeline_offchip_outstanding;   // MC2: [multi_chip] max_outstanding_requests, 0 = unset
+    bool psum_array_resident;                // E20-3b: no psum has to leave the array between reduction steps
+    double psum_store_access_cycle_pe_array;   // E20-3b: the store half of the array OUTPUT access column
+    double psum_store_access_energy_pe_array;
     double busy_cycle_pe_array;
     double busy_cycle_global_buffer;
     double busy_cycle_multi_chip;
@@ -323,6 +327,7 @@ public:
     unsigned excluded_timing_layers;
     std::vector<unsigned> num_request_global_buffer;                    // Number of request to global buffer (from PE array).
     std::vector<unsigned> num_data_transfer_global_buffer;              // Number of data transfer from global buffer (to PE array).
+    size_t psum_writeback_events_global_buffer;                        // E20-3b: psum stores (PE array -> GLB); its twin load is num_data_transfer_global_buffer[OUTPUT].
     // Link transactions are reported as logical payload/metadata and physical storage streams.
     std::vector<size_t> payload_link_transactions_global_buffer;
     std::vector<size_t> metadata_link_transactions_global_buffer;

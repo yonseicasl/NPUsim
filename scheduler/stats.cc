@@ -206,6 +206,7 @@ void stats_t::init() {
     // Initialize the number of data transfer to the PE array
     num_data_transfer_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
+    psum_writeback_events_global_buffer = 0;
     payload_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -263,6 +264,10 @@ void stats_t::init() {
     dram_input_access_hidden = false;
     for(unsigned s = 0; s < 5; ++s) timeline_stall[s] = 0.0;
     for(unsigned b = 0; b < 4; ++b) timeline_boundary_depth[b] = 1;
+    timeline_offchip_outstanding = 0;
+    psum_array_resident = false;
+    psum_store_access_cycle_pe_array = 0.0;
+    psum_store_access_energy_pe_array = 0.0;
     temporal_repetition_tiles = 1;
 
     // Initialize access energy of the global buffer
@@ -606,6 +611,13 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
     // CE1: keep the boundary contract and MAC capacity for the post-scaling
     // timeline recomputation (finalize_layer_timeline).
     for(unsigned b = 0; b < 4; ++b) timeline_boundary_overlap[b] = boundary_overlaps[b];
+    // MC2: carry the outstanding-request depth alongside the boolean contract, because
+    // finalize_layer_timeline() recomputes the timeline after scaling and has no components.
+    timeline_offchip_outstanding = m_multi_chip->max_outstanding_requests;
+    // E20-3b: whether the array's output tile survives the reduction. Decides below whether the
+    // GLB<->array OUTPUT leg repeats with the collapsed reduction loop or only with the distinct
+    // output tiles.
+    psum_array_resident = m_pe_array.empty() ? false : m_pe_array[0]->psum_retention_valid;
     timeline_physical_macs = static_cast<double>(physical_scalar_macs);
     layer_latency = 0.0;
     double segment = stage_busy[0];
@@ -775,6 +787,11 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             access_cycle_pe_array[j] = std::max(access_cycle_pe_array[j], m_pe_array[i]->access_cycle[j]);
             chip_access_pe_array_types += m_pe_array[i]->access_cycle[j];
             access_energy_pe_array[j] += m_pe_array[i]->access_energy[j];
+            if(j == data_type_t::OUTPUT) {
+                psum_store_access_cycle_pe_array = std::max(psum_store_access_cycle_pe_array,
+                                                            m_pe_array[i]->psum_store_access_cycle);
+                psum_store_access_energy_pe_array += m_pe_array[i]->psum_store_access_energy;
+            }
 
             // Update transfer cycle from PE array to local buffers
             transfer_cycle_pe_array[j] = std::max(transfer_cycle_pe_array[j], m_pe_array[i]->transfer_cycle[j]);
@@ -798,6 +815,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
             
             // Update the number of data transfer from the global buffer
             num_data_transfer_global_buffer[j] += m_global_buffer[i]->num_data_transfer[j];
+            if(j == data_type_t::OUTPUT) psum_writeback_events_global_buffer += m_global_buffer[i]->psum_writeback_events;
 
             // Update access cost to the global buffer
             access_cycle_global_buffer[j] = std::max(access_cycle_global_buffer[j], m_global_buffer[i]->access_cycle[j]);
@@ -1113,6 +1131,15 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     scale_counters(&payload_link_transactions_pe_array, m_repetitions, "PE-array payload transactions");
     scale_counters(&metadata_link_transactions_pe_array, m_repetitions, "PE-array metadata transactions");
     scale_counters(&storage_link_transactions_pe_array, m_repetitions, "PE-array storage transactions");
+    // E20-3b: capture the PE-array OUTPUT column BEFORE the uniform scaling -- the GLB<->array
+    // output transfer may need a different factor (see below), and both of its endpoints must
+    // carry the same one.
+    const double base_output_array_store_cycle = psum_store_access_cycle_pe_array;
+    const double base_output_array_store_energy = psum_store_access_energy_pe_array;
+    const double base_output_array_other_cycle =
+        access_cycle_pe_array[data_type_t::OUTPUT] - base_output_array_store_cycle;
+    const double base_output_array_other_energy =
+        access_energy_pe_array[data_type_t::OUTPUT] - base_output_array_store_energy;
     scale_costs(&access_cycle_pe_array, m_repetitions);
     scale_costs(&access_energy_pe_array, m_repetitions);
     scale_costs(&transfer_cycle_pe_array, m_repetitions);
@@ -1130,8 +1157,36 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     pe_array_accumulator_energy *= m_repetitions;
     weight_fold_events *= m_repetitions;
 
+    // E20-3b: the GLB<->array OUTPUT leg does not always repeat with the uniform GLB factor.
+    // When no psum has to leave the array between reduction steps, what crosses this boundary is
+    // the FINISHED tile, once per distinct output tile -- so it scales with the OUTPUT datatype's
+    // own repetition factor, exactly the argument RE1 already applies to the off-chip output cast
+    // ("a GLB repetition over a reduction dimension re-accumulates the SAME output rather than
+    // producing a new one"). Scaling it uniformly multiplied the write-out by the reduction depth
+    // (8x on the 512x512x512 GEMM). When psums DO leave, every repetition genuinely moves one and
+    // the uniform factor is correct, which is every validated CONV layer.
+    const unsigned output_repetitions = psum_array_resident
+        ? m_datatype_repetitions[data_type_t::OUTPUT] : m_repetitions;
+    const size_t base_output_transfer = num_data_transfer_global_buffer[data_type_t::OUTPUT];
+    const size_t base_output_stores = psum_writeback_events_global_buffer;
+    const size_t base_output_payload = payload_link_transactions_global_buffer[data_type_t::OUTPUT];
+    const size_t base_output_metadata = metadata_link_transactions_global_buffer[data_type_t::OUTPUT];
+    const size_t base_output_storage = storage_link_transactions_global_buffer[data_type_t::OUTPUT];
+    const double base_output_access_cycle = access_cycle_global_buffer[data_type_t::OUTPUT];
+    const double base_output_access_energy = access_energy_global_buffer[data_type_t::OUTPUT];
+    const double base_output_pipeline = cycle_pe_array_global_buffer[data_type_t::OUTPUT];
+    const double base_output_transfer_cycle = transfer_cycle_global_buffer[data_type_t::OUTPUT];
+    const double base_output_transfer_energy = transfer_energy_global_buffer[data_type_t::OUTPUT];
+    std::vector<double> base_output_chip_access(chip_access_cycle_global_buffer.size(), 0.0);
+    for(unsigned chip = 0; chip < chip_access_cycle_global_buffer.size(); ++chip) {
+        if(data_type_t::OUTPUT < chip_access_cycle_global_buffer[chip].size()) {
+            base_output_chip_access[chip] = chip_access_cycle_global_buffer[chip][data_type_t::OUTPUT];
+        }
+    }
+
     scale_counters(&num_request_global_buffer, m_repetitions, "global-buffer request count");
     scale_counters(&num_data_transfer_global_buffer, m_repetitions, "global-buffer transfer count");
+    psum_writeback_events_global_buffer *= m_repetitions;
     scale_counters(&payload_link_transactions_global_buffer, m_repetitions, "global-buffer payload transactions");
     scale_counters(&metadata_link_transactions_global_buffer, m_repetitions, "global-buffer metadata transactions");
     scale_counters(&storage_link_transactions_global_buffer, m_repetitions, "global-buffer storage transactions");
@@ -1149,6 +1204,41 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     }
     entity_combined_link_global_buffer *= m_repetitions;
     entity_combined_overlap_global_buffer *= m_repetitions;
+    if(output_repetitions != m_repetitions) {
+        num_data_transfer_global_buffer[data_type_t::OUTPUT] =
+            scale_counter(base_output_transfer, output_repetitions, "global-buffer output transfer count");
+        psum_writeback_events_global_buffer = base_output_stores*output_repetitions;
+        payload_link_transactions_global_buffer[data_type_t::OUTPUT] =
+            scale_counter(base_output_payload, output_repetitions, "global-buffer output payload transactions");
+        metadata_link_transactions_global_buffer[data_type_t::OUTPUT] =
+            scale_counter(base_output_metadata, output_repetitions, "global-buffer output metadata transactions");
+        storage_link_transactions_global_buffer[data_type_t::OUTPUT] =
+            scale_counter(base_output_storage, output_repetitions, "global-buffer output storage transactions");
+        access_cycle_global_buffer[data_type_t::OUTPUT] = base_output_access_cycle*output_repetitions;
+        access_energy_global_buffer[data_type_t::OUTPUT] = base_output_access_energy*output_repetitions;
+        cycle_pe_array_global_buffer[data_type_t::OUTPUT] = base_output_pipeline*output_repetitions;
+        transfer_cycle_global_buffer[data_type_t::OUTPUT] = base_output_transfer_cycle*output_repetitions;
+        transfer_energy_global_buffer[data_type_t::OUTPUT] = base_output_transfer_energy*output_repetitions;
+        // The PE-array side of this same transfer -- reading the finished tile OUT of the array's
+        // temporal buffer -- has to carry the identical factor. Scaling the two endpoints of one
+        // transfer differently is not a smaller error than scaling both wrong; array_buffer AB2
+        // caught exactly that (a 4x read term against a 1x write term on the GLB side).
+        access_cycle_pe_array[data_type_t::OUTPUT] =
+            base_output_array_other_cycle*m_repetitions + base_output_array_store_cycle*output_repetitions;
+        access_energy_pe_array[data_type_t::OUTPUT] =
+            base_output_array_other_energy*m_repetitions + base_output_array_store_energy*output_repetitions;
+        psum_store_access_cycle_pe_array = base_output_array_store_cycle*output_repetitions;
+        psum_store_access_energy_pe_array = base_output_array_store_energy*output_repetitions;
+        // The per-chip access matrix feeds the GLB access AXIS through merge_global_buffer_fill(),
+        // so it has to carry the same factor -- otherwise the axis keeps the uniform scale while
+        // the per-datatype rows it is supposed to combine do not, which T10 catches.
+        for(unsigned chip = 0; chip < chip_access_cycle_global_buffer.size(); ++chip) {
+            if(data_type_t::OUTPUT < chip_access_cycle_global_buffer[chip].size()) {
+                chip_access_cycle_global_buffer[chip][data_type_t::OUTPUT] =
+                    base_output_chip_access[chip]*output_repetitions;
+            }
+        }
+    }
 
     // Off-chip traffic scales per datatype: a GLB repetition over a dimension the
     // tensor does not depend on (e.g. the Q loop for weights) revisits the SAME
@@ -1386,6 +1476,12 @@ void stats_t::finalize_layer_timeline() {
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
         if(global_buffer_bypass[i]) boundary_depths[1] = 1;
     }
+    // MC2: an explicit outstanding-request limit overrides the DRAM <-> multi-chip depth only.
+    // The boolean double_buffer contract cannot express more than 2 tiles in flight, and a real
+    // memory interface (NVDLA's DBBIF, and every AXI-class port) is specified by exactly this
+    // number. Unset (0) leaves the derived depth alone, so declaring nothing changes nothing --
+    // and an explicit 1 must reproduce the implicit 1 bit for bit, which is what MC1 checks.
+    if(timeline_offchip_outstanding > 0) boundary_depths[0] = timeline_offchip_outstanding;
     for(unsigned b = 0; b < 4; ++b) timeline_boundary_depth[b] = boundary_depths[b];
     std::vector<double> stall;
     double final_latency = pipeline_timeline_cycles(stage_tile_costs, boundary_depths, &stall);
@@ -1612,6 +1708,7 @@ void stats_t::update_network_stats(stats_t *m_source) {
         
         // Update the number of data transfer from the global buffer
         num_data_transfer_global_buffer[i] += m_source->num_data_transfer_global_buffer[i];
+        if(i == data_type_t::OUTPUT) psum_writeback_events_global_buffer += m_source->psum_writeback_events_global_buffer;
 
         // Update access cost of the global buffer
         access_cycle_global_buffer[i] += m_source->access_cycle_global_buffer[i];
@@ -2503,6 +2600,19 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << num_data_transfer_global_buffer[data_type_t::WEIGHT] << std::endl;
     m_output_file << " * Output data        :" << std::setw(18) 
                                                << num_data_transfer_global_buffer[data_type_t::OUTPUT] << std::endl;
+    m_output_file << std::endl;
+    // E20-3b: the psum round trip, stated as a pair. The OUTPUT line above is the LOAD leg
+    // (GLB -> PE array); this is the STORE leg (PE array -> GLB). Every psum the array writes
+    // out must come back to be accumulated, so with a reduction split above the array the two
+    // legs track each other. They used to disagree by the reduction depth (Eyeriss conv3: 19656
+    // stores against 312 loads) because the load side latched a skip flag that never reset
+    // within a layer -- a half-counted round trip, which understated the GLB traffic bound
+    // without moving the compute-schedule latency. Reported so the pairing is checkable.
+    m_output_file << " Psum round trip      :" << std::setw(18)
+                  << num_data_transfer_global_buffer[data_type_t::OUTPUT] << " loads / "
+                  << psum_writeback_events_global_buffer << " stores"
+                  << (psum_writeback_events_global_buffer == 0 ? "  (array-resident: no psum leaves the array)" : "")
+                  << std::endl;
     m_output_file << std::endl;
 
     m_output_file << "PE-array <-> GLB transactions (payload/metadata/serialized)" << std::endl;

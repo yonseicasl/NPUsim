@@ -10,6 +10,7 @@
 multi_chip_t::multi_chip_t(section_config_t m_section_config) :
     data(NULL),
     double_buffer(false),
+    max_outstanding_requests(0),
     nop_multicast(true),
     output_cast_bytes(0),
     output_cast_energy(0.0),
@@ -83,6 +84,9 @@ void multi_chip_t::init(section_config_t m_section_config) {
 
     // Initialize global buffer type (double buffer or single buffer)
     m_section_config.get_setting("double_buffer", &double_buffer);
+
+    // MC2: outstanding-request depth for the DRAM <-> multi-chip boundary (tiles in flight).
+    m_section_config.get_setting("max_outstanding_requests", &max_outstanding_requests);
 
     // Initialize line size and mask bits of temporal buffer
     line_size.reserve(data_type_t::NUM_DATA_TYPES);

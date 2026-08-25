@@ -346,18 +346,47 @@ void mapping_table_t::print() {
 
 // E20-3: see the header. A reduction factor above the array means a psum is revisited after other
 // tiles have passed through, so it cannot be retained.
-bool mapping_table_t::reduction_tiled_above_array() const {
+bool mapping_table_t::psum_must_leave_array() const {
     static const parameter_type_t REDUCTION[] = { parameter_type_t::INPUT_CHANNEL,
                                                   parameter_type_t::FILTER_HEIGHT,
                                                   parameter_type_t::FILTER_WIDTH };
+    static const parameter_type_t OUTPUT_BEARING[] = { parameter_type_t::OUTPUT_CHANNEL,
+                                                       parameter_type_t::BATCH_SIZE,
+                                                       parameter_type_t::OUTPUT_HEIGHT,
+                                                       parameter_type_t::OUTPUT_WIDTH,
+                                                       parameter_type_t::GROUP };
+    // Levels above the PE array, INNERMOST FIRST. The nest runs outermost (DRAM) to innermost,
+    // so walking it this way lets one pass answer "is there an output loop inside this one".
     static const component_type_t ABOVE_ARRAY[] = { component_type_t::GLOBAL_BUFFER,
                                                     component_type_t::CHIPS_X,
                                                     component_type_t::CHIPS_Y,
                                                     component_type_t::DRAM };
+    bool output_loop_inside = false;
     for(unsigned level = 0; level < sizeof(ABOVE_ARRAY)/sizeof(ABOVE_ARRAY[0]); ++level) {
+        // The GLB level keeps its factors in the legacy row, which is deliberately absent from
+        // mapping_table[GLOBAL_BUFFER] (see calculate_total_parameter_size). Reading only the
+        // table made every GLB-level factor invisible here: a reduction mapped AT the GLB --
+        // every validated GEMM does exactly that -- read as "no reduction above the array".
+        // Multiplying the two rows is correct whichever one carries the factor.
+        const bool glb = ABOVE_ARRAY[level] == component_type_t::GLOBAL_BUFFER;
+        bool has_reduction = false, has_output = false;
         for(unsigned dim = 0; dim < sizeof(REDUCTION)/sizeof(REDUCTION[0]); ++dim) {
-            if(mapping_table[ABOVE_ARRAY[level]][REDUCTION[dim]] > 1) return true;
+            const unsigned factor = mapping_table[ABOVE_ARRAY[level]][REDUCTION[dim]]
+                                  * (glb ? legacy_global_buffer_mapping[REDUCTION[dim]] : 1);
+            if(factor > 1) has_reduction = true;
         }
+        for(unsigned dim = 0; dim < sizeof(OUTPUT_BEARING)/sizeof(OUTPUT_BEARING[0]); ++dim) {
+            const unsigned factor = mapping_table[ABOVE_ARRAY[level]][OUTPUT_BEARING[dim]]
+                                  * (glb ? legacy_global_buffer_mapping[OUTPUT_BEARING[dim]] : 1);
+            if(factor > 1) has_output = true;
+        }
+        // A reduction loop alone does NOT push the partial sum out. What pushes it out is the
+        // array visiting a DIFFERENT output tile between two steps of that reduction, and only
+        // an output-bearing loop INSIDE the reduction (or beside it at the same level, where the
+        // within-level order is not modeled -- taken conservatively) can do that. With no output
+        // loop under it the array simply keeps accumulating into the tile it already holds.
+        if(has_reduction && (output_loop_inside || has_output)) return true;
+        if(has_output) output_loop_inside = true;
     }
     return false;
 }

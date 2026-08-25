@@ -377,6 +377,10 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     // Request data from PEs to PE array.
                     request_to_pe_array();
                 }
+                // E20-3b: store the array's final resident output tile, then DR6's final
+                // multi-chip -> DRAM store. Innermost boundary first, so the tile is written out
+                // of the array before the level above flushes it off-chip.
+                for(unsigned i = 0; i < pe_arrays.size(); i++) pe_arrays[i]->flush_psum_writeback();
                 // DR6: store the layer's final resident output tile.
                 multi_chip->flush_output_writeback();
                 layer_stats[index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);

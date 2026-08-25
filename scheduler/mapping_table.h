@@ -66,7 +66,11 @@ public:
     // buffer's, comparing one tile while the loop above it iterates many. On Eyeriss conv3 (input
     // channel split 64 ways at DRAM, 312 output tiles per step) the suppressed traffic is what the
     // measured chip spends most of its GLB bandwidth on.
-    bool reduction_tiled_above_array() const;
+    // Must a partial sum physically leave the PE array between reduction steps? True when a
+    // reduction loop above the array has an output-bearing loop inside it, so the array walks
+    // other output tiles and has to come back. A reduction above the array is NOT sufficient on
+    // its own -- see the definition for why that weaker test misread every validated GEMM.
+    bool psum_must_leave_array() const;
 
     // Calculate the number of tile-granular data 
     void calculate_num_tile_granular_data(component_type_t m_component_type, std::vector<unsigned> *m_tile_granumlar_data);
