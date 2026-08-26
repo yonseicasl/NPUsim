@@ -113,6 +113,15 @@ if grep -R -E 'memset\([^;]*,[[:space:]]*1\.0' "$repo_dir/components" >/dev/null
     echo "Numeric initialization through memset reappeared" >&2
     exit 1
 fi
+# plan_sfu.md Phase-0: the removed hardcoded per-PE ReLU must never come back. The method
+# is deleted from pe.h so a reintroduced CALL is a compile error; this guards against the
+# method itself (declaration or unqualified/member call form) reappearing. Activation cost
+# belongs to the SFU event contract and functional activation to Nebula.
+if grep -R -n -E '(^|[^A-Za-z0-9_])activation\(\)' "$repo_dir/components" "$repo_dir/scheduler" \
+        "$repo_dir/models" "$repo_dir/utils" --include='*.cc' --include='*.h' >/dev/null; then
+    echo "Removed pe_t::activation() (declaration or call) reappeared" >&2
+    exit 1
+fi
 if grep -q 'USE_INTEGER\|USE_FLOAT' "$repo_dir/npusim.sh"; then
     echo "Legacy build-option variable reappeared" >&2
     exit 1

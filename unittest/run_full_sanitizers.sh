@@ -40,6 +40,10 @@ ln -s "$repo_dir/models/weights" "$build_dir/weights"
     cd "$build_dir"
     ./model-sanitized run gemmini gemm_64x64x64 ws >/dev/null
     ./model-sanitized run eyeriss alexnet silicon >/dev/null
+    # SFU (plan/plan_sfu.md): fused activation event path + the standalone softmax
+    # multi-pass layer, including the on-the-fly SFU-only stats object.
+    ./model-sanitized run gemmini_sfu gemm256_relu ws >/dev/null
+    ./model-sanitized run gemmini_sfu gemm256 ws >/dev/null
 )
 
 echo "Full NPUsim ASan/UBSan smoke tests passed"

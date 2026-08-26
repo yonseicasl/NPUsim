@@ -21,6 +21,7 @@
 
 #include "multi_chip.h"
 #include "dram.h"
+#include "sfu.h"
 
 #include "mapping_table.h"
 #include "scheduler.h"
@@ -88,6 +89,14 @@ public:
     void update_tile_size();
 
 protected:
+    // SFU (plan/plan_sfu.md): fire the fused-activation cost event for a finished
+    // convolution/connected layer -- once per valid output element, AFTER repetition
+    // scaling. Without an [sfu] section it only marks nonlinear activations as
+    // out-of-scope (legacy numbers unchanged).
+    void apply_fused_sfu_activation(unsigned m_index);
+    // Standalone softmax layer executed on the SFU's multi-pass microprogram (Phase 7).
+    void run_standalone_softmax(unsigned m_index, const std::string &m_accelerator_config,
+                                const std::string &m_network_config);
     unsigned num_processors;                        // The number of on-chip processors.
     unsigned num_pes;                               // The number of processing elements for each processors.
     compression_type_t compression_type;            // Compression type : Dense, CSR, CSC, SparseMap
@@ -103,6 +112,7 @@ protected:
     std::vector<global_buffer_t*> global_buffers;   // Global buffer
     multi_chip_t *multi_chip;                       // On-chip processors
     dram_t *dram;                                   // DRAM
+    std::vector<sfu_t*> sfus;                       // Per-chip SFU (empty without [sfu])
 
 	nebula::network_t *network;                     // DNN model obtained from the software framework (PyTorch and Nebula)
 	std::vector<mapping_table_t*> mapping_tables;	// Mapping tables.
@@ -111,6 +121,9 @@ protected:
     std::vector<scheduler_t*> schedulers;           // A set of schedulers.
     scheduler_t *scheduler;
     std::vector<stats_t*> layer_stats;
+    // Stats of standalone SFU layers (softmax has no mapping section, so its stats live
+    // outside the mapping-indexed layer_stats vector).
+    std::vector<stats_t*> sfu_layer_stats;
     stats_t *network_stats;
 
 

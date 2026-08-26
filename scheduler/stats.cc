@@ -10,6 +10,39 @@
 #include "pe_lane.h"
 
 namespace {
+// SFU list merging: append a token only when no existing SEGMENT equals it exactly.
+// Substring matching silently dropped distinct operations whose name is contained in a
+// recorded one ("elu" inside "relu"/"gelu", "sigmoid" inside "hsigmoid").
+void append_unique_segment(std::string &m_list, const std::string &m_token,
+                           const std::string &m_separator) {
+    if(m_token.empty()) return;
+    if(m_list.empty()) { m_list = m_token; return; }
+    size_t start = 0;
+    while(true) {
+        const size_t end = m_list.find(m_separator, start);
+        const std::string segment = (end == std::string::npos)
+            ? m_list.substr(start) : m_list.substr(start, end - start);
+        if(segment == m_token) return;
+        if(end == std::string::npos) break;
+        start = end + m_separator.size();
+    }
+    m_list += m_separator + m_token;
+}
+
+// Merge a separator-joined source list into a destination list, segment by segment.
+void merge_unique_segments(std::string &m_list, const std::string &m_source,
+                           const std::string &m_separator) {
+    size_t start = 0;
+    while(start <= m_source.size()) {
+        const size_t end = m_source.find(m_separator, start);
+        const std::string segment = (end == std::string::npos)
+            ? m_source.substr(start) : m_source.substr(start, end - start);
+        append_unique_segment(m_list, segment, m_separator);
+        if(end == std::string::npos) break;
+        start = end + m_separator.size();
+    }
+}
+
 void print_transaction_breakdown(std::ofstream &output, const char *title,
                                  const std::vector<size_t> &payload,
                                  const std::vector<size_t> &metadata,
@@ -234,6 +267,7 @@ void stats_t::init() {
     stage_fill_access_global_buffer = 0.0;
     global_buffer_bypass.assign(data_type_t::NUM_DATA_TYPES, false);
     network_rollup = false;
+    network_rollup_mapped_seeded = false;
     output_tile_array_resident = false;
     compute_energy_basis = "computation_energy";
     authoritative_frequency_mhz = 0.0;
@@ -269,6 +303,37 @@ void stats_t::init() {
     psum_store_access_cycle_pe_array = 0.0;
     psum_store_access_energy_pe_array = 0.0;
     temporal_repetition_tiles = 1;
+
+    /* SFU */
+    sfu_present = false;
+    sfu_active = false;
+    sfu_operation.clear();
+    sfu_physical_units = 0;
+    sfu_lanes = 0;
+    sfu_valid_elements = 0;
+    sfu_operations = 0;
+    sfu_invocations = 0;
+    sfu_chunks = 0;
+    sfu_busy_cycle = 0.0;
+    sfu_stall_cycle = 0.0;
+    sfu_tail_lane_utilization = 0.0;
+    sfu_ingress_elements = 0;
+    sfu_egress_elements = 0;
+    sfu_ingress_bytes = 0;
+    sfu_egress_bytes = 0;
+    sfu_ingress_transactions = 0;
+    sfu_egress_transactions = 0;
+    sfu_op_energy = 0.0;
+    sfu_read_energy = 0.0;
+    sfu_write_energy = 0.0;
+    sfu_setup_energy = 0.0;
+    sfu_static_energy = 0.0;
+    sfu_timing_calibrated = true;
+    sfu_only_layer = false;
+    sfu_unpriced_events.clear();
+    sfu_contract_note.clear();
+    activation_unmodeled = false;
+    activation_unmodeled_note.clear();
 
     // Initialize access energy of the global buffer
     access_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
@@ -1291,7 +1356,15 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     // When the GLB can hold the ring-buffer working set, keep the logical requests but coalesce
     // their overlapping dense payload to the exact union footprint. Cycle and energy on every
     // physical off-chip side use the same ratio, so traffic cannot change without its costs.
-    if(input_halo_overlap && input_halo_capacity_sufficient && dram_input_link_bits > 0) {
+    //
+    // EXTENDED 2026-08-26: the correction runs in BOTH directions, with an asymmetric guard.
+    // Coalescing DOWN (windows overlap, per-repetition streaming over-fetches) is a retention
+    // claim, so it stays gated on the working set fitting the GLB. Correcting UP happens when a
+    // legacy-row FILTER loop leaves the below-legacy tile without its kernel extent, so the
+    // repetition-scaled charge falls SHORT of the input union -- and the union is a hard lower
+    // bound on off-chip input traffic under ANY loop order and ANY buffer size (every byte a
+    // window touches crosses the interface at least once), so that direction is unconditional.
+    if(input_halo_overlap && dram_input_link_bits > 0) {
         const unsigned input = data_type_t::INPUT;
         const size_t before = storage_link_transactions_dram[input];
         const size_t target_payload = runtime_datatypes().payload_transactions(
@@ -1301,7 +1374,9 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
         const size_t target_storage = runtime_datatypes().storage_transactions(
             data_type_t::INPUT, input_halo_unique_elements, dram_input_link_bits);
         input_halo_pre_dram_transactions = before;
-        if(before > 0 && target_storage < before) {
+        const bool coalesce_down = target_storage < before;   // retention claim: capacity-gated
+        const bool correct_up = target_storage > before;      // union lower bound: unconditional
+        if(before > 0 && (correct_up || (coalesce_down && input_halo_capacity_sufficient))) {
             const double ratio = static_cast<double>(target_storage)/static_cast<double>(before);
 
             payload_link_transactions_multi_chip[input] = rescale_counter_ratio(
@@ -1536,12 +1611,114 @@ void stats_t::merge_global_buffer_fill() {
     }
 }
 
+void stats_t::apply_sfu_activation(const sfu_invocation_t &m_invocation,
+                                   unsigned m_physical_units, unsigned m_lanes,
+                                   double m_static_energy_per_cycle) {
+    sfu_present = true;
+    // "Active" means an SFU event actually FIRED. A linear-bypass layer records the
+    // operation name and accrues always-on leakage (no power gating is modeled), but it
+    // must not claim a dynamic event happened.
+    sfu_active = sfu_active || m_invocation.operations > 0 || m_invocation.busy_cycle > 0.0;
+    append_unique_segment(sfu_operation, m_invocation.operation, ", ");
+    sfu_physical_units = m_physical_units;
+    sfu_lanes = m_lanes;
+    sfu_valid_elements += m_invocation.valid_elements;
+    sfu_operations += m_invocation.operations;
+    sfu_invocations += m_invocation.invocations;
+    sfu_chunks += m_invocation.chunks;
+    sfu_tail_lane_utilization = std::max(sfu_tail_lane_utilization,
+                                         m_invocation.tail_lane_utilization);
+    sfu_ingress_elements += m_invocation.ingress_elements;
+    sfu_egress_elements += m_invocation.egress_elements;
+    sfu_ingress_bytes += m_invocation.ingress_bytes;
+    sfu_egress_bytes += m_invocation.egress_bytes;
+    sfu_ingress_transactions += m_invocation.ingress_transactions;
+    sfu_egress_transactions += m_invocation.egress_transactions;
+    sfu_op_energy += m_invocation.op_energy;
+    sfu_read_energy += m_invocation.read_energy;
+    sfu_write_energy += m_invocation.write_energy;
+    sfu_setup_energy += m_invocation.setup_energy;
+    sfu_timing_calibrated = sfu_timing_calibrated && m_invocation.timing_calibrated;
+    for(unsigned i = 0; i < m_invocation.unpriced.size(); ++i) {
+        if(std::find(sfu_unpriced_events.begin(), sfu_unpriced_events.end(),
+                     m_invocation.unpriced[i]) == sfu_unpriced_events.end()) {
+            sfu_unpriced_events.push_back(m_invocation.unpriced[i]);
+        }
+    }
+
+    // Serial timeline integration (queue_depth = 1, plan Phase-4): the SFU is an
+    // output-path resource that drains the final output AFTER the pipeline timeline
+    // completes, so its window extends the critical path rather than hiding inside it.
+    // Streaming overlap (release-time/queue back-pressure) is a later phase; until then
+    // the serial contract is reported explicitly as producer drain stall.
+    const double previous_latency = layer_latency;
+    layer_latency += m_invocation.busy_cycle;
+    sfu_busy_cycle += m_invocation.busy_cycle;
+    sfu_stall_cycle += m_invocation.busy_cycle;
+    if(previous_latency > 0.0 && layer_latency != previous_latency) {
+        // Leakage accrues over wall-clock: rescale every component's leakage window to
+        // the SFU-extended latency, exactly as finalize_layer_timeline() rescales it.
+        const double leakage_scale = layer_latency/previous_latency;
+        for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
+            static_energy_pe[i] *= leakage_scale;
+            static_energy_pe_array[i] *= leakage_scale;
+            static_energy_global_buffer[i] *= leakage_scale;
+            static_energy_multi_chip[i] *= leakage_scale;
+        }
+    }
+    // MAC availability follows the final latency: a slower SFU lowers MAC utilization.
+    mac_available_cycle = timeline_physical_macs*layer_latency;
+    if(mac_available_cycle > 0.0) {
+        utilization_mac = std::min(1.0,
+            calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle));
+    }
+    // Plan energy model: every physical SFU in the config is always-on for the layer's
+    // final wall-clock window (no power gating modeled yet).
+    sfu_static_energy = static_cast<double>(m_physical_units)*layer_latency*
+                        m_static_energy_per_cycle;
+}
+
+void stats_t::record_sfu_only_layer(const sfu_invocation_t &m_invocation,
+                                    unsigned m_physical_units, unsigned m_lanes,
+                                    double m_static_energy_per_cycle,
+                                    double m_frequency_mhz, bool m_single_clock,
+                                    const std::string &m_clock_note) {
+    // The SFU is the only modeled resource of this layer: the contract fields that
+    // update_stats() normally captures from the memory/compute components are stated
+    // here so the layer report and the power gate stay well defined.
+    authoritative_frequency_mhz = m_frequency_mhz;
+    single_clock_domain = m_single_clock;
+    clock_domain_note = m_clock_note;
+    compute_energy_basis = "n/a (SFU-only layer; no MAC activity)";
+    // Vacuously calibrated: no MAC event fires in this layer, so the MAC precision
+    // qualification cannot be the reason its energy is not absolute.
+    compute_energy_precision_calibrated = true;
+    operand_precision = runtime_datatypes().accumulator_format().name;
+    dram_timing_model = "n/a (no DRAM activity is modeled for this SFU-only layer)";
+    dram_timing_limits = "n/a";
+    array_noc_link_contract = "n/a (SFU-only layer)";
+    nop_link_contract = "n/a (SFU-only layer)";
+    // Tile sizes exist only for mapped layers; zero-fill so the stat printer stays safe.
+    for(unsigned i = 0; i < component_type_t::NUM_COMPONENT_TYPES; ++i) {
+        tile_size[i].assign(data_type_t::NUM_DATA_TYPES, 0);
+    }
+    sfu_only_layer = true;
+    apply_sfu_activation(m_invocation, m_physical_units, m_lanes, m_static_energy_per_cycle);
+}
+
+void stats_t::mark_unmodeled_activation(const std::string &m_note) {
+    activation_unmodeled = true;
+    if(activation_unmodeled_note.empty()) {
+        activation_unmodeled_note = m_note;
+    }
+}
+
 void stats_t::update_network_stats(stats_t *m_source) {
     // L3: mark this object as the network rollup so print_results() states the network
-    // axis contract instead of the layer one (see stats_t::network_rollup). The flag also
-    // tells us whether this is the FIRST layer folded in, which the min-reductions below
-    // need (a min seeded from the default would always report the default).
-    const bool first_layer = !network_rollup;
+    // axis contract instead of the layer one (see stats_t::network_rollup). The
+    // min-reductions below are seeded from the first MAPPED layer folded in
+    // (network_rollup_mapped_seeded) -- a min seeded from the default would always
+    // report the default, and an SFU-only layer carries no boundary contract at all.
     network_rollup = true;
     // L11: one call == one layer folded into the rollup.
     ++network_timing_layers;
@@ -1577,34 +1754,89 @@ void stats_t::update_network_stats(stats_t *m_source) {
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
         if(m_source->global_buffer_bypass[i]) global_buffer_bypass[i] = true;
     }
-    // Phase-5: the clock contract is a config property, identical across layers.
-    authoritative_frequency_mhz = m_source->authoritative_frequency_mhz;
-    single_clock_domain = m_source->single_clock_domain;
-    clock_domain_note = m_source->clock_domain_note;
-    // E3: the compute-energy basis is a config property, identical across layers.
-    compute_energy_basis = m_source->compute_energy_basis;
-    compute_energy_precision_calibrated = m_source->compute_energy_precision_calibrated;
-    operand_precision = m_source->operand_precision;
-    // L8: the DRAM contract is a config property, identical across layers; carry it so the
-    // network report states the same scope as its layers.
-    dram_timing_model = m_source->dram_timing_model;
-    array_noc_link_contract = m_source->array_noc_link_contract;
-    output_tile_array_resident = m_source->output_tile_array_resident;
-    nop_link_contract = m_source->nop_link_contract;
-    dram_timing_limits = m_source->dram_timing_limits;
+    // Phase-5/E3/L8: the clock, energy-basis and DRAM contracts are config properties,
+    // identical across MAPPED layers. An SFU-only layer (standalone softmax) carries
+    // placeholder contract fields and no boundary contract at all, so it must not
+    // overwrite what a fully mapped layer established -- unless it is the only kind of
+    // layer the rollup has seen.
+    const bool first_mapped_layer = !network_rollup_mapped_seeded;
+    // An SFU-only layer's contract fields are placeholders: adopt them only while NO
+    // mapped layer has been folded, so a softmax folded first cannot leave "n/a" contract
+    // text standing in a rollup that later contains fully mapped layers.
+    if(!m_source->sfu_only_layer || first_mapped_layer) {
+        authoritative_frequency_mhz = m_source->authoritative_frequency_mhz;
+        single_clock_domain = m_source->single_clock_domain;
+        clock_domain_note = m_source->clock_domain_note;
+        compute_energy_basis = m_source->compute_energy_basis;
+        compute_energy_precision_calibrated = m_source->compute_energy_precision_calibrated;
+        operand_precision = m_source->operand_precision;
+        dram_timing_model = m_source->dram_timing_model;
+        array_noc_link_contract = m_source->array_noc_link_contract;
+        output_tile_array_resident = m_source->output_tile_array_resident;
+        nop_link_contract = m_source->nop_link_contract;
+        dram_timing_limits = m_source->dram_timing_limits;
+    }
     // L5: layers run serially, so their back-pressure stalls add like layer_latency does.
     for(unsigned stage = 0; stage < 5; ++stage) timeline_stall[stage] += m_source->timeline_stall[stage];
     // L5/L6: a boundary is only as decoupled as its least-decoupled layer, so the network
     // rollup reports the min depth rather than a sum (depths are a contract, not work).
-    for(unsigned b = 0; b < 4; ++b) {
-        timeline_boundary_depth[b] = first_layer
-            ? m_source->timeline_boundary_depth[b]
-            : std::min(timeline_boundary_depth[b], m_source->timeline_boundary_depth[b]);
+    // SFU-only layers carry no boundary contract, so they do not take part in the min --
+    // the seed comes from the first MAPPED layer, wherever it appears in the network.
+    if(!m_source->sfu_only_layer) {
+        for(unsigned b = 0; b < 4; ++b) {
+            timeline_boundary_depth[b] = first_mapped_layer
+                ? m_source->timeline_boundary_depth[b]
+                : std::min(timeline_boundary_depth[b], m_source->timeline_boundary_depth[b]);
+        }
+        network_rollup_mapped_seeded = true;
     }
     for(unsigned s = 0; s < 5; ++s) {
         stage_axis_access[s] += m_source->stage_axis_access[s];
         stage_axis_link[s] += m_source->stage_axis_link[s];
         stage_axis_overlap[s] += m_source->stage_axis_overlap[s];
+    }
+
+    /* SFU: counters/energy/traffic are work and sum; busy windows sum because layers run
+       serially; units/lanes are config properties. layer_latency already contains each
+       layer's SFU window (apply_sfu_activation extends it before the rollup). */
+    sfu_present = sfu_present || m_source->sfu_present;
+    sfu_active = sfu_active || m_source->sfu_active;
+    if(m_source->sfu_present) {
+        merge_unique_segments(sfu_operation, m_source->sfu_operation, ", ");
+    }
+    sfu_physical_units = std::max(sfu_physical_units, m_source->sfu_physical_units);
+    sfu_lanes = std::max(sfu_lanes, m_source->sfu_lanes);
+    sfu_valid_elements += m_source->sfu_valid_elements;
+    sfu_operations += m_source->sfu_operations;
+    sfu_invocations += m_source->sfu_invocations;
+    sfu_chunks += m_source->sfu_chunks;
+    sfu_busy_cycle += m_source->sfu_busy_cycle;
+    sfu_stall_cycle += m_source->sfu_stall_cycle;
+    sfu_tail_lane_utilization = std::max(sfu_tail_lane_utilization,
+                                         m_source->sfu_tail_lane_utilization);
+    sfu_ingress_elements += m_source->sfu_ingress_elements;
+    sfu_egress_elements += m_source->sfu_egress_elements;
+    sfu_ingress_bytes += m_source->sfu_ingress_bytes;
+    sfu_egress_bytes += m_source->sfu_egress_bytes;
+    sfu_ingress_transactions += m_source->sfu_ingress_transactions;
+    sfu_egress_transactions += m_source->sfu_egress_transactions;
+    sfu_op_energy += m_source->sfu_op_energy;
+    sfu_read_energy += m_source->sfu_read_energy;
+    sfu_write_energy += m_source->sfu_write_energy;
+    sfu_setup_energy += m_source->sfu_setup_energy;
+    sfu_static_energy += m_source->sfu_static_energy;
+    sfu_timing_calibrated = sfu_timing_calibrated && m_source->sfu_timing_calibrated;
+    for(unsigned i = 0; i < m_source->sfu_unpriced_events.size(); ++i) {
+        if(std::find(sfu_unpriced_events.begin(), sfu_unpriced_events.end(),
+                     m_source->sfu_unpriced_events[i]) == sfu_unpriced_events.end()) {
+            sfu_unpriced_events.push_back(m_source->sfu_unpriced_events[i]);
+        }
+    }
+    if(!m_source->sfu_contract_note.empty()) {
+        merge_unique_segments(sfu_contract_note, m_source->sfu_contract_note, "; ");
+    }
+    if(m_source->activation_unmodeled) {
+        mark_unmodeled_activation(m_source->activation_unmodeled_note);
     }
 
     max_computation_cycle += m_source->max_computation_cycle;
@@ -1838,11 +2070,19 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
     const double multi_chip_static = sum_types(static_energy_multi_chip);
     // DRAM: its device access energy and the off-chip link plus row activations.
     const double dram_dynamic = sum_types(access_energy_dram) + sum_types(transfer_energy_dram);
+    // SFU: the activation operation itself plus its internal ingress/egress and setup, all
+    // generated by the same invocation event (plan principle 6); leakage covers every
+    // physical SFU over the final layer window. Zero -- and the row absent -- when no
+    // [sfu] section is configured, so legacy totals are bit-identical.
+    const double sfu_dynamic = sfu_op_energy + sfu_read_energy + sfu_write_energy +
+                               sfu_setup_energy;
+    const double sfu_static = sfu_static_energy;
 
     const double dynamic_total = mac_dynamic + pe_dynamic + pe_array_dynamic +
-                                 global_buffer_dynamic + multi_chip_dynamic + dram_dynamic;
+                                 global_buffer_dynamic + multi_chip_dynamic + dram_dynamic +
+                                 sfu_dynamic;
     const double static_total = pe_static + pe_array_static + global_buffer_static +
-                                multi_chip_static;
+                                multi_chip_static + sfu_static;
 
     const std::vector<std::string> unpriced = unpriced_active_events();
     m_output_file << "============= Energy summary ============" << std::endl;
@@ -1859,16 +2099,20 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
     // E7: state the unit and its provenance right above the numbers. A normalized fixture's
     // absolute total is not meaningful, and nothing else in the report said so.
     m_output_file << "Energy unit           : " << energy_units().describe() << std::endl;
-    const char *rows[6] = {"MAC (compute+format)", "PE (local buffer)", "PE array",
-                           "Global buffer", "Multi-chip (NoP)", "DRAM"};
-    const double row_dynamic[6] = {mac_dynamic, pe_dynamic, pe_array_dynamic,
-                                   global_buffer_dynamic, multi_chip_dynamic, dram_dynamic};
-    const double row_static[6] = {0.0, pe_static, pe_array_static, global_buffer_static,
-                                  multi_chip_static, 0.0};
+    const char *rows[7] = {"MAC (compute+format)", "PE (local buffer)", "PE array",
+                           "Global buffer", "Multi-chip (NoP)", "DRAM", "SFU (activation)"};
+    const double row_dynamic[7] = {mac_dynamic, pe_dynamic, pe_array_dynamic,
+                                   global_buffer_dynamic, multi_chip_dynamic, dram_dynamic,
+                                   sfu_dynamic};
+    const double row_static[7] = {0.0, pe_static, pe_array_static, global_buffer_static,
+                                  multi_chip_static, 0.0, sfu_static};
+    // The SFU row is opt-in: shown only for runs that model an SFU (or folded one in at
+    // network scope), so a legacy config's six-row breakdown is untouched.
+    const unsigned printed_rows = (energy_cost_schema().sfu_declared || sfu_present) ? 7 : 6;
     m_output_file << std::left << std::setw(24) << "Component" << std::right
                   << std::setw(17) << "dynamic" << std::setw(17) << "static"
                   << std::setw(17) << "total" << std::endl;
-    for(unsigned i = 0; i < 6; ++i) {
+    for(unsigned i = 0; i < printed_rows; ++i) {
         const bool has_energy = row_dynamic[i] != 0.0 || row_static[i] != 0.0;
         m_output_file << " * " << std::left << std::setw(21) << rows[i] << std::right
                       << std::setw(17) << std::setprecision(2) << row_dynamic[i]
@@ -1938,8 +2182,16 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
     const unsigned undercounted = energy_cost_schema().undercounted();
     if(undercounted > 0) {
         m_output_file << "Uncosted components   : " << undercounted << " of "
-                      << NUM_ENERGY_COMPONENTS << " have a missing or absent energy cost, so this"
+                      << energy_cost_schema().components_in_scope()
+                      << " have a missing or absent energy cost, so this"
                       << " total is an UNDERCOUNT (see the rows marked above)" << std::endl;
+    }
+    // Plan compatibility policy: a nonlinear activation that executed with no [sfu]
+    // section keeps the legacy numbers, but its energy is ABSENT from this total -- scope,
+    // stated next to the total it qualifies.
+    if(activation_unmodeled) {
+        m_output_file << "Activation scope      : NOT MODELED -- " << activation_unmodeled_note
+                      << std::endl;
     }
     m_output_file << std::endl;
 
@@ -1988,6 +2240,13 @@ std::vector<std::string> stats_t::unpriced_active_events() const {
         if(schema.is_declared(entries[i].section, entries[i].key)) continue;
         out.push_back(std::string(entries[i].event) + " fired but [" + entries[i].section +
                       "] " + entries[i].key + " is not declared");
+    }
+    // SFU events carry per-operation keys (sfu_op_energy_<op>), so the SFU records its own
+    // unpriced-active list at invocation time; an entry here blocks absolute energy/power
+    // exactly like the static entries above (plan: unpriced active SFU events disqualify
+    // absolute results).
+    for(unsigned i = 0; i < sfu_unpriced_events.size(); ++i) {
+        out.push_back(sfu_unpriced_events[i]);
     }
     return out;
 }
@@ -2180,10 +2439,20 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     // so it is reported rather than left implicit in a config flag.
     const char *boundary_names[4] = {"DRAM -> Multi-chip", "Multi-chip -> GLB",
                                      "GLB -> PE array", "PE array -> PE"};
-    m_output_file << "Buffer depth (tiles in flight across each boundary)" << std::endl;
-    for(unsigned b = 0; b < 4; ++b) {
-        m_output_file << " * " << std::left << std::setw(19) << boundary_names[b] << std::right
-                      << ":" << std::setw(11) << timeline_boundary_depth[b] << " tiles" << std::endl;
+    // An SFU-only scope (standalone softmax layer, or a rollup that folded only such
+    // layers) never exercised the memory pipeline, so its init-value depths are not a
+    // measured contract and must not print as one.
+    const bool boundary_contract_measured =
+        network_rollup ? network_rollup_mapped_seeded : !sfu_only_layer;
+    if(boundary_contract_measured) {
+        m_output_file << "Buffer depth (tiles in flight across each boundary)" << std::endl;
+        for(unsigned b = 0; b < 4; ++b) {
+            m_output_file << " * " << std::left << std::setw(19) << boundary_names[b] << std::right
+                          << ":" << std::setw(11) << timeline_boundary_depth[b] << " tiles" << std::endl;
+        }
+    } else {
+        m_output_file << "Buffer depth          : n/a (no mapped pipeline stages in this scope)"
+                      << std::endl;
     }
     m_output_file << "Back-pressure stall (blocked by a full downstream buffer)" << std::endl;
     for(unsigned s = 0; s < 5; ++s) {
@@ -2203,6 +2472,61 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                    ? "sum (shared port)" : "max (partitions)")
                                                << std::endl;
     m_output_file << std::endl;
+
+    // SFU (plan/plan_sfu.md): explicit activation-cost block. Printed for runs that model
+    // an SFU, and -- as a scope statement only -- for runs where a nonlinear activation
+    // executed without one. Absent for legacy linear-only runs, keeping their reports
+    // unchanged.
+    if(sfu_present || sfu_active || activation_unmodeled) {
+        m_output_file << "============ SFU (activation) ===========" << std::endl;
+        if(sfu_present || sfu_active) {
+            m_output_file << "Operation             : " << (sfu_operation.empty() ? "none" : sfu_operation)
+                          << std::endl;
+            m_output_file << "Physical units x lanes:" << std::setw(11) << sfu_physical_units
+                          << " x " << sfu_lanes
+                          << "  (queue_depth = 1: serial post-accumulator, fused)" << std::endl;
+            m_output_file << "Valid output elements :" << std::setw(18) << sfu_valid_elements
+                          << "  (network dims clamped by mapping coverage; padding excluded)"
+                          << std::endl;
+            m_output_file << "Scalar operations     :" << std::setw(18) << sfu_operations << std::endl;
+            m_output_file << "Invocations / chunks  :" << std::setw(11) << sfu_invocations
+                          << " / " << sfu_chunks << std::endl;
+            m_output_file << "SFU busy cycles       :" << std::setw(11) << std::setprecision(1)
+                          << sfu_busy_cycle << " cycles (added SERIALLY to the critical path)"
+                          << std::endl;
+            m_output_file << "Producer drain stall  :" << std::setw(11) << std::setprecision(1)
+                          << sfu_stall_cycle
+                          << " cycles (queue_depth = 1: the output drain waits on the SFU)"
+                          << std::endl;
+            m_output_file << "Tail lane utilization :" << std::setw(11) << std::setprecision(2)
+                          << sfu_tail_lane_utilization << std::endl;
+            m_output_file << "Ingress (elem/bytes/txn):" << std::setw(14) << sfu_ingress_elements
+                          << "/" << sfu_ingress_bytes << "/" << sfu_ingress_transactions
+                          << "  (accumulator precision; internal only, no extra DRAM traffic)"
+                          << std::endl;
+            m_output_file << "Egress  (elem/bytes/txn):" << std::setw(14) << sfu_egress_elements
+                          << "/" << sfu_egress_bytes << "/" << sfu_egress_transactions
+                          << std::endl;
+            m_output_file << "Timing profile        : "
+                          << (sfu_timing_calibrated
+                              ? "declared per-operation latency/II"
+                              : "DEFAULTED (1/1) for some active operation -- UNCALIBRATED")
+                          << std::endl;
+            m_output_file << "SFU energy (op/read/write/setup/static)" << std::endl;
+            m_output_file << " * " << std::setw(15) << std::setprecision(2) << sfu_op_energy
+                          << "/" << sfu_read_energy << "/" << sfu_write_energy
+                          << "/" << sfu_setup_energy << "/" << sfu_static_energy
+                          << " " << energy_units().label() << std::endl;
+            if(!sfu_contract_note.empty()) {
+                m_output_file << "Scope                 : " << sfu_contract_note << std::endl;
+            }
+        }
+        if(activation_unmodeled) {
+            m_output_file << "Activation scope      : NOT MODELED -- "
+                          << activation_unmodeled_note << std::endl;
+        }
+        m_output_file << std::endl;
+    }
 
     print_energy_summary(m_output_file);
 
@@ -2290,10 +2614,20 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                << " setup event(s)";
     // RE3: separate "no setup in this schedule" from "a setup runs but its unit cost is not
     // priced". Both used to print as zero events.
+    // 2026-08-26: and separate "not priced" from a DECLARED zero -- the E20-2 distinction.
+    // This annotation used to test the VALUE (== 0.0), so `layer_setup_energy = 0` -- an
+    // explicit modeled-zero statement -- still printed as "not declared" while the
+    // unpriced-event table (which consults the schema) correctly did not list it.
     if(layer_setup_events > 0.0 && layer_setup_energy == 0.0) {
-        m_output_file << " [unit cost UNCALIBRATED: the setup executes for "
-                      << std::setprecision(0) << layer_setup_cycle_pe_array
-                      << " cycle(s) but no layer_setup_energy is declared]";
+        if(energy_cost_schema().is_declared("pe_array", "layer_setup_energy")) {
+            m_output_file << " [modeled zero: layer_setup_energy is declared 0 over "
+                          << std::setprecision(0) << layer_setup_cycle_pe_array
+                          << " setup cycle(s)]";
+        } else {
+            m_output_file << " [unit cost UNCALIBRATED: the setup executes for "
+                          << std::setprecision(0) << layer_setup_cycle_pe_array
+                          << " cycle(s) but no layer_setup_energy is declared]";
+        }
     } else if(layer_setup_events == 0.0) {
         m_output_file << " [no layer setup is modeled for this architecture]";
     }
@@ -2854,9 +3188,16 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     if(!network_rollup) {
         m_output_file << "Input halo reuse      : ";
         if(input_halo_reuse_applied) {
+            // Both directions share one format so T11 can pin the same identity. The clause
+            // after the working set names WHY the correction was allowed to run: coalescing
+            // down is a retention claim (needs the ring working set resident), raising up to
+            // the union is a lower-bound identity (holds for any buffer size and loop order).
             m_output_file << "applied; " << input_halo_replicated_elements << " -> "
                           << input_halo_unique_elements << " input elements, working set "
-                          << input_halo_working_set_bytes << " B fits GLB, DRAM serialized "
+                          << input_halo_working_set_bytes
+                          << (input_halo_unique_elements < input_halo_replicated_elements
+                              ? " B fits GLB, DRAM serialized "
+                              : " B union lower bound, DRAM serialized ")
                           << input_halo_pre_dram_transactions << " -> "
                           << storage_link_transactions_dram[data_type_t::INPUT];
         } else if(input_halo_overlap) {
@@ -2866,7 +3207,7 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                 m_output_file << "not applied; working set " << input_halo_working_set_bytes
                               << " B does not fit the resident GLB allocation";
         } else {
-            m_output_file << "not needed; no overlapping legacy-GLB P/Q windows";
+            m_output_file << "not needed; per-repetition streaming already moves exactly the union";
         }
         m_output_file << std::endl;
     }

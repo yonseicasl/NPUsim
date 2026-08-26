@@ -120,6 +120,15 @@ static const energy_key_schema_t g_energy_keys[] = {
     // multi_chip.cc accepts `nop_energy` as an alias for `noc_energy`, so the schema must know it
     // or a config using the documented alias would be rejected.
     { "nop_energy",                ENERGY_KEY_SCALAR },
+    // SFU (plan/plan_sfu.md): internal element access, per-invocation setup and pJ/cycle
+    // leakage of one physical SFU unit. Per-operation dynamic costs form a prefix family
+    // (sfu_op_energy_relu, sfu_op_energy_exp, ...) so ReLU and softmax micro-ops are never
+    // priced by one shared scalar.
+    { "sfu_read_energy",           ENERGY_KEY_SCALAR },
+    { "sfu_write_energy",          ENERGY_KEY_SCALAR },
+    { "sfu_setup_energy",          ENERGY_KEY_SCALAR },
+    { "sfu_static_energy",         ENERGY_KEY_SCALAR },
+    { "sfu_op_energy_",            ENERGY_KEY_PREFIX_SCALAR },
     // RE4/precision family: mac_energy_<input>_<weight>
     { "mac_energy_",               ENERGY_KEY_PREFIX_SCALAR },
 };
@@ -294,6 +303,12 @@ const component_requirement_t g_requirements[] = {
     { ENERGY_COMPONENT_DRAM,          "dram",
       { "read_energy", "write_energy", "transfer_energy", 0, 0 },
       { "row_miss_energy", 0, 0, 0 } },
+    // SFU: every invocation moves elements through its input/output ports, so those two
+    // costs are required; the per-operation family, setup and leakage price optional
+    // features (their absence on an ACTIVE event still surfaces as UNPRICED_ACTIVE).
+    { ENERGY_COMPONENT_SFU,           "sfu",
+      { "sfu_read_energy", "sfu_write_energy", 0, 0, 0 },
+      { "sfu_op_energy_", "sfu_setup_energy", "sfu_static_energy", 0 } },
 };
 
 // Which report-row section a config section belongs to; 0 for sections that carry no energy.
@@ -304,6 +319,7 @@ const char *section_role(const std::string &m_name) {
     if(m_name == "separate" || m_name == "shared") return "global_buffer";
     if(m_name == "multi_chip") return "multi_chip";
     if(m_name == "dram") return "dram";
+    if(m_name == "sfu") return "sfu";
     return 0;
 }
 
@@ -345,7 +361,7 @@ bool declared_nonzero(config_t &m_config, const std::string &m_role, const std::
 
 }  // namespace
 
-energy_cost_schema_t::energy_cost_schema_t() {
+energy_cost_schema_t::energy_cost_schema_t() : sfu_declared(false) {
     for(unsigned i = 0; i < NUM_ENERGY_COMPONENTS; ++i) {
         state[i] = ENERGY_COST_NOT_MODELED;
     }
@@ -358,6 +374,10 @@ bool energy_cost_schema_t::is_declared(const char *m_section, const char *m_key)
 void energy_cost_schema_t::configure(config_t &m_config) {
     // Record every energy key the config declares, keyed by the role of the section it is in.
     declared.clear();
+    sfu_declared = false;
+    for(unsigned i = 0; i < m_config.sections.size(); ++i) {
+        if(m_config.sections[i].name == "sfu") sfu_declared = true;
+    }
     for(unsigned i = 0; i < m_config.sections.size(); ++i) {
         const char *role = section_role(m_config.sections[i].name);
         if(role == 0) continue;
@@ -414,9 +434,16 @@ std::string energy_cost_schema_t::annotate(energy_component_t m_component,
 unsigned energy_cost_schema_t::undercounted() const {
     unsigned count = 0;
     for(unsigned i = 0; i < NUM_ENERGY_COMPONENTS; ++i) {
+        // The SFU row exists only for configs that model an SFU at all: a config without an
+        // [sfu] section has activation OUT OF SCOPE (stated in the report), not undercounted.
+        if(i == ENERGY_COMPONENT_SFU && !sfu_declared) continue;
         if(state[i] == ENERGY_COST_NOT_MODELED || state[i] == ENERGY_COST_PARTIAL) ++count;
     }
     return count;
+}
+
+unsigned energy_cost_schema_t::components_in_scope() const {
+    return sfu_declared ? NUM_ENERGY_COMPONENTS : NUM_ENERGY_COMPONENTS - 1;
 }
 
 energy_cost_schema_t &energy_cost_schema() {

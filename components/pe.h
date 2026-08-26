@@ -74,7 +74,12 @@ public:
 
     // MAC operation
     void mac_operation(scheduler_t *m_scheduler);
-    void activation();
+    // NOTE: the old no-arg pe_t "activation" member (hardcoded per-PE ReLU) is REMOVED,
+    // not merely deprecated (plan/plan_sfu.md). Activation cost is modeled by the SFU
+    // (components/sfu.{h,cc}) at the final output commit, and functional activation is
+    // owned solely by Nebula's forward(); reintroducing the method would double-apply
+    // and double-charge. Removing the declaration makes any reintroduced call a compile
+    // error instead of a runtime abort, and unittest/run_validation.sh greps against it.
 
     // Print out the configuration of PE.
     void print_specification();

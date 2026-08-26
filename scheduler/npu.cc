@@ -24,6 +24,7 @@ npu_t::~npu_t() {
     // Free the memory for accelerator components
     for(auto pe_array : pe_arrays) { delete pe_array; }
     for(auto global_buffer : global_buffers) { delete global_buffer; }
+    for(auto sfu : sfus) { delete sfu; }
 
     delete multi_chip;
     delete dram;
@@ -37,6 +38,7 @@ npu_t::~npu_t() {
     // Free the memory for scheduler.
     for(auto scheduler_ : schedulers) { delete scheduler_; }
     for(auto stats : layer_stats) { delete stats; }
+    for(auto stats : sfu_layer_stats) { delete stats; }
     delete network_stats;
 
 }
@@ -156,13 +158,25 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             }
             multi_chip = new multi_chip_t(section_config);
         }
-        // Initialize off-chip memory 
+        // Initialize off-chip memory
         else if(section_config.name == "dram") {
             if(dram != NULL) {
                 std::cerr << "Error: duplicate [dram] section" << std::endl;
                 exit(1);
             }
             dram = new dram_t(section_config);
+        }
+        // Initialize the per-chip Special Function Unit (opt-in; plan/plan_sfu.md).
+        else if(section_config.name == "sfu" || section_config.name == "SFU") {
+            if(!sfus.empty()) {
+                std::cerr << "Error: duplicate [sfu] section" << std::endl;
+                exit(1);
+            }
+            for(unsigned i = 0; i < num_processors; i++) {
+                sfu_t *sfu = new sfu_t(section_config);
+                sfu->index = i;
+                sfus.emplace_back(sfu);
+            }
         }
         else {
             std::cerr << "Error: unknown accelerator component " << section_config.name << std::endl;
@@ -291,6 +305,28 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
 	// Initialize the mapping table.
 	std::cout << "# Run the network" << std::endl;
 
+    // SFU: validate every layer's activation BEFORE simulating anything. An unsupported
+    // operation must fail fast at layer-start/config time (plan_sfu.md) -- aborting at
+    // the END of that layer's simulation would discard every completed layer first.
+    if(!sfus.empty()) {
+        for(unsigned index = 0; index < network->num_layers; index++) {
+            if(network->layers[index]->layer_type != nebula::CONVOLUTIONAL_LAYER &&
+               network->layers[index]->layer_type != nebula::CONNECTED_LAYER) continue;
+            const unsigned type = static_cast<unsigned>(network->layers[index]->activation_type);
+            if(type == nebula::UNDEFINED_ACTIVATION ||
+               type >= nebula::NUM_ACTIVATION_TYPES) continue;   // identity: linear bypass
+            sfu_op_t op;
+            if(!sfu_t::op_from_name(nebula::activation_type_str[type], &op)) {
+                std::cerr << "Error: network layer " << index << " activation '"
+                          << nebula::activation_type_str[type]
+                          << "' is not supported by the SFU; unsupported operations fail"
+                          << " fast before simulation instead of silently falling back to"
+                          << " ReLU" << std::endl;
+                exit(1);
+            }
+        }
+    }
+
     // the number of iterations.
 	unsigned num_iteration = 1;
     // Run the network
@@ -391,9 +427,19 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 layer_stats[index]->scale_serial_repetitions(global_buffer_repetitions,
                     scheduler->mapping_table->datatype_repetitions(), input_halo,
                     halo_capacity_sufficient);
+                // SFU: the fused activation fires once per valid output element, on the
+                // FINAL (repetition-scaled) timeline -- reduction tiling and GLB
+                // repetitions must not multiply the activation count.
+                apply_fused_sfu_activation(index);
                 print_layerwise_results(m_accelerator_config, m_network_config, index);
                 //dram->disconnect_layer();
 			}
+            // Phase-7 (plan_sfu.md): a standalone softmax layer runs on the SFU's
+            // multi-pass microprogram when an [sfu] section is configured. It needs no
+            // mapping section -- the SFU is the only modeled resource.
+            else if(network->layers[index]->layer_type == nebula::SOFTMAX_LAYER && !sfus.empty()) {
+                run_standalone_softmax(index, m_accelerator_config, m_network_config);
+            }
             else {
                 num_skipped_timing_layers++;
                 std::cerr << "Warning: network layer " << index
@@ -517,6 +563,7 @@ void npu_t::print_accelerator_specification() {
     global_buffers[0]->print_specification();
     multi_chip->print_specification();
     dram->print_specification();
+    if(!sfus.empty()) { sfus[0]->print_specification(); }
 }
 
 // Print out the network stats (e.g., tile size)
@@ -581,6 +628,7 @@ void npu_t::reset() {
         global_buffers[i]->reset();
         pe_arrays[i]->reset();
     }
+    for(auto sfu : sfus) { sfu->reset(); }
 }
 
 void npu_t::update_tile_size() {
@@ -593,4 +641,162 @@ void npu_t::update_tile_size() {
         pe_arrays[i]->update_tile_size(scheduler);
         pe_arrays[i]->set_psum_retention_scope(scheduler);
     }
+}
+
+// SFU (plan/plan_sfu.md): fused-activation cost event for one finished layer.
+//
+// The event contract: the activation fires exactly once per NETWORK-valid output element
+// (B x K x P x Q; mapping padding excluded), only after every C/R/S reduction completed --
+// which is guaranteed here because the whole layer, including the final psum flush and
+// repetition scaling, is already accounted. Nebula's forward() remains the functional
+// owner; this only generates the hardware cost event.
+void npu_t::apply_fused_sfu_activation(unsigned m_index) {
+    nebula::layer_t *current_layer = network->layers[m_index];
+    const unsigned activation_index = static_cast<unsigned>(current_layer->activation_type);
+    // An undeclared activation behaves as identity in Nebula, so it maps to the linear
+    // bypass; every other name must map to a supported SFU operation or fail fast.
+    const std::string activation_name =
+        (activation_index == nebula::UNDEFINED_ACTIVATION ||
+         activation_index >= nebula::NUM_ACTIVATION_TYPES)
+        ? "linear" : nebula::activation_type_str[activation_index];
+
+    // Valid output elements: the NETWORK dimensions clamped by what the mapping actually
+    // covered. min(mapped, layer) excludes mapping padding (padded outputs are never
+    // committed) AND partial coverage (a mapping that simulates 48 of 64 output channels
+    // must not charge activation for outputs the timing model never produced).
+    size_t layer_k, layer_p, layer_q;
+    if(scheduler->layer_name == layer_name_t::CONNECTED_LAYER) {
+        layer_k = current_layer->output_size ? current_layer->output_size
+                                             : current_layer->output_channel;
+        layer_p = 1;
+        layer_q = 1;
+    } else {
+        layer_k = current_layer->output_channel;
+        layer_p = current_layer->output_height;
+        layer_q = current_layer->output_width;
+        if(layer_k*layer_p*layer_q == 0) {
+            layer_k = current_layer->output_size;
+            layer_p = 1;
+            layer_q = 1;
+        }
+    }
+    const std::vector<unsigned> mapped =
+        scheduler->mapping_table->calculate_total_parameter_size();
+    auto covered = [](unsigned m_mapped, size_t m_layer) -> size_t {
+        if(m_layer == 0) return m_mapped ? m_mapped : 1;
+        if(m_mapped == 0) return m_layer;
+        return std::min(static_cast<size_t>(m_mapped), m_layer);
+    };
+    const size_t valid_elements =
+        covered(mapped[parameter_type_t::BATCH_SIZE], network->batch_size)*
+        covered(mapped[parameter_type_t::OUTPUT_CHANNEL], layer_k)*
+        covered(mapped[parameter_type_t::OUTPUT_HEIGHT], layer_p)*
+        covered(mapped[parameter_type_t::OUTPUT_WIDTH], layer_q);
+
+    if(sfus.empty()) {
+        // Compatibility policy: no [sfu] section keeps every legacy number bit-identical,
+        // but a nonlinear activation that DID execute must be stated as out of scope.
+        if(activation_name != "linear" && valid_elements > 0) {
+            layer_stats[m_index]->mark_unmodeled_activation(
+                "activation '" + activation_name + "' over " +
+                std::to_string(valid_elements) + " output element(s) executed with no [sfu]"
+                " section; its cycles/traffic/energy are ABSENT from this report");
+        }
+        return;
+    }
+
+    sfu_op_t op;
+    if(!sfu_t::op_from_name(activation_name, &op)) {
+        // Normally unreachable: run() validates every layer's activation up front.
+        std::cerr << "Error: layer " << m_index << " activation '" << activation_name
+                  << "' is not supported by the SFU; unsupported operations fail fast"
+                  << " instead of silently falling back to ReLU" << std::endl;
+        exit(1);
+    }
+
+    // Distribute outputs over the chips that own DISTINCT output elements only. A chip
+    // factor on a reduction dimension (C/R/S) replicates the SAME outputs as partial
+    // sums, which merge before the activation fires -- splitting the element count over
+    // those replicas would understate every output-owning chip's SFU window.
+    const unsigned active_chips = scheduler->num_active_chips_x*scheduler->num_active_chips_y;
+    unsigned output_chips = scheduler->mapping_table->calculate_output_partition_chips();
+    output_chips = std::max(1u, std::min(output_chips, active_chips));
+    sfu_invocation_t combined;
+    const size_t base = valid_elements/output_chips;
+    const size_t remainder = valid_elements % output_chips;
+    for(unsigned c = 0; c < output_chips; ++c) {
+        const size_t share = base + (c < remainder ? 1 : 0);
+        combined.merge_parallel(sfus[c]->elementwise_invocation(op, share));
+    }
+    layer_stats[m_index]->sfu_contract_note =
+        "fused post-accumulator activation; input/weight/output DRAM traffic is unchanged"
+        " by the SFU (fused invariant)";
+    layer_stats[m_index]->apply_sfu_activation(combined,
+        num_processors*sfus[0]->get_num_units(), sfus[0]->get_lanes(),
+        sfus[0]->get_static_energy_per_cycle());
+}
+
+// Phase-7 (plan_sfu.md): standalone softmax on the SFU multi-pass microprogram
+// (max -> subtract -> exp -> sum -> reciprocal -> normalize). The layer has no mapping
+// section; the SFU of chip 0 is the modeled execution resource and the layer latency is
+// its serial multi-pass window.
+void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accelerator_config,
+                                   const std::string &m_network_config) {
+    nebula::layer_t *softmax_layer = network->layers[m_index];
+    const size_t rows = network->batch_size;
+    const size_t row_length = softmax_layer->output_size;
+
+    std::cout << "The network configuration of #" << m_index
+              << " layer (standalone softmax on SFU)" << std::endl;
+    std::cout << " * softmax rows x length : " << rows << " x " << row_length << std::endl;
+
+    sfu_invocation_t invocation = sfus[0]->softmax_invocation(rows, row_length);
+
+    stats_t *stats = new stats_t();
+    sfu_layer_stats.push_back(stats);
+
+    // Clock contract: the SFU runs on the chip clock, so the same single-domain check
+    // update_stats() applies to mapped layers holds here.
+    const double frequencies[5] = {
+        pe_arrays[0]->pes[0]->clock_mhz(),
+        pe_arrays[0]->clock_mhz(),
+        global_buffers[0]->clock_mhz(),
+        multi_chip->clock_mhz(),
+        dram->clock_mhz()};
+    bool single_clock = frequencies[0] > 0.0;
+    for(unsigned f = 1; f < 5; ++f) {
+        if(frequencies[f] != frequencies[0]) single_clock = false;
+    }
+    const std::string clock_note = single_clock
+        ? "all modeled components share one clock"
+        : "mixed or undeclared clock domains; cycles are not convertible to time";
+
+    // Scope: the operand tensor is materialized by the neighboring layers (the previous
+    // layer already stored its output off-chip), and streaming it to/from the SFU is not
+    // yet part of this model -- stated instead of silently read as included.
+    const size_t stream_bytes = runtime_datatypes().storage_bytes(
+        data_type_t::OUTPUT, rows*row_length);
+    stats->sfu_contract_note =
+        "standalone softmax executes on chip 0's SFU; operand streaming (~" +
+        std::to_string(stream_bytes) + " bytes each way at output precision) between the"
+        " memory hierarchy and the SFU is NOT included (materialized-tensor accounting is"
+        " a later phase)";
+
+    stats->record_sfu_only_layer(invocation,
+        num_processors*sfus[0]->get_num_units(), sfus[0]->get_lanes(),
+        sfus[0]->get_static_energy_per_cycle(),
+        single_clock ? frequencies[0] : 0.0, single_clock, clock_note);
+
+    std::cout << "The simulation result of #" << m_index << " layer" << std::endl;
+    std::cout << std::endl;
+    const std::string output_file_name = m_accelerator_config + "_" + m_network_config +
+                                         "_layer_" + std::to_string(m_index) + ".txt";
+    std::cout << output_file_name << std::endl;
+    std::ofstream output_file;
+    output_file.open(output_file_name, std::ios::out);
+    output_file << "Standalone softmax layer executed on the SFU (multi-pass microprogram)"
+                << std::endl << std::endl;
+    stats->print_results(output_file);
+    output_file.close();
+    network_stats->update_network_stats(stats);
 }

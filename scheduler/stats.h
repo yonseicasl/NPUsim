@@ -7,6 +7,7 @@
 #include "mapping_table.h"
 
 #include "pe_array.h"
+#include "sfu.h"
 
 class stats_t {
 	
@@ -43,6 +44,29 @@ public:
 
     // Update network stats.
     void update_network_stats(stats_t *m_source);
+
+    /* SFU (plan/plan_sfu.md) */
+
+    // Record one layer's SFU activation event and integrate its serial (queue_depth = 1)
+    // busy window into the ALREADY FINALIZED layer timeline: the critical-path latency
+    // grows by the SFU window, every component's leakage window is rescaled to the new
+    // latency (leakage is a function of wall-clock, exactly as finalize_layer_timeline()
+    // treats it), and MAC availability/utilization are recomputed. Must be called AFTER
+    // scale_serial_repetitions(): an activation runs once per valid output element, so
+    // reduction tiling and GLB repetitions must never scale it.
+    void apply_sfu_activation(const sfu_invocation_t &m_invocation, unsigned m_physical_units,
+                              unsigned m_lanes, double m_static_energy_per_cycle);
+    // A standalone SFU layer (Phase-7 softmax): the SFU is the only modeled resource, so
+    // the layer latency IS the SFU window. The clock/energy contract fields normally
+    // captured by update_stats() are supplied by the caller.
+    void record_sfu_only_layer(const sfu_invocation_t &m_invocation, unsigned m_physical_units,
+                               unsigned m_lanes, double m_static_energy_per_cycle,
+                               double m_frequency_mhz, bool m_single_clock,
+                               const std::string &m_clock_note);
+    // A nonlinear activation executed while no [sfu] section exists: legacy numbers stay
+    // untouched, but the report must state that the activation is outside the modeled
+    // scope instead of silently reading as free.
+    void mark_unmodeled_activation(const std::string &m_note);
 
     // Print out the result of simulation.
     void print_results(std::ofstream &m_output_file);
@@ -161,6 +185,44 @@ public:
     // The axis must be max_chip(combine_type(base[chip][t] + fill[chip][t])).
     std::vector<std::vector<double>> chip_access_cycle_global_buffer;      // per chip/datatype: BASE (GLB->PE-array read) access, scales uniformly
     std::vector<std::vector<double>> chip_fill_access_cycle_global_buffer; // per chip/datatype: FILL (multi-chip->GLB write) access, scales per datatype
+
+    /* SFU (plan/plan_sfu.md): explicit activation-cost events. Values are FINAL --
+       recorded after repetition scaling, once per valid output element. At network scope
+       the counters/energies sum, the busy window sums (layers run serially) and the
+       contract fields (units, lanes) are config properties. */
+    bool sfu_present;                    // an [sfu] section exists for this run
+    bool sfu_active;                     // an SFU event was recorded
+    std::string sfu_operation;           // operation name(s), e.g. "relu" or "softmax ..."
+    unsigned sfu_physical_units;         // physical SFU pipelines across all chips
+    unsigned sfu_lanes;
+    size_t sfu_valid_elements;           // network-valid output elements (padding excluded)
+    size_t sfu_operations;               // scalar SFU operations
+    size_t sfu_invocations;              // pipeline setups
+    size_t sfu_chunks;                   // lane-wide issue slots
+    double sfu_busy_cycle;               // serial SFU window added to the critical path
+    double sfu_stall_cycle;              // producer drain stall under the serial contract
+    double sfu_tail_lane_utilization;
+    size_t sfu_ingress_elements;
+    size_t sfu_egress_elements;
+    size_t sfu_ingress_bytes;            // accumulator-precision internal traffic
+    size_t sfu_egress_bytes;
+    size_t sfu_ingress_transactions;
+    size_t sfu_egress_transactions;
+    double sfu_op_energy;
+    double sfu_read_energy;
+    double sfu_write_energy;
+    double sfu_setup_energy;
+    double sfu_static_energy;            // all physical SFUs, over the final layer window
+    bool sfu_timing_calibrated;          // false: some active op ran on a defaulted profile
+    // True for a layer whose ONLY modeled resource is the SFU (standalone softmax). Its
+    // clock/energy-basis contract fields are placeholders, so the network rollup must not
+    // let them overwrite the contract captured from a fully mapped layer.
+    bool sfu_only_layer;
+    std::vector<std::string> sfu_unpriced_events;
+    std::string sfu_contract_note;       // per-layer scope statement (e.g. softmax streaming)
+    // Nonlinear activation executed with no [sfu] section: scope statement only.
+    bool activation_unmodeled;
+    std::string activation_unmodeled_note;
 
     /* Tile size */
     std::vector<std::vector<unsigned>> tile_size;
@@ -318,6 +380,9 @@ public:
     //             would be worse, not better: layers run serially, so it would undercount
     //             the actual busy time of every stage.
     bool network_rollup;
+    // True once a MAPPED (non-SFU-only) layer has been folded into the rollup: seeds the
+    // boundary-depth min-reduction, which SFU-only layers do not take part in.
+    bool network_rollup_mapped_seeded;
     // L11/P4-14: the timing SCOPE of a network rollup -- how many layers were folded in and how
     // many the accelerator timing model does not support (pooling/activation/normalization).
     // Printed inside the layer-timeline block, next to the latency it qualifies: the trailing

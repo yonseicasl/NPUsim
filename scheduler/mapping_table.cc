@@ -228,11 +228,20 @@ input_halo_reuse_t mapping_table_t::input_halo_reuse() const {
     input_halo_reuse_t reuse;
     const std::vector<unsigned> &glb = legacy_global_buffer_mapping;
 
-    // A filter loop in the legacy row partitions R/S rather than moving an adjacent output
-    // window. Its input-union and loop-order semantics are different; do not silently apply the
-    // P/Q contract to it.
-    if(glb[parameter_type_t::FILTER_HEIGHT] != 1 ||
-       glb[parameter_type_t::FILTER_WIDTH] != 1) return reuse;
+    // EXTENDED 2026-08-26 (NVDLA fidelity): this used to bail out when the legacy row carried a
+    // FILTER loop, on the grounds that its loop-order semantics differ from the P/Q window walk.
+    // Measurement showed the bail-out was not conservative but WRONG in the other direction: with
+    // R/S in the legacy row the below-legacy tile has no filter extent, so the repetition-scaled
+    // fallback moves only OH x OW x C tile fetches and UNDERCOUNTS the input union -- 0.66x-0.83x
+    // of it on every expressible nv_small trace, while the RTL's CDMA physically fetches the full
+    // cube exactly once. The union with the legacy R/S folded into the extent,
+    //     full_h = (P_total - 1) * stride + R_total,
+    // is a hard LOWER bound on off-chip input traffic whatever the loop order is: every byte a
+    // window touches crosses the interface at least once. So the contract now computes the union
+    // for filter-bearing legacy rows too, and stats applies it in BOTH directions -- coalescing
+    // down only when the ring working set fits the GLB, correcting up unconditionally.
+    const bool legacy_filter_loops = glb[parameter_type_t::FILTER_HEIGHT] != 1 ||
+                                     glb[parameter_type_t::FILTER_WIDTH] != 1;
 
     // Rebuild the cumulative DRAM-level tile without mutating the table. The legacy GLB row is
     // deliberately absent from calculate_parameter_size(DRAM), which is exactly the one live
@@ -260,12 +269,18 @@ input_halo_reuse_t mapping_table_t::input_halo_reuse() const {
     const unsigned full_q = checked_multiply(base[parameter_type_t::OUTPUT_WIDTH],
                                              glb[parameter_type_t::OUTPUT_WIDTH],
                                              "input halo full output width");
+    // The total filter footprint folds the legacy row's R/S loops: they partition the kernel
+    // window, so the union extent is governed by the FULL kernel, not the per-pass slice.
+    const unsigned full_r = checked_multiply(base[parameter_type_t::FILTER_HEIGHT],
+                                             glb[parameter_type_t::FILTER_HEIGHT],
+                                             "input halo full filter height");
+    const unsigned full_s = checked_multiply(base[parameter_type_t::FILTER_WIDTH],
+                                             glb[parameter_type_t::FILTER_WIDTH],
+                                             "input halo full filter width");
     const unsigned full_h = checked_extent(full_p, base[parameter_type_t::STRIDE],
-                                           base[parameter_type_t::FILTER_HEIGHT],
-                                           "input halo full height");
+                                           full_r, "input halo full height");
     const unsigned full_w = checked_extent(full_q, base[parameter_type_t::STRIDE],
-                                           base[parameter_type_t::FILTER_WIDTH],
-                                           "input halo full width");
+                                           full_s, "input halo full width");
 
     size_t nonspatial = checked_multiply_size(base[parameter_type_t::BATCH_SIZE],
                                               base[parameter_type_t::INPUT_CHANNEL],
@@ -306,7 +321,16 @@ input_halo_reuse_t mapping_table_t::input_halo_reuse() const {
         : checked_multiply_size(base_h, base_w, "input halo working tile");
     reuse.working_set_elements = checked_multiply_size(nonspatial, working_spatial,
                                                         "input halo working set");
-    reuse.active = reuse.unique_elements < reuse.replicated_elements;
+    // With filter loops in the legacy row the within-level order (stripes vs windows) is not
+    // modeled, so no partial-ring retention can be claimed: fetch-once requires the WHOLE union
+    // resident (which is what the nv_small CDMA/CBUF actually does). The union lower-bound
+    // CORRECTION direction does not depend on this working set at all -- see stats.
+    if(legacy_filter_loops) {
+        reuse.working_set_elements = reuse.unique_elements;
+    }
+    // Equality means per-repetition streaming already moves exactly the union: nothing to
+    // coalesce and nothing to correct. Above/below it, stats applies the matching direction.
+    reuse.active = reuse.unique_elements != reuse.replicated_elements;
     return reuse;
 }
 
@@ -331,6 +355,30 @@ unsigned mapping_table_t::calculate_active_component(component_type_t m_componen
         exit(1);
     }
     return static_cast<unsigned>(num_comp / group);
+}
+
+// SFU (plan/plan_sfu.md): see the header. Only the output-bearing chip factors partition
+// DISTINCT output elements; a chip factor on C/R/S replicates the same outputs as partial
+// sums, which merge before the activation fires.
+unsigned mapping_table_t::calculate_output_partition_chips() {
+    static const parameter_type_t output_parameters[] = {
+        parameter_type_t::OUTPUT_CHANNEL, parameter_type_t::BATCH_SIZE,
+        parameter_type_t::OUTPUT_HEIGHT, parameter_type_t::OUTPUT_WIDTH,
+    };
+    const component_type_t chip_rows[] = {component_type_t::CHIPS_X, component_type_t::CHIPS_Y};
+    uint64_t partitions = 1;
+    for(unsigned r = 0; r < 2; ++r) {
+        for(unsigned p = 0; p < sizeof(output_parameters)/sizeof(output_parameters[0]); ++p) {
+            const unsigned factor = mapping_table[chip_rows[r]][output_parameters[p]];
+            partitions *= std::max(1u, factor);
+            if(partitions > std::numeric_limits<unsigned>::max()) {
+                std::cerr << "Error: unsigned overflow while calculating output-partition chips"
+                          << std::endl;
+                exit(1);
+            }
+        }
+    }
+    return static_cast<unsigned>(partitions);
 }
 
 // Print out the value of mapping table.

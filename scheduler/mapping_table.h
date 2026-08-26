@@ -77,6 +77,12 @@ public:
 
     // Calculate the number of active component (e.g., MAC, PE, and Chips)
     unsigned calculate_active_component(component_type_t m_component_type);
+    // SFU (plan/plan_sfu.md): the number of chip-level partitions that own DISTINCT
+    // output elements. The CHIPS_X/CHIPS_Y rows may also carry reduction factors
+    // (C/R/S); chips that differ only in a reduction coordinate compute partial sums of
+    // the SAME outputs, which merge BEFORE the activation runs -- so the SFU distributes
+    // valid outputs over the output-bearing chip factors only (K, B, P, Q, GROUP).
+    unsigned calculate_output_partition_chips();
     // Print out the component of mapping table.
 	void print();
 

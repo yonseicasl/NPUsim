@@ -107,7 +107,9 @@ enum energy_cost_state_t {
     ENERGY_COST_CALIBRATED
 };
 
-// The six rows of the energy breakdown.
+// The rows of the energy breakdown. The SFU row is OPT-IN: it exists only for configs
+// that declare an [sfu] section, so a legacy config keeps its six-row report and its
+// undercount arithmetic unchanged (see energy_cost_schema_t::components_in_scope()).
 enum energy_component_t {
     ENERGY_COMPONENT_MAC,
     ENERGY_COMPONENT_PE,
@@ -115,6 +117,7 @@ enum energy_component_t {
     ENERGY_COMPONENT_GLOBAL_BUFFER,
     ENERGY_COMPONENT_MULTI_CHIP,
     ENERGY_COMPONENT_DRAM,
+    ENERGY_COMPONENT_SFU,
     NUM_ENERGY_COMPONENTS
 };
 
@@ -142,6 +145,11 @@ struct energy_cost_schema_t {
     // Every energy key the config actually declares, as "role/key". Declared-as-zero is present
     // here; absent is not. The distinction is the whole point of UNPRICED_ACTIVE.
     std::set<std::string> declared;
+    // SFU: whether the config declares an [sfu] section at all. A config without one models
+    // no activation hardware, so the SFU row is out of scope for the breakdown and for the
+    // undercount -- the plan requires legacy configs to keep their numeric results, with the
+    // missing activation model stated as scope rather than as an undercount.
+    bool sfu_declared;
 
     energy_cost_schema_t();
     // Derive every component's declaration state from the loaded config.
@@ -149,8 +157,11 @@ struct energy_cost_schema_t {
     // One-phrase annotation for the breakdown row, given whether the layer had any activity.
     std::string annotate(energy_component_t m_component, bool m_has_energy) const;
     // RE5: counted from the DECLARATION -- components whose subtotal cannot be trusted because a
-    // cost is missing, not components that merely came out at zero.
+    // cost is missing, not components that merely came out at zero. The SFU row participates
+    // only when an [sfu] section exists.
     unsigned undercounted() const;
+    // How many breakdown rows this config is accountable for (6, or 7 with an [sfu] section).
+    unsigned components_in_scope() const;
     // True when the config declares this key at all (any value, including 0).
     bool is_declared(const char *m_section, const char *m_key) const;
 };

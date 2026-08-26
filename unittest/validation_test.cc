@@ -214,6 +214,27 @@ void validate_input_halo_contract() {
        pq.unique_elements != 380928 || pq.working_set_elements != 18624) {
         fail("P/Q input halo union/working-set contract");
     }
+
+    // 2026-08-26: legacy-row FILTER loops (the nv_small mapping shape: R,S stream from the
+    // CBUF per stripe, so they sit in the legacy row and the below-legacy tile has no kernel
+    // extent). Mirrors the dc_13x15x64_5x3x64x16 workload: c_pe=8 on PE_Y; legacy row carries
+    // K/8=2, P=14, Q=12, C/8=8, R=3, S=5. Hand identity:
+    //   unique     = (base B*C=8) * (legacy B*C*G=8) * ((14-1)+3) * ((12-1)+5) = 16384
+    //   replicated = 8 * 8 * (base 1x1 tile) * (P*Q=168)                       = 10752
+    // -- replicated < unique: the fallback UNDERCOUNTS, and stats must correct UP to the
+    // union, which is a lower bound under any loop order. Working set = the whole union
+    // (within-level stripe order is unmodeled, so no partial-ring retention is claimable).
+    section_config_t nvdla("mapping");
+    nvdla.add_setting("pe", "1,1,1,1,1,1,1,0,0,1,1");
+    nvdla.add_setting("pe_x", "8,1,1,1,1,1,1,0,0,1,1");
+    nvdla.add_setting("pe_y", "1,1,1,1,8,1,1,0,0,1,1");
+    nvdla.add_setting("glb", "2,1,14,12,8,3,5,0,0,1,1");
+    nvdla.add_setting("dram", "1,1,1,1,1,1,1,0,0,1,1");
+    const input_halo_reuse_t filter_row = mapping_table_t(nvdla).input_halo_reuse();
+    if(!filter_row.active || filter_row.replicated_elements != 10752 ||
+       filter_row.unique_elements != 16384 || filter_row.working_set_elements != 16384) {
+        fail("legacy-R/S input halo union contract (union above the repetition fallback)");
+    }
 }
 
 void validate_runtime_datatypes() {
@@ -749,6 +770,7 @@ void validate_accelerator(config_t &config, const std::string &path) {
     unsigned global_buffer_count = 0;
     unsigned multi_chip_count = 0;
     unsigned dram_count = 0;
+    unsigned sfu_count = 0;
     unsigned num_chips = 0;
     unsigned height = 0;
     unsigned width = 0;
@@ -774,13 +796,34 @@ void validate_accelerator(config_t &config, const std::string &path) {
             }
         } else if(section.name == "dram") {
             dram_count++;
+        } else if(section.name == "sfu") {
+            // SFU (plan/plan_sfu.md): opt-in per-chip activation unit. Mirror sfu_t's
+            // fail-fast contract so a shipped config cannot violate it silently.
+            sfu_count++;
+            unsigned lanes = 1, units = 1, queue_depth = 1;
+            section.get_setting("lanes", &lanes);
+            section.get_setting("num_units_per_chip", &units);
+            section.get_setting("queue_depth", &queue_depth);
+            if(lanes == 0 || units == 0) {
+                fail(path + ": [sfu] lanes/num_units_per_chip must be non-zero");
+            }
+            if(queue_depth != 1) {
+                fail(path + ": [sfu] queue_depth must be 1 (serial contract)");
+            }
+            std::string placement = "post_accumulator", fusion = "fused";
+            section.get_setting("placement", &placement);
+            section.get_setting("fusion", &fusion);
+            if(placement != "post_accumulator" || fusion != "fused") {
+                fail(path + ": [sfu] placement/fusion outside the initial contract");
+            }
         } else {
             fail(path + ": unknown accelerator section " + section.name);
         }
     }
 
     if(accelerator_count != 1 || pe_array_count != 1 ||
-       global_buffer_count != 1 || multi_chip_count != 1 || dram_count != 1) {
+       global_buffer_count != 1 || multi_chip_count != 1 || dram_count != 1 ||
+       sfu_count > 1) {
         fail(path + ": component cardinality");
     }
     if(height > 0 && width > 0 && height * width != num_chips) {
@@ -794,6 +837,43 @@ void validate_mapping(config_t &config, const std::string &path) {
     for(section_config_t &section : config.sections) {
         mapping_table_t table(section);
         (void)table.calculate_parameter_size(component_type_t::DRAM);
+    }
+}
+
+// SFU (plan_sfu.md): the activation element split must follow the OUTPUT-partitioning
+// chip factors only. A chip factor on a reduction dimension (C/R/S) replicates the same
+// outputs as partial sums that merge before the activation fires, so it must not enter
+// the partition count -- splitting elements over reduction replicas understates every
+// output-owning chip's SFU window by that factor.
+void validate_sfu_output_partition_contract() {
+    // 4 chips on input-channel C: all chips compute partial sums of the SAME outputs.
+    section_config_t reduction_split("layer");
+    reduction_split.add_setting("mac",     "1,1,1,1,1,1,1,0,0,1,1");
+    reduction_split.add_setting("pe",      "1,1,1,1,1,1,1,0,0,1,1");
+    reduction_split.add_setting("pe_x",    "1,1,1,1,1,1,1,0,0,1,1");
+    reduction_split.add_setting("pe_y",    "1,1,1,1,1,1,1,0,0,1,1");
+    reduction_split.add_setting("glb",     "1,1,1,1,1,1,1,0,0,1,1");
+    reduction_split.add_setting("chips_x", "1,1,1,1,4,1,1,0,0,1,1");
+    reduction_split.add_setting("chips_y", "1,1,1,1,1,1,1,0,0,1,1");
+    reduction_split.add_setting("dram",    "1,1,1,1,1,1,1,0,0,1,1");
+    mapping_table_t reduction_table(reduction_split);
+    if(reduction_table.calculate_active_component(component_type_t::CHIPS_X) != 4 ||
+       reduction_table.calculate_output_partition_chips() != 1) {
+        fail("a C-split across chips must count 4 active chips but 1 output partition");
+    }
+    // 2x2 chips on K and B: every chip owns distinct outputs.
+    section_config_t output_split("layer");
+    output_split.add_setting("mac",     "1,1,1,1,1,1,1,0,0,1,1");
+    output_split.add_setting("pe",      "1,1,1,1,1,1,1,0,0,1,1");
+    output_split.add_setting("pe_x",    "1,1,1,1,1,1,1,0,0,1,1");
+    output_split.add_setting("pe_y",    "1,1,1,1,1,1,1,0,0,1,1");
+    output_split.add_setting("glb",     "1,1,1,1,1,1,1,0,0,1,1");
+    output_split.add_setting("chips_x", "2,1,1,1,1,1,1,0,0,1,1");
+    output_split.add_setting("chips_y", "1,2,1,1,1,1,1,0,0,1,1");
+    output_split.add_setting("dram",    "1,1,1,1,1,1,1,0,0,1,1");
+    mapping_table_t output_table(output_split);
+    if(output_table.calculate_output_partition_chips() != 4) {
+        fail("a K x B chip split must count 4 output partitions");
     }
 }
 
@@ -817,6 +897,7 @@ int main(int argc, char **argv) {
 
     validate_pe_lane_contract();
     validate_spatial_interconnect_contract();
+    validate_sfu_output_partition_contract();
     for(int i = 1; i < argc; i++) {
         const std::string path = argv[i];
         config_t config;

@@ -2440,13 +2440,6 @@ void pe_t::mac_operation(scheduler_t *m_scheduler) {
     }
 }
 
-void pe_t::activation() {
-    for(size_t i = 0; i < mac_register_capacity; i++) {
-        data_relu(output_data_mac[i]);
-    }
-}
-
-
 // Print out the stats of the PE.
 void pe_t::print_specification() {
 
