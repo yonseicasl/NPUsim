@@ -394,7 +394,15 @@ void mapping_table_t::print() {
 
 // E20-3: see the header. A reduction factor above the array means a psum is revisited after other
 // tiles have passed through, so it cannot be retained.
-bool mapping_table_t::psum_must_leave_array() const {
+size_t mapping_table_t::stripe_transition_count() const {
+    const std::vector<unsigned> &glb = legacy_global_buffer_mapping;
+    return static_cast<size_t>(glb[parameter_type_t::INPUT_CHANNEL])
+         * glb[parameter_type_t::FILTER_HEIGHT]
+         * glb[parameter_type_t::FILTER_WIDTH]
+         * glb[parameter_type_t::OUTPUT_HEIGHT];
+}
+
+bool mapping_table_t::psum_must_leave_array(stationary_type_t same_level_order) const {
     static const parameter_type_t REDUCTION[] = { parameter_type_t::INPUT_CHANNEL,
                                                   parameter_type_t::FILTER_HEIGHT,
                                                   parameter_type_t::FILTER_WIDTH };
@@ -429,11 +437,17 @@ bool mapping_table_t::psum_must_leave_array() const {
             if(factor > 1) has_output = true;
         }
         // A reduction loop alone does NOT push the partial sum out. What pushes it out is the
-        // array visiting a DIFFERENT output tile between two steps of that reduction, and only
-        // an output-bearing loop INSIDE the reduction (or beside it at the same level, where the
-        // within-level order is not modeled -- taken conservatively) can do that. With no output
-        // loop under it the array simply keeps accumulating into the tile it already holds.
-        if(has_reduction && (output_loop_inside || has_output)) return true;
+        // array visiting a DIFFERENT output tile between two steps of that reduction. An
+        // output-bearing loop nested INSIDE the reduction (across levels) always does that.
+        if(has_reduction && output_loop_inside) return true;
+        // Reduction and output loops AT THE SAME level: the within-level order decides, and the
+        // scheduler orders these very loops by the declared array<->GLB stationary type. Under
+        // OUTPUT_STATIONARY each output tile's reduction completes before the array advances --
+        // the partials stay at the array edge (nv_small: in CACC) and nothing crosses the GLB.
+        // Under any other declared order the output positions are revisited per reduction slice,
+        // and the psum physically leaves.
+        if(has_reduction && has_output &&
+           same_level_order != stationary_type_t::OUTPUT_STATIONARY) return true;
         if(has_output) output_loop_inside = true;
     }
     return false;

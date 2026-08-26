@@ -133,6 +133,7 @@ pe_t::pe_t(section_config_t m_section_config) :
     accumulator_spill_bytes(0),
     accumulator_create_events(0),
     accumulator_retained_events(0),
+    operand_streams_pipelined(false),
     accumulator_energy(0.0),
     reduction_energy(0.0),
     compute_energy_basis("computation_energy"),
@@ -444,6 +445,7 @@ void pe_t::init(section_config_t m_section_config) {
 
     // Initialize the transfer cycle/energy between PE and MAC unit and local buffer.
     m_section_config.get_setting("transfer_cycle_pe", &u_transfer_cycle);
+    m_section_config.get_setting("operand_streams_pipelined", &operand_streams_pipelined);
     m_section_config.get_setting("transfer_energy_pe", &u_transfer_energy);
 
     // Initialize the unit cycle and energy of MAC unit
@@ -767,6 +769,30 @@ void pe_t::account_descriptor_dense_mac_transfer(data_type_t type, size_t elemen
     // L2: the packet decomposition carries where the LB/MAC line widths pack and unpack.
     cycle_mac_lb[type] += pipelined_transfer_cycles(
         timing.groups, source_cycle, u_transfer_cycle, destination_cycle);
+}
+
+// 2026-08-26 (array streaming granularity, PE level): under operand_streams_pipelined the
+// MAC<->LB streams ride the compute pipeline -- the RTL feeds per-lane operand registers in
+// lockstep and sustains 1 op/lane/cycle, so no per-op transfer time is exposed; with
+// 1-element tiles the per-op accounting otherwise exposes its pipeline fill on every single
+// op (~12 cycles/op on nv_small). Called once per layer before stats collection, this zeroes
+// ONLY the exposed-cycle views of those streams. Energies, transaction counters, and the
+// compute schedule are untouched: every port and wire still toggles per element and is
+// charged for it -- what changes is that the toggling no longer adds wall time. One
+// suppression point (rather than gating each of the dozen accrual sites) keeps the dense,
+// sparse, and descriptor paths from drifting apart on this semantic.
+void pe_t::suppress_streaming_cycles() {
+    { static int d=0; if(d<2) std::cerr << "[SSP] flag=" << operand_streams_pipelined << std::endl; d++; }
+    if(!operand_streams_pipelined) return;
+    for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
+        access_cycle_mac[i] = 0.0;
+        access_cycle_lb[i] = 0.0;
+        transfer_cycle[i] = 0.0;
+        cycle_mac_lb[i] = 0.0;
+    }
+    write_back_cycle_mac = 0.0;
+    write_back_cycle_lb = 0.0;
+    overlapped_transfer_cycle = 0.0;
 }
 
 // Transfer data from local buffer to MAC unit.

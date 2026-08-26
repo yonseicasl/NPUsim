@@ -178,6 +178,18 @@ public:
     // E20-4: passes where a prior partial sum existed but the output tile was already resident in
     // the MAC, so no LB->MAC read-back occurred. These used to be charged as reloads.
     size_t accumulator_retained_events;
+
+    // 2026-08-26 (NVDLA array streaming granularity, PE level): the MAC's operands live in
+    // per-lane REGISTERS fed in lockstep with compute -- the RTL sustains one op per lane per
+    // cycle with no exposed per-op transfer time (the fills amortize over the stream). With
+    // 1-element tiles the per-op packet-pipeline model instead exposes its fill every single
+    // op (~12 cycles/op on nv_small), which is an artifact of charging a stream one op at a
+    // time. Under this flag the MAC<->LB CYCLE axes are fully overlapped with compute --
+    // energies and every transaction counter stay exactly as before (the wires and ports
+    // still toggle per element). Default off: bit-identical to the historical model.
+    bool operand_streams_pipelined;
+    // Zero the exposed-cycle views of the MAC<->LB streams when pipelined (see pe.cc).
+    void suppress_streaming_cycles();
     // RE1: the accumulator's own energy, kept separate from the format-IP energy so it can be
     // attributed to the component that OWNS the accumulator. With edge_accumulation the
     // accumulator lives at the array edge, not in the PE, so this energy is handed to the

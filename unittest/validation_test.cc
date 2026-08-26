@@ -235,6 +235,23 @@ void validate_input_halo_contract() {
        filter_row.unique_elements != 16384 || filter_row.working_set_elements != 16384) {
         fail("legacy-R/S input halo union contract (union above the repetition fallback)");
     }
+
+    // 2026-08-26: the psum-residency rule is order-aware for SAME-LEVEL coexistence. The nvdla
+    // fixture above has reduction (C,R,S) and output (K,P,Q) loops at one legacy level: under
+    // output-stationary ordering the reduction completes per output tile (CACC-resident, no
+    // spill); under weight-stationary the output positions are revisited per slice (spill).
+    // The ACROSS-level case (conv3: C=64 at DRAM above GLB output loops) spills under BOTH
+    // orders -- nesting, not ordering.
+    mapping_table_t nvdla_table(nvdla);
+    if(nvdla_table.psum_must_leave_array(stationary_type_t::OUTPUT_STATIONARY) ||
+       !nvdla_table.psum_must_leave_array(stationary_type_t::WEIGHT_STATIONARY)) {
+        fail("same-level psum residency must follow the declared ordering");
+    }
+    mapping_table_t conv3_table(conv3);
+    if(!conv3_table.psum_must_leave_array(stationary_type_t::OUTPUT_STATIONARY) ||
+       !conv3_table.psum_must_leave_array(stationary_type_t::WEIGHT_STATIONARY)) {
+        fail("across-level psum spill must be order-independent");
+    }
 }
 
 void validate_runtime_datatypes() {
@@ -807,14 +824,36 @@ void validate_accelerator(config_t &config, const std::string &path) {
             if(lanes == 0 || units == 0) {
                 fail(path + ": [sfu] lanes/num_units_per_chip must be non-zero");
             }
-            if(queue_depth != 1) {
-                fail(path + ": [sfu] queue_depth must be 1 (serial contract)");
+            // Phase-5: 1 = serial contract, >= 2 = streaming through a bounded
+            // output-tile queue; 0 would mean no staging register at all.
+            if(queue_depth == 0) {
+                fail(path + ": [sfu] queue_depth must be at least 1");
             }
             std::string placement = "post_accumulator", fusion = "fused";
+            std::string residency = "dram";
             section.get_setting("placement", &placement);
             section.get_setting("fusion", &fusion);
+            section.get_setting("softmax_operand_residency", &residency);
             if(placement != "post_accumulator" || fusion != "fused") {
                 fail(path + ": [sfu] placement/fusion outside the initial contract");
+            }
+            if(residency != "dram" && residency != "glb") {
+                fail(path + ": [sfu] softmax_operand_residency must be dram or glb");
+            }
+            // Phase-6: approximation declarations must name a known mode. The per-op
+            // class legality (ALU vs transcendental) is enforced by sfu_t::init(); this
+            // catches typos at config-validation time for every shipped file.
+            for(const auto &setting : section.all_settings()) {
+                const std::string &key = setting.first;
+                if(key.size() > 14 &&
+                   key.compare(key.size() - 14, 14, "_approximation") == 0) {
+                    const std::string &mode = setting.second;
+                    if(mode != "exact" && mode != "piecewise" && mode != "lut" &&
+                       mode != "polynomial") {
+                        fail(path + ": [sfu] " + key + " = '" + mode +
+                             "' is not a known approximation mode");
+                    }
+                }
             }
         } else {
             fail(path + ": unknown accelerator section " + section.name);

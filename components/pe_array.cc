@@ -23,6 +23,11 @@ pe_array_t::pe_array_t(section_config_t /*m_section_config*/) :
     overlapped_transfer_cycle(0.0),
     u_weight_fold_fill_cycle(0.0),
     u_layer_setup_cycle(0.0),
+    writeback_injection_parallel(false),
+    array_fabric_separate(false),
+    u_stripe_transition_cycle(0.0),
+    u_stripe_transition_energy(0.0),
+    stripe_transitions(0),
     u_weight_fold_fill_energy(0.0),
     u_layer_setup_energy(0.0),
     weight_fold_events(0.0),
@@ -122,6 +127,10 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
     m_section_config.get_setting("weight_fold_fill_energy", &u_weight_fold_fill_energy);
     m_section_config.get_setting("layer_setup_energy", &u_layer_setup_energy);
     m_section_config.get_setting("layer_setup_cycle", &u_layer_setup_cycle);
+    m_section_config.get_setting("writeback_injection_parallel", &writeback_injection_parallel);
+    m_section_config.get_setting("array_fabric_separate", &array_fabric_separate);
+    m_section_config.get_setting("stripe_transition_cycle", &u_stripe_transition_cycle);
+    m_section_config.get_setting("stripe_transition_energy", &u_stripe_transition_energy);
     // V3: array-edge output accumulation (Gemmini-style accumulator).
     m_section_config.get_setting("edge_accumulation", &edge_accumulation);
 }
@@ -335,7 +344,14 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
                                                        /* multicast = */ false);
     const double topology_energy = noc_energy*topology_cost.link_traversals;
     const double link_fill_cycles = topology_cost.latency_fill_hops*noc_cycle;
-    transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*noc_cycle + link_fill_cycles;
+    // Parallel injection: the per-PE write-back links operate simultaneously, so the pass's
+    // wall time is ONE PE's stream, not the concatenation of all of them. Charging it on the
+    // first PE's call (every active pass includes pes[0]) gives exactly max-over-PEs time.
+    // Energy and the transaction counters below stay PER CALL: each dedicated wire still
+    // physically toggles once per element, whichever model the time uses.
+    if(!writeback_injection_parallel || source_pe == pes[0]) {
+        transfer_cycle[data_type_t::OUTPUT] += timing.link_transactions*noc_cycle + link_fill_cycles;
+    }
     transfer_energy[data_type_t::OUTPUT] += timing.link_transactions*topology_energy;
     if(timing.pipeline_transactions > std::numeric_limits<unsigned>::max()) {
         std::cerr << "Error: PE-array write-back transaction count overflow" << std::endl;
@@ -646,12 +662,24 @@ void pe_array_t::reset() {
 
 std::string pe_array_t::describe_noc_link_contract() const {
     return std::string("distribution -- ") + spatial_noc_link_contract(noc_type, true) +
-           "; write-back -- " + spatial_noc_link_contract(writeback_noc_type(), false);
+           "; write-back -- " + spatial_noc_link_contract(writeback_noc_type(), false) +
+           (writeback_injection_parallel
+                ? "; write-back injection PARALLEL (dedicated per-PE links: streams overlap in"
+                  " time, every wire traversal still costs energy)" : "") +
+           (array_fabric_separate
+                ? "; fabric SEPARATE per datatype (link axis = max across streams)"
+                : "; fabric shared (link axis = sum across streams)");
 }
 
 // E20-3: record whether a psum may stay in the array for this layer. Retention is legitimate only
 // when no reduction dimension is split above the array; otherwise the array walks every other
 // output tile of the outer level and comes back, which is a physical read-back and write-out.
 void pe_array_t::set_psum_retention_scope(scheduler_t *m_scheduler) {
-    psum_retention_valid = !m_scheduler->mapping_table->psum_must_leave_array();
+    // The ordering authority for the legacy-GLB loops is THIS array's stationary type -- the
+    // scheduler computes the GLB-level offset sequence from it (scheduler.cc, pe_array branch).
+    psum_retention_valid =
+        !m_scheduler->mapping_table->psum_must_leave_array(stationary_type);
+    // Stripe-transition count for this layer: one bubble per legacy (C,R,S)-loop iteration per
+    // legacy output-row (P) step. Computed here because request_data() has no scheduler.
+    stripe_transitions = m_scheduler->mapping_table->stripe_transition_count();
 }

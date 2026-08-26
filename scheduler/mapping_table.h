@@ -70,7 +70,22 @@ public:
     // reduction loop above the array has an output-bearing loop inside it, so the array walks
     // other output tiles and has to come back. A reduction above the array is NOT sufficient on
     // its own -- see the definition for why that weaker test misread every validated GEMM.
-    bool psum_must_leave_array() const;
+    //
+    // 2026-08-26: takes the array<->GLB ordering authority ([spatial_arch] pe_stationary --
+    // scheduler.cc orders the legacy-GLB offsets by exactly this) for the SAME-LEVEL case:
+    // when reduction and output loops share one level, the within-level order decides, and it
+    // is declared, not unknown. OUTPUT_STATIONARY completes each output tile's reduction before
+    // advancing (nv_small: CACC holds the stripe's partials at the array edge), so the psum
+    // never crosses the GLB. Any other order keeps the conservative spill. The ACROSS-level
+    // case (reduction at one level, output loops nested inside it at another) is nesting, not
+    // ordering, and stays unconditional.
+    bool psum_must_leave_array(stationary_type_t same_level_order) const;
+
+    // 2026-08-26: how many (reduction-slice, output-row) pairs the legacy-GLB loops schedule --
+    // legacy C*R*S*P. One fixed stripe-transition bubble is paid per pair when the architecture
+    // declares stripe_transition_cycle (see pe_array.h). Kg-independent by design: the nv_small
+    // measurement's K16/K270 twin varies weight blocks 17x with a near-identical residual.
+    size_t stripe_transition_count() const;
 
     // Calculate the number of tile-granular data 
     void calculate_num_tile_granular_data(component_type_t m_component_type, std::vector<unsigned> *m_tile_granumlar_data);

@@ -44,6 +44,7 @@ enum sfu_op_t {
     SFU_OP_HSWISH,
     SFU_OP_GELU,         // tanh approximation
     SFU_OP_SILU,         // x * sigmoid(x) (a.k.a. swish)
+    SFU_OP_LOGGY,        // 2*sigmoid(x) - 1 (Darknet/Nebula loggy)
     /* softmax micro-operations */
     SFU_OP_EXP,
     SFU_OP_RECIP,
@@ -54,7 +55,8 @@ enum sfu_op_t {
 };
 
 // Per-operation timing/energy profile, parsed from the [sfu] section as
-//   <name>_pipeline_latency / <name>_initiation_interval / sfu_op_energy_<name>.
+//   <name>_pipeline_latency / <name>_initiation_interval / sfu_op_energy_<name>
+//   (+ Phase-6: <name>_approximation).
 // The declared flags keep "defaulted 1/1, unpriced" distinguishable from a calibrated
 // profile: an op that fires on a defaulted profile is reported UNCALIBRATED, and an op
 // that fires without a declared energy key becomes an unpriced active event.
@@ -62,12 +64,20 @@ struct sfu_op_profile_t {
     const char *name;
     bool bypass;               // linear: modeled as free passthrough
     bool micro_op;             // softmax building block, not a layer-level activation
+    // Phase-6: is this a transcendental operation (LUT/polynomial hardware) or a
+    // piecewise-linear ALU operation? Decides which approximation modes are legal.
+    bool transcendental;
     double pipeline_latency;
     double initiation_interval;
     double op_energy;
     bool latency_declared;
     bool ii_declared;
     bool energy_declared;
+    // Phase-6: declared implementation the profile describes. ALU-class operations
+    // accept {exact, piecewise}; transcendental ones accept {lut, polynomial,
+    // piecewise}. Anything else -- and any declaration on the linear bypass -- is a
+    // config error. Empty = not declared (allowed outside strict_profiles).
+    std::string approximation;
 };
 
 // One SFU invocation event: cycles, operation counts, internal traffic and dynamic
@@ -128,7 +138,13 @@ public:
     static const char *op_name(sfu_op_t m_op);
 
     // Element-wise activation over m_valid_elements final output elements on this chip.
-    sfu_invocation_t elementwise_invocation(sfu_op_t m_op, size_t m_valid_elements) const;
+    // Phase-2: m_commit_events is the number of final_output_tile events the elements
+    // arrive in (from the multi-chip output-commit boundary). Each commit is one SFU
+    // invocation -- its own pipeline setup and fill -- and the commits drain serially,
+    // so busy = sum over events of [setup + latency + (chunks_e - 1) x II]. One event
+    // (the default) is the layer-granular aggregate model.
+    sfu_invocation_t elementwise_invocation(sfu_op_t m_op, size_t m_valid_elements,
+                                            size_t m_commit_events = 1) const;
     // Standalone softmax: m_rows independent softmax vectors of length m_row_length,
     // decomposed into max -> subtract -> exp -> sum -> reciprocal -> normalize.
     sfu_invocation_t softmax_invocation(size_t m_rows, size_t m_row_length) const;
@@ -145,6 +161,20 @@ public:
     double get_setup_cycle() const { return setup_cycle; }
     double get_static_energy_per_cycle() const { return u_static_energy; }
     bool static_energy_declared() const { return static_energy_is_declared; }
+    // Phase-7: where the standalone-softmax operand tensor lives -- "dram" (materialized
+    // round trip through the memory hierarchy; matches the simulator's layer flow, which
+    // commits every layer's output off-chip) or "glb" (retained on-chip by a fused
+    // schedule; requires the tensor to fit).
+    const std::string &get_softmax_operand_residency() const { return softmax_operand_residency; }
+    // Phase-8: where the timing profile's numbers came from (RTL commit, trace set,
+    // tool versions). Empty = not declared = the profile is not calibration-grade.
+    const std::string &get_profile_reference() const { return profile_reference; }
+    // Phase-6: precision qualification. `profile_precision` declares the operand format
+    // the timing profile was characterized for; a mismatch with the runtime accumulator
+    // format (the precision the SFU actually processes) fails fast under
+    // strict_profiles and otherwise marks every invocation UNCALIBRATED, with the note
+    // below carried into the layer report.
+    const std::string &get_precision_note() const { return precision_note; }
     const sfu_op_profile_t &profile(sfu_op_t m_op) const { return profiles[m_op]; }
 
     unsigned index;
@@ -163,11 +193,20 @@ private:
 
     unsigned num_units;             // parallel SFU pipelines per chip
     unsigned lanes;                 // elements one pipeline accepts per initiation
-    unsigned queue_depth;           // producer->SFU tile queue; 1 = serial contract
+    // Producer->SFU output-tile queue depth (Phase 5). 1 = the serial contract (the SFU
+    // window is appended to the critical path); >= 2 = the SFU joins the per-tile
+    // pipeline timeline as a post-processing stage with this staging depth, so its work
+    // overlaps the producer up to the queue's back-pressure limit.
+    unsigned queue_depth;
     double setup_cycle;             // per-invocation setup cycles
     bool strict_profiles;           // fail instead of defaulting an undeclared profile
     std::string placement;          // post_accumulator only (initial contract)
     std::string fusion;             // fused only (initial contract)
+    std::string softmax_operand_residency;   // "dram" (default) | "glb"
+    std::string profile_reference;           // Phase-8 provenance (free text)
+    std::string profile_precision;           // Phase-6: format the profile describes
+    bool precision_mismatch;                 // declared precision != runtime accumulator
+    std::string precision_note;              // report text for a mismatch
 
     double u_read_energy;           // per ingress element
     double u_write_energy;          // per egress element

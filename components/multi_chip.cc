@@ -14,6 +14,8 @@ multi_chip_t::multi_chip_t(section_config_t m_section_config) :
     nop_multicast(true),
     output_cast_bytes(0),
     output_cast_energy(0.0),
+    final_output_tile_events(0),
+    final_output_tile_elements(0),
     equal_output_tile(false),
     duplicated_input(0),
     exist_temporal_buffer(true),
@@ -607,6 +609,10 @@ void multi_chip_t::account_output_writeback_to_dram() {
     dram->account_row_activations(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
     // RE1: the output is committed in OUTPUT precision here, exactly once per element (DR6/T1), so
     // this is where the final cast/pack is charged.
+    // Phase-2 (plan_sfu.md): ... and therefore where a final_output_tile event fires --
+    // the tile's reduction is complete and its value is being committed.
+    final_output_tile_events += 1;
+    final_output_tile_elements += tile_size[data_type_t::OUTPUT];
     {
         const size_t cast_bytes = runtime_datatypes().storage_bytes(data_type_t::OUTPUT,
                                                                    tile_size[data_type_t::OUTPUT]);
@@ -2001,6 +2007,9 @@ void multi_chip_t::reset() {
     output_cast_bytes = 0;
     output_cast_energy = 0.0;
     output_cast_cycle = 0.0;
+    // Phase-2: final_output_tile events reset with the layer.
+    final_output_tile_events = 0;
+    final_output_tile_elements = 0;
     std::fill_n(data, (memory_size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
 
     initial = true;

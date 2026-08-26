@@ -144,6 +144,14 @@ public:
     // Both default to 0 (off) so legacy configurations are unchanged.
     double u_weight_fold_fill_cycle;                        // Cycles per weight-element residency (fold)
     double u_layer_setup_cycle;                             // One-time per-layer setup cycles
+    // 2026-08-26 (NVDLA per-stripe overhead): a fixed schedule bubble paid once per
+    // (reduction-slice, output-row) pair the legacy-GLB loops iterate -- i.e. per iteration of
+    // the legacy C*R*S loops per legacy P step. Kg-independent by measurement (the nv_small
+    // K16/K270 twin pair changes weight blocks 17x with a near-identical residual). 0 = not
+    // modeled; the transition count is only reported when the cycle cost is declared.
+    double u_stripe_transition_cycle;
+    double u_stripe_transition_energy;
+    size_t stripe_transitions;                              // legacy C*R*S*P, set per layer
     // E5: the ENERGY counterparts of those two latency bubbles. Calibrating the latency of a
     // weight reload or a layer setup used to make the schedule more accurate while leaving the
     // same activity FREE on the energy side (leakage aside) -- so the more precise the latency
@@ -193,6 +201,22 @@ public:
     // for a tile completes before the array moves on -- see mapping_table_t::psum_must_leave_array().
     // Recorded once per layer, where a scheduler is in hand, because request_data() has none.
     bool psum_retention_valid;
+
+    // 2026-08-26 (NVDLA array streaming granularity). Two structural declarations of the
+    // array fabric, both defaulting to the historical shared-serialized-bus semantics so
+    // every existing config is bit-identical:
+    //
+    //   writeback_injection_parallel -- the PEs' OUTPUT write-back travels DEDICATED per-PE
+    //     links (nv_small: each MAC lane's product is a wire into the CMAC adder tree /
+    //     mac2accu bus), so the per-PE streams overlap in TIME while every wire traversal
+    //     still costs its energy and is still counted as a transaction. false = the historical
+    //     shared-medium model (Eyeriss GIN-style), which serializes them.
+    //   array_fabric_separate -- the array's distribution/collection streams ride SEPARATE
+    //     per-datatype buses (nv_small: dat 8B + wt 64B + accu are three fabrics), so the
+    //     link busy axis combines them by MAX; false = one shared fabric (sum). Mirrors the
+    //     GLB's shared/separate port rule (T10).
+    bool writeback_injection_parallel;
+    bool array_fabric_separate;
     void set_psum_retention_scope(scheduler_t *m_scheduler);
 
     // E20-3b: one psum store into the GLB, and the end-of-layer flush of the last resident tile.

@@ -134,12 +134,77 @@ void run_order_independence() {
                  "chip order changed the GLB access axis");
 }
 
+// Phase-5 (plan_sfu.md): SFU streaming overlap on the per-tile timeline, against hand
+// calculations. Producer: PE-only, per-tile cost p = 10 over T = 4 tiles (pre-scale
+// computation_cycle = 10, scaled x4), producer-only latency 40.
+//
+//   serial (depth 1), S = 20                : latency 40 + 20 = 60, all exposed, stall 20
+//   streaming (depth 2), S = 8, s = 2 < p   : latency = T*p + s = 42, exposed 2, hidden 6,
+//                                             no back-pressure
+//   streaming (depth 2), S = 80, s = 20 > p : latency = p + T*s = 90 (fill + bottleneck),
+//                                             exposed 50, hidden 30; the PE start times
+//                                             are pushed by finish_sfu(k-2), which delays
+//                                             tiles 2 and 3 by 10 each -> stall 20
+//   streaming (depth 2), S = 8, but ALL tiles reduce into ONE output (output reps 1):
+//                                             the commit releases on the LAST tile, so
+//                                             latency = T*p + S = 48 and nothing hides
+void run_sfu_streaming_cases() {
+    struct sfu_case_t {
+        unsigned queue_depth;
+        double sfu_busy;
+        unsigned output_repetitions;
+        double expected_latency;
+        double expected_serial;
+        double expected_hidden;
+        double expected_stall;
+        const char *label;
+    };
+    const sfu_case_t cases[] = {
+        {1, 20.0, 4, 60.0, 20.0,  0.0, 20.0, "serial contract appends the SFU window"},
+        {2,  8.0, 4, 42.0,  2.0,  6.0,  0.0, "fast streaming SFU hides behind the producer"},
+        {2, 80.0, 4, 90.0, 50.0, 30.0, 20.0, "slow streaming SFU back-pressures the producer"},
+        {2,  8.0, 1, 48.0,  8.0,  0.0,  0.0, "reduction-bunched outputs release at the end"},
+    };
+    for(unsigned i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+        const sfu_case_t &sfu_case = cases[i];
+        stats_t stats;
+        stats.computation_cycle = 10.0;
+        stats.timeline_physical_macs = 1.0;
+
+        sfu_invocation_t invocation;
+        invocation.operation = "relu";
+        invocation.valid_elements = 64;
+        invocation.operations = 64;
+        invocation.busy_cycle = sfu_case.sfu_busy;
+        stats.set_sfu_activation(invocation, 1, 16, 0.0, sfu_case.queue_depth);
+
+        std::vector<unsigned> datatype_repetitions(3, 1);
+        datatype_repetitions[data_type_t::OUTPUT] = sfu_case.output_repetitions;
+        stats.scale_serial_repetitions(4, datatype_repetitions);
+
+        const std::string label(sfu_case.label);
+        expect_close(stats.layer_latency, sfu_case.expected_latency,
+                     label + ": critical-path latency");
+        expect_close(stats.sfu_busy_cycle, sfu_case.sfu_busy, label + ": SFU busy window");
+        expect_close(stats.sfu_serial_cycle, sfu_case.expected_serial,
+                     label + ": exposed (critical-path) SFU cycles");
+        expect_close(stats.sfu_hidden_cycle, sfu_case.expected_hidden,
+                     label + ": hidden SFU cycles");
+        expect_close(stats.sfu_stall_cycle, sfu_case.expected_stall,
+                     label + ": producer back-pressure stall");
+        // Visibility identity: the window is exactly exposed + hidden.
+        expect_close(stats.sfu_serial_cycle + stats.sfu_hidden_cycle, sfu_case.sfu_busy,
+                     label + ": exposed + hidden must equal the SFU window");
+    }
+}
+
 } // namespace
 
 int main() {
     run_case(memory_type_t::SEPARATE, 60.0, "separate GLB");
     run_case(memory_type_t::SHARED, 100.0, "shared GLB");
     run_order_independence();
+    run_sfu_streaming_cases();
     if(failures != 0) {
         std::cerr << failures << " stats timeline check(s) FAILED" << std::endl;
         return 1;

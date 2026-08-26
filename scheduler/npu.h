@@ -97,6 +97,11 @@ protected:
     // Standalone softmax layer executed on the SFU's multi-pass microprogram (Phase 7).
     void run_standalone_softmax(unsigned m_index, const std::string &m_accelerator_config,
                                 const std::string &m_network_config);
+    // Phase-7: cost of streaming the softmax operand tensor between the memory hierarchy
+    // and the SFU, per [sfu] softmax_operand_residency, from the live components' unit
+    // costs (dram: DRAM device + off-chip link + GLB staging/feed ports; glb: GLB
+    // feed/result ports only, with a capacity fail-fast).
+    sfu_operand_stream_t softmax_operand_stream(size_t m_elements);
     unsigned num_processors;                        // The number of on-chip processors.
     unsigned num_pes;                               // The number of processing elements for each processors.
     compression_type_t compression_type;            // Compression type : Dense, CSR, CSC, SparseMap

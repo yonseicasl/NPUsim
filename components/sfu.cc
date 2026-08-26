@@ -89,6 +89,8 @@ sfu_t::sfu_t(section_config_t m_section_config) :
     strict_profiles(false),
     placement("post_accumulator"),
     fusion("fused"),
+    softmax_operand_residency("dram"),
+    precision_mismatch(false),
     u_read_energy(0.0),
     u_write_energy(0.0),
     u_setup_energy(0.0),
@@ -107,34 +109,41 @@ sfu_t::~sfu_t() {
 void sfu_t::init(section_config_t m_section_config) {
 
     // Profile table. Name doubles as the config key stem (<name>_pipeline_latency,
-    // <name>_initiation_interval, sfu_op_energy_<name>).
-    static const struct { const char *name; bool bypass; bool micro_op; } op_table[NUM_SFU_OPS] = {
-        { "linear",   true,  false },
-        { "relu",     false, false },
-        { "leaky",    false, false },
-        { "elu",      false, false },
-        { "sigmoid",  false, false },
-        { "tanh",     false, false },
-        { "hsigmoid", false, false },
-        { "hswish",   false, false },
-        { "gelu",     false, false },
-        { "silu",     false, false },
-        { "exp",      false, true  },
-        { "recip",    false, true  },
-        { "vmax",     false, true  },
-        { "vadd",     false, true  },
-        { "vmul",     false, true  },
+    // <name>_initiation_interval, sfu_op_energy_<name>, <name>_approximation).
+    // Phase-6: `transcendental` marks LUT/polynomial hardware (vs piecewise ALU ops)
+    // and decides which approximation declarations are legal.
+    static const struct {
+        const char *name; bool bypass; bool micro_op; bool transcendental;
+    } op_table[NUM_SFU_OPS] = {
+        { "linear",   true,  false, false },
+        { "relu",     false, false, false },
+        { "leaky",    false, false, false },
+        { "elu",      false, false, true  },
+        { "sigmoid",  false, false, true  },
+        { "tanh",     false, false, true  },
+        { "hsigmoid", false, false, false },
+        { "hswish",   false, false, false },
+        { "gelu",     false, false, true  },
+        { "silu",     false, false, true  },
+        { "loggy",    false, false, true  },
+        { "exp",      false, true,  true  },
+        { "recip",    false, true,  true  },
+        { "vmax",     false, true,  false },
+        { "vadd",     false, true,  false },
+        { "vmul",     false, true,  false },
     };
     for(unsigned i = 0; i < NUM_SFU_OPS; ++i) {
         profiles[i].name = op_table[i].name;
         profiles[i].bypass = op_table[i].bypass;
         profiles[i].micro_op = op_table[i].micro_op;
+        profiles[i].transcendental = op_table[i].transcendental;
         profiles[i].pipeline_latency = 1.0;
         profiles[i].initiation_interval = 1.0;
         profiles[i].op_energy = 0.0;
         profiles[i].latency_declared = false;
         profiles[i].ii_declared = false;
         profiles[i].energy_declared = false;
+        profiles[i].approximation.clear();
     }
 
     m_section_config.get_setting("num_units_per_chip", &num_units);
@@ -144,6 +153,8 @@ void sfu_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("strict_profiles", &strict_profiles);
     m_section_config.get_setting("placement", &placement);
     m_section_config.get_setting("fusion", &fusion);
+    m_section_config.get_setting("softmax_operand_residency", &softmax_operand_residency);
+    m_section_config.get_setting("profile_reference", &profile_reference);
 
     // Fail-fast contract checks (plan: 0 lane, 0 II, unsupported placement/fusion are
     // config errors, not silent defaults).
@@ -155,10 +166,18 @@ void sfu_t::init(section_config_t m_section_config) {
         std::cerr << "Error: [sfu] lanes must be non-zero" << std::endl;
         exit(1);
     }
-    if(queue_depth != 1) {
-        std::cerr << "Error: [sfu] queue_depth = " << queue_depth
-                  << " is not supported yet; the initial SFU contract is the serial"
-                  << " queue_depth = 1 model (streaming overlap is a later phase)" << std::endl;
+    // Phase-5 streaming contract: depth 1 keeps the serial model, depth >= 2 lets the
+    // producer run ahead by depth-1 output tiles. Depth 0 would mean no staging register
+    // at all, which cannot transfer a tile.
+    if(queue_depth == 0) {
+        std::cerr << "Error: [sfu] queue_depth must be at least 1 (1 = serial contract,"
+                  << " >= 2 = streaming overlap through a bounded output-tile queue)" << std::endl;
+        exit(1);
+    }
+    if(softmax_operand_residency != "dram" && softmax_operand_residency != "glb") {
+        std::cerr << "Error: [sfu] softmax_operand_residency = '" << softmax_operand_residency
+                  << "' is not supported; use 'dram' (materialized round trip) or 'glb'"
+                  << " (on-chip retained, must fit the global buffer)" << std::endl;
         exit(1);
     }
     if(setup_cycle < 0.0) {
@@ -224,12 +243,63 @@ void sfu_t::init(section_config_t m_section_config) {
             p.op_energy = value;
             p.energy_declared = true;
         }
+        // Phase-6: approximation mode. ALU-class ops are piecewise/exact by nature;
+        // transcendental ops are implemented as a LUT, a polynomial expansion, or a
+        // piecewise-linear approximation. Anything outside the op's legal set -- and any
+        // declaration on the linear bypass -- fails fast (plan Phase-6 gate).
+        const std::string approximation_key = std::string(p.name) + "_approximation";
+        std::string approximation;
+        if(m_section_config.get_setting(approximation_key, &approximation)) {
+            if(p.bypass) {
+                std::cerr << "Error: [sfu] " << approximation_key << " -- linear is a"
+                          << " bypass and implements no approximation" << std::endl;
+                exit(1);
+            }
+            const bool legal = p.transcendental
+                ? (approximation == "lut" || approximation == "polynomial" ||
+                   approximation == "piecewise")
+                : (approximation == "exact" || approximation == "piecewise");
+            if(!legal) {
+                std::cerr << "Error: [sfu] " << approximation_key << " = '" << approximation
+                          << "' is not supported for '" << p.name << "' ("
+                          << (p.transcendental ? "transcendental: lut, polynomial, piecewise"
+                                               : "ALU-class: exact, piecewise")
+                          << ")" << std::endl;
+                exit(1);
+            }
+            p.approximation = approximation;
+        }
     }
 
     read_energy_is_declared = m_section_config.get_setting("sfu_read_energy", &u_read_energy);
     write_energy_is_declared = m_section_config.get_setting("sfu_write_energy", &u_write_energy);
     setup_energy_is_declared = m_section_config.get_setting("sfu_setup_energy", &u_setup_energy);
     static_energy_is_declared = m_section_config.get_setting("sfu_static_energy", &u_static_energy);
+
+    // Phase-6: precision qualification. The SFU processes the final ACCUMULATOR value
+    // (post-accumulator, pre-cast), so a declared profile precision is checked against
+    // the runtime accumulator format. parse_data_format() fails fast on an unknown name
+    // and canonicalizes aliases (float32 -> fp32) so the comparison is on canonical
+    // names. strict_profiles turns a mismatch into a config error; otherwise every
+    // invocation is marked UNCALIBRATED and the note reaches the layer report.
+    if(m_section_config.get_setting("profile_precision", &profile_precision)) {
+        const tensor_format_t declared = parse_data_format(profile_precision);
+        profile_precision = declared.name;
+        const std::string &runtime = runtime_datatypes().accumulator_format().name;
+        if(profile_precision != runtime) {
+            if(strict_profiles) {
+                std::cerr << "Error: [sfu] profile_precision = " << profile_precision
+                          << " but the runtime accumulator format is " << runtime
+                          << "; strict_profiles requires a profile characterized for the"
+                          << " precision actually running" << std::endl;
+                exit(1);
+            }
+            precision_mismatch = true;
+            precision_note = "SFU profile characterized for " + profile_precision +
+                             " but the runtime accumulator is " + runtime +
+                             " -- timing UNCALIBRATED for this precision";
+        }
+    }
 }
 
 void sfu_t::reset() {
@@ -251,6 +321,7 @@ bool sfu_t::op_from_name(const std::string &m_name, sfu_op_t *m_op) {
         { "gelu",     SFU_OP_GELU },
         { "silu",     SFU_OP_SILU },
         { "swish",    SFU_OP_SILU },
+        { "loggy",    SFU_OP_LOGGY },
     };
     for(unsigned i = 0; i < sizeof(aliases)/sizeof(aliases[0]); ++i) {
         if(m_name == aliases[i].name) {
@@ -264,7 +335,7 @@ bool sfu_t::op_from_name(const std::string &m_name, sfu_op_t *m_op) {
 const char *sfu_t::op_name(sfu_op_t m_op) {
     static const char *names[NUM_SFU_OPS] = {
         "linear", "relu", "leaky", "elu", "sigmoid", "tanh", "hsigmoid", "hswish",
-        "gelu", "silu", "exp", "recip", "vmax", "vadd", "vmul",
+        "gelu", "silu", "loggy", "exp", "recip", "vmax", "vadd", "vmul",
     };
     return names[m_op];
 }
@@ -285,12 +356,26 @@ void sfu_t::require_profile(const sfu_op_profile_t &m_profile) const {
                   << m_profile.name << std::endl;
         exit(1);
     }
+    // Phase-6: under strict profiles a transcendental op must also state HOW it is
+    // implemented -- a latency without its approximation mode is half a profile.
+    if(m_profile.transcendental && m_profile.approximation.empty()) {
+        std::cerr << "Error: [sfu] strict_profiles = 1 and transcendental operation '"
+                  << m_profile.name << "' is active without a declared "
+                  << m_profile.name << "_approximation (lut, polynomial or piecewise)"
+                  << std::endl;
+        exit(1);
+    }
 }
 
 void sfu_t::note_profile_use(const sfu_op_profile_t &m_profile, size_t m_operations,
                              sfu_invocation_t *m_invocation) const {
     if(m_operations == 0) return;
     if(!m_profile.latency_declared || !m_profile.ii_declared) {
+        m_invocation->timing_calibrated = false;
+    }
+    // Phase-6: a profile characterized for a different precision than the runtime
+    // accumulator cannot ground a calibrated cycle claim.
+    if(precision_mismatch) {
         m_invocation->timing_calibrated = false;
     }
     if(!m_profile.energy_declared) {
@@ -346,7 +431,8 @@ void sfu_t::charge_traffic(size_t m_reads, size_t m_writes, size_t m_setups,
     }
 }
 
-sfu_invocation_t sfu_t::elementwise_invocation(sfu_op_t m_op, size_t m_valid_elements) const {
+sfu_invocation_t sfu_t::elementwise_invocation(sfu_op_t m_op, size_t m_valid_elements,
+                                               size_t m_commit_events) const {
     sfu_invocation_t invocation;
     const sfu_op_profile_t &profile = profiles[m_op];
     invocation.operation = profile.bypass ? std::string(profile.name) + " (bypass)"
@@ -359,30 +445,55 @@ sfu_invocation_t sfu_t::elementwise_invocation(sfu_op_t m_op, size_t m_valid_ele
     require_profile(profile);
 
     invocation.valid_elements = m_valid_elements;
-    // Output chunks are distributed evenly across the chip's parallel units; the chip's
-    // SFU window is the busiest unit's window (plan cycle model).
-    const size_t base = m_valid_elements/num_units;
-    const size_t remainder = m_valid_elements % num_units;
-    const size_t max_share = base + (remainder != 0 ? 1 : 0);
-    size_t total_chunks = 0;
-    for(unsigned u = 0; u < num_units; ++u) {
-        const size_t share = base + (u < remainder ? 1 : 0);
-        total_chunks += ceil_div(share, lanes);
+    // Phase-2: the valid elements arrive in m_commit_events final_output_tile events
+    // (evenly split -- at most two event sizes), each a serial SFU invocation with its
+    // own setup and pipeline fill. Within an event the chip's parallel units split the
+    // event's elements; the event's window follows the busiest unit.
+    const size_t events = std::max<size_t>(1, std::min(m_commit_events, m_valid_elements));
+    const size_t event_base = m_valid_elements/events;
+    const size_t event_remainder = m_valid_elements % events;
+    double worst_tail_utilization = 1.0;
+    size_t setups = 0;
+    // At most two distinct event sizes: `count` events of `elements` each.
+    const struct { size_t elements; size_t count; } event_shapes[2] = {
+        { event_base + 1, event_remainder },
+        { event_base,     events - event_remainder },
+    };
+    for(unsigned s = 0; s < 2; ++s) {
+        const size_t elements = event_shapes[s].elements;
+        const size_t count = event_shapes[s].count;
+        if(count == 0 || elements == 0) continue;
+        const size_t unit_base = elements/num_units;
+        const size_t unit_remainder = elements % num_units;
+        const size_t max_share = unit_base + (unit_remainder != 0 ? 1 : 0);
+        size_t event_chunks = 0;
+        for(unsigned u = 0; u < num_units; ++u) {
+            const size_t share = unit_base + (u < unit_remainder ? 1 : 0);
+            event_chunks += ceil_div(share, lanes);
+        }
+        invocation.chunks += count*event_chunks;
+        invocation.busy_cycle += static_cast<double>(count)*
+                                 invocation_cycles(profile, ceil_div(max_share, lanes));
+        const size_t active_units = unit_base > 0 ? num_units : unit_remainder;
+        setups += count*active_units;
+        // Tail utilization of the busiest unit's final chunk; report the WORST event
+        // shape so per-tile rounding loss stays visible.
+        const size_t tail = max_share % lanes;
+        const double utilization = tail == 0 ? 1.0
+            : static_cast<double>(tail)/static_cast<double>(lanes);
+        worst_tail_utilization = std::min(worst_tail_utilization, utilization);
     }
-    invocation.chunks = total_chunks;
-    invocation.busy_cycle = invocation_cycles(profile, ceil_div(max_share, lanes));
-    // Tail utilization of the busiest unit's final chunk -- the elements were just split
-    // across units, so the whole-share remainder would misstate multi-unit occupancy.
-    const size_t tail = max_share % lanes;
-    invocation.tail_lane_utilization = max_share == 0 ? 0.0
-        : (tail == 0 ? 1.0 : static_cast<double>(tail)/static_cast<double>(lanes));
+    invocation.tail_lane_utilization = worst_tail_utilization;
 
-    const size_t active_units = base > 0 ? num_units : remainder;
     note_profile_use(profile, m_valid_elements, &invocation);
     // Fused post-accumulator contract: every valid element is read once from the final
     // accumulator value and written once toward the output cast, at ACCUMULATOR
     // precision -- the cast to the output format happens after the SFU.
-    charge_traffic(m_valid_elements, m_valid_elements, active_units, &invocation);
+    charge_traffic(m_valid_elements, m_valid_elements, setups, &invocation);
+    // Internal transactions are lane-wide transfers, one per issued chunk: per-event
+    // tail rounding makes this >= ceil(elements/lanes), so mirror the chunk count.
+    invocation.ingress_transactions = invocation.chunks;
+    invocation.egress_transactions = invocation.chunks;
     return invocation;
 }
 
@@ -522,6 +633,7 @@ float sfu_t::evaluate(sfu_op_t m_op, float m_x) {
             // tanh approximation (Hendrycks & Gimpel).
             return 0.5f*m_x*(1.0f + std::tanh(0.7978845608f*(m_x + 0.044715f*m_x*m_x*m_x)));
         case SFU_OP_SILU:     return m_x/(1.0f + std::exp(-m_x));
+        case SFU_OP_LOGGY:    return 2.0f/(1.0f + std::exp(-m_x)) - 1.0f;
         case SFU_OP_EXP:      return std::exp(m_x);
         case SFU_OP_RECIP:    return 1.0f/m_x;
         default:              return m_x;
@@ -546,7 +658,19 @@ void sfu_t::print_specification() {
     std::cout << "Units per chip     :" << std::setw(24) << num_units << std::endl;
     std::cout << "Lanes per unit     :" << std::setw(24) << lanes << std::endl;
     std::cout << "Queue depth        :" << std::setw(24) << queue_depth
-              << " (serial contract)" << std::endl;
+              << (queue_depth == 1 ? " (serial contract)"
+                                   : " (streaming: producer may run ahead)") << std::endl;
+    std::cout << "Softmax operand    :" << std::setw(24) << softmax_operand_residency
+              << (softmax_operand_residency == "dram" ? " (materialized round trip)"
+                                                      : " (on-chip retained)") << std::endl;
+    std::cout << "Profile provenance : "
+              << (profile_reference.empty()
+                  ? "NOT DECLARED (timing numbers are not calibration-grade)"
+                  : profile_reference) << std::endl;
+    std::cout << "Profile precision  : "
+              << (profile_precision.empty() ? "not declared" : profile_precision)
+              << (precision_mismatch ? "  [MISMATCH vs runtime accumulator -- UNCALIBRATED]"
+                                     : "") << std::endl;
     std::cout << "Placement          :" << std::setw(24) << placement << std::endl;
     std::cout << "Fusion             :" << std::setw(24) << fusion << std::endl;
     std::cout << "Setup cycle        :" << std::setw(24) << std::setprecision(1)
@@ -578,6 +702,7 @@ void sfu_t::print_specification() {
                   << (p.ii_declared ? format_value(p.initiation_interval) : std::string("-"))
                   << "/"
                   << (p.energy_declared ? format_value(p.op_energy) : std::string("-"))
+                  << " [" << (p.approximation.empty() ? "approx?" : p.approximation) << "]"
                   << (p.micro_op ? "  [softmax micro-op]" : "") << std::endl;
     }
     std::cout << std::endl;

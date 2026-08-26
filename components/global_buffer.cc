@@ -217,8 +217,14 @@ void global_buffer_t::account_descriptor_dense_transfer(data_type_t type) {
     transfer_packet_groups_t groups = timing.groups;
     if(bypassed) groups = groups.without_source();
     if(!pe_array->exist_temporal_buffer) groups = groups.without_destination();
-    cycle_pe_array_global_buffer[type] += pipelined_transfer_cycles(
-        groups, u_read_cycle[type], u_transfer_cycle, pe_array->u_write_cycle[type]);
+    if(streams_pipelined) {
+        // Streamed boundary: only the marginal beats add wall time; the stage fill is a
+        // one-time cost already represented in the layer's pipeline composition.
+        cycle_pe_array_global_buffer[type] += static_cast<double>(timing.link_transactions)*u_transfer_cycle;
+    } else {
+        cycle_pe_array_global_buffer[type] += pipelined_transfer_cycles(
+            groups, u_read_cycle[type], u_transfer_cycle, pe_array->u_write_cycle[type]);
+    }
     pe_array->skip_transfer[type] = false;
 }
 
@@ -1774,6 +1780,8 @@ void separate_buffer_t::init(section_config_t m_section_config) {
 
     // Initialize global buffer type (double buffer or single buffer)
     m_section_config.get_setting("double_buffer", &double_buffer);
+    m_section_config.get_setting("fabric_separate", &fabric_separate);
+    m_section_config.get_setting("streams_pipelined", &streams_pipelined);
 
     bypass.reserve(data_type_t::NUM_DATA_TYPES);
     bypass.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -2054,6 +2062,8 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     }
 
     m_section_config.get_setting("double_buffer", &double_buffer);
+    m_section_config.get_setting("fabric_separate", &fabric_separate);
+    m_section_config.get_setting("streams_pipelined", &streams_pipelined);
 
     bypass.reserve(data_type_t::NUM_DATA_TYPES);
     bypass.assign(data_type_t::NUM_DATA_TYPES, 0);

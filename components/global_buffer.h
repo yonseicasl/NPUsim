@@ -53,6 +53,20 @@ public:
     // psum written out and never read back cannot be accumulated, and the two counters drifting
     // apart is exactly the defect that understated the GLB traffic bound.
     size_t psum_writeback_events;
+
+    // 2026-08-26 (array streaming granularity): the GLB <-> array fabric carries its datatype
+    // streams on SEPARATE physical buses (nv_small: the CBUF -> CSC dat and wt channels are
+    // distinct, served from disjoint D_BANK partitions), so the link busy axis combines them
+    // by MAX. false (default) = one shared fabric, sum -- the historical model, bit-identical
+    // for every config that does not declare it. SRAM port and capacity semantics (the
+    // shared/separate memory_type class, T10) are deliberately untouched by this flag.
+    bool fabric_separate = false;   // config-static structural declaration: not touched by per-layer reset
+    // 2026-08-26: consecutive per-pass GLB<->array transfers PIPELINE (the CBUF read and the
+    // fabric sustain one beat per cycle across passes), so a transfer's exposed time is its
+    // marginal beats -- the packet-pipeline fill amortizes over the stream instead of being
+    // re-paid on every 1-beat transfer (~2x on nv_small). Energy/counters unchanged.
+    // Default false = the historical per-transfer pipeline, bit-identical.
+    bool streams_pipelined = false;
     double get_buffer_size();
     // Get global buffer bitwidth
     unsigned get_bitwidth();

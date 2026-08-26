@@ -36,6 +36,14 @@ public:
 
     size_t output_cast_bytes;
     double output_cast_energy;
+    // Phase-2 (plan_sfu.md): final_output_tile events. account_output_writeback_to_dram()
+    // is the single boundary where the output commits in OUTPUT precision exactly once
+    // per element (RE1/DR6/T1), which is precisely the reduction-complete,
+    // before-writeback point the SFU activation contract needs -- so each call here IS
+    // one final_output_tile event. Spills/reloads (GLB <-> array psum traffic) never
+    // pass through this boundary, so the count is structurally spill-independent.
+    size_t final_output_tile_events;
+    size_t final_output_tile_elements;
 
     // Phase-5: the component's clock in MHz. Power needs a single authoritative clock
     // across the modeled components (the timeline is one shared cycle axis), so stats_t

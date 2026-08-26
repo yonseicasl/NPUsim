@@ -114,6 +114,7 @@ static const energy_key_schema_t g_energy_keys[] = {
     { "computation_energy",        ENERGY_KEY_SCALAR },
     { "weight_fold_fill_energy",   ENERGY_KEY_SCALAR },
     { "layer_setup_energy",        ENERGY_KEY_SCALAR },
+    { "stripe_transition_energy",  ENERGY_KEY_SCALAR },
     { "mac_reduction_energy",      ENERGY_KEY_SCALAR },
     { "row_miss_energy",           ENERGY_KEY_SCALAR },
     { "adder_energy",              ENERGY_KEY_SCALAR },
@@ -264,6 +265,16 @@ std::string validate_energy_settings(config_t &m_config) {
                    " but layer_setup_cycle is 0; a setup energy with no setup execution has no "
                    "event source (declare layer_setup_cycle, or drop the energy)";
         }
+        double stripe_energy = 0.0, stripe_cycle = 0.0;
+        const bool has_stripe_energy =
+            section.get_setting("stripe_transition_energy", &stripe_energy);
+        section.get_setting("stripe_transition_cycle", &stripe_cycle);
+        if(has_stripe_energy && stripe_energy > 0.0 && stripe_cycle == 0.0) {
+            return "[" + section.name + "] stripe_transition_energy = " +
+                   std::to_string(stripe_energy) +
+                   " but stripe_transition_cycle is 0; a transition energy with no modeled "
+                   "transition has no event source (declare stripe_transition_cycle, or drop it)";
+        }
     }
     return std::string();
 }
@@ -281,28 +292,29 @@ struct component_requirement_t {
     // their absence is not a gap -- but a declared non-zero one DOES make the component costed.
     // Without this distinction a config that prices only its layer setup showed a non-zero
     // subtotal annotated "modeled zero".
-    const char *optional[4];
+    const char *optional[5];
 };
 
 const component_requirement_t g_requirements[] = {
     { ENERGY_COMPONENT_MAC,           "pe_array",
       { "computation_energy", "mac_read_energy", "mac_write_energy", 0, 0 },
-      { "mac_energy_", "mac_reduction_energy", 0, 0 } },
+      { "mac_energy_", "mac_reduction_energy", 0, 0, 0 } },
     { ENERGY_COMPONENT_PE,            "pe_array",
       { "lb_read_energy", "lb_write_energy", "static_energy", "transfer_energy_pe", 0 },
-      { "accumulator_spill_energy", 0, 0, 0 } },
+      { "accumulator_spill_energy", 0, 0, 0, 0 } },
     { ENERGY_COMPONENT_PE_ARRAY,      "pe_array",
       { "pe_array_read_energy", "pe_array_write_energy", "noc_energy", 0, 0 },
-      { "pe_array_static_energy", "layer_setup_energy", "weight_fold_fill_energy", 0 } },
+      { "pe_array_static_energy", "layer_setup_energy", "weight_fold_fill_energy",
+        "stripe_transition_energy", 0 } },
     { ENERGY_COMPONENT_GLOBAL_BUFFER, "global_buffer",
       { "read_energy", "write_energy", "static_energy", "transfer_energy", 0 },
-      { 0, 0, 0, 0 } },
+      { 0, 0, 0, 0, 0 } },
     { ENERGY_COMPONENT_MULTI_CHIP,    "multi_chip",
       { "read_energy", "write_energy", "static_energy", "noc_energy", 0 },
-      { "output_cast_energy", 0, 0, 0 } },
+      { "output_cast_energy", 0, 0, 0, 0 } },
     { ENERGY_COMPONENT_DRAM,          "dram",
       { "read_energy", "write_energy", "transfer_energy", 0, 0 },
-      { "row_miss_energy", 0, 0, 0 } },
+      { "row_miss_energy", 0, 0, 0, 0 } },
     // SFU: every invocation moves elements through its input/output ports, so those two
     // costs are required; the per-operation family, setup and leakage price optional
     // features (their absence on an ACTIVE event still surfaces as UNPRICED_ACTIVE).

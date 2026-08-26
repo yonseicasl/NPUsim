@@ -9,6 +9,31 @@
 #include "pe_array.h"
 #include "sfu.h"
 
+// Phase-7: operand streaming of a standalone softmax tensor between the memory hierarchy
+// and the SFU. Filled by npu_t from the live components' unit costs and folded into the
+// SFU-only layer's stats (DRAM/GLB energy rows, serial ingress/egress latency).
+struct sfu_operand_stream_t {
+    bool active;
+    std::string residency;          // "dram (materialized)" or "glb (on-chip retained)"
+    size_t ingress_bytes;           // operand payload each way, output precision
+    size_t egress_bytes;
+    double ingress_cycle;           // serial transfer makespans on the critical path
+    double egress_cycle;
+    double dram_access_cycle;       // DRAM device read+write access cycles
+    double dram_access_energy;
+    double dram_link_cycle;         // off-chip link, both directions
+    double dram_link_energy;
+    size_t dram_link_transactions;
+    double glb_access_cycle;        // GLB ports: staging write + feed read (+ mirror out)
+    double glb_access_energy;
+
+    sfu_operand_stream_t() : active(false), residency(), ingress_bytes(0), egress_bytes(0),
+                             ingress_cycle(0.0), egress_cycle(0.0), dram_access_cycle(0.0),
+                             dram_access_energy(0.0), dram_link_cycle(0.0),
+                             dram_link_energy(0.0), dram_link_transactions(0),
+                             glb_access_cycle(0.0), glb_access_energy(0.0) {}
+};
+
 class stats_t {
 	
 public:
@@ -56,13 +81,25 @@ public:
     // reduction tiling and GLB repetitions must never scale it.
     void apply_sfu_activation(const sfu_invocation_t &m_invocation, unsigned m_physical_units,
                               unsigned m_lanes, double m_static_energy_per_cycle);
+    // Phase-5: hand the fused-activation event to the timeline BEFORE
+    // scale_serial_repetitions(). finalize_layer_timeline() then integrates it -- as a
+    // serial append under the queue_depth = 1 contract (bit-identical to the post-hoc
+    // model), or as a sixth per-tile pipeline stage behind a bounded output-tile queue
+    // when queue_depth >= 2, which lets the SFU hide behind the producer up to the
+    // queue's back-pressure limit. Event counts/traffic/dynamic energy are recorded
+    // immediately (they are timeline-independent and must not be repetition-scaled).
+    void set_sfu_activation(const sfu_invocation_t &m_invocation, unsigned m_physical_units,
+                            unsigned m_lanes, double m_static_energy_per_cycle,
+                            unsigned m_queue_depth);
     // A standalone SFU layer (Phase-7 softmax): the SFU is the only modeled resource, so
-    // the layer latency IS the SFU window. The clock/energy contract fields normally
-    // captured by update_stats() are supplied by the caller.
+    // the layer latency is the operand ingress + SFU window + operand egress. The
+    // clock/energy contract fields normally captured by update_stats() are supplied by
+    // the caller, and m_stream carries the operand-tensor streaming costs.
     void record_sfu_only_layer(const sfu_invocation_t &m_invocation, unsigned m_physical_units,
                                unsigned m_lanes, double m_static_energy_per_cycle,
                                double m_frequency_mhz, bool m_single_clock,
-                               const std::string &m_clock_note);
+                               const std::string &m_clock_note,
+                               const sfu_operand_stream_t &m_stream = sfu_operand_stream_t());
     // A nonlinear activation executed while no [sfu] section exists: legacy numbers stay
     // untouched, but the report must state that the activation is outside the modeled
     // scope instead of silently reading as free.
@@ -199,8 +236,22 @@ public:
     size_t sfu_operations;               // scalar SFU operations
     size_t sfu_invocations;              // pipeline setups
     size_t sfu_chunks;                   // lane-wide issue slots
-    double sfu_busy_cycle;               // serial SFU window added to the critical path
-    double sfu_stall_cycle;              // producer drain stall under the serial contract
+    // Phase-2: final_output_tile events -- how many output-commit events delivered the
+    // elements (from the multi-chip commit boundary x output repetitions), and whether
+    // the committed-element identity check against the mapped output volume held. On a
+    // mismatch the model falls back to the layer-granular single invocation and says so.
+    size_t sfu_commit_events;
+    std::string sfu_commit_note;
+    // Phase-8: declared provenance of the [sfu] timing profile (empty = not declared).
+    std::string sfu_profile_reference;
+    double sfu_busy_cycle;               // total SFU busy window (hidden + exposed)
+    // Phase-5 attribution: with the streaming contract (queue_depth >= 2) the SFU joins
+    // the per-tile timeline as a post-processing stage, so only part of its window
+    // extends the critical path; the serial contract (queue_depth = 1) exposes all of it.
+    double sfu_serial_cycle;             // critical-path extension caused by the SFU
+    double sfu_hidden_cycle;             // SFU busy hidden behind the producer pipeline
+    double sfu_stall_cycle;              // producer (PE stage) stall on a full SFU queue
+    unsigned sfu_queue_depth;            // the contract in force (1 = serial)
     double sfu_tail_lane_utilization;
     size_t sfu_ingress_elements;
     size_t sfu_egress_elements;
@@ -214,6 +265,24 @@ public:
     double sfu_setup_energy;
     double sfu_static_energy;            // all physical SFUs, over the final layer window
     bool sfu_timing_calibrated;          // false: some active op ran on a defaulted profile
+    // Phase-5 pending event: staged by set_sfu_activation() and consumed by
+    // finalize_layer_timeline(), which owns the timing integration.
+    bool sfu_pending;
+    sfu_invocation_t sfu_pending_invocation;
+    double sfu_pending_static_energy_per_cycle;
+    // Phase-5: how many of the shared tile clock's tiles COMMIT final outputs -- the
+    // output-datatype GLB repetition factor. A repetition over a reduction dimension
+    // revisits the SAME output tile, which commits (and releases to the SFU) only when
+    // its last reduction pass finishes, so the SFU's per-tile cost lands on the LAST tile
+    // of each reduction group rather than spreading over all of them.
+    unsigned output_repetition_tiles;
+    // Phase-7: standalone-softmax operand streaming summary for the report.
+    bool sfu_stream_active;
+    std::string sfu_stream_residency;
+    size_t sfu_stream_ingress_bytes;
+    size_t sfu_stream_egress_bytes;
+    double sfu_stream_ingress_cycle;
+    double sfu_stream_egress_cycle;
     // True for a layer whose ONLY modeled resource is the SFU (standalone softmax). Its
     // clock/energy-basis contract fields are placeholders, so the network rollup must not
     // let them overwrite the contract captured from a fully mapped layer.
@@ -254,6 +323,8 @@ public:
     double layer_setup_energy;
     double weight_fold_events;
     double layer_setup_events;
+    double stripe_transition_energy;
+    double stripe_transition_events;
     // RE1: the four accumulator/output events, each from its own boundary. The create count is
     // reported so the deliberately-free zero-init path is visible rather than implied.
     size_t accumulator_reload_bytes;
@@ -319,6 +390,7 @@ public:
     std::vector<double> utilization_pe_array_buffer;                    // PE-array temporal-buffer occupancy per data type.
     double fold_fill_cycle_pe_array;                                    // V2: weight-residency fold fill + per-layer setup on the compute schedule.
     double layer_setup_cycle_pe_array;                                  // V2: one-time per-layer setup (added once, after repetition scaling).
+    double stripe_transition_cycle_pe_array;                            // one-time: bubble x legacy C*R*S*P (see pe_array.h)
 
     std::vector<double> transfer_cycle_pe_array;                        // Total data transfer cycle between PE and PE array.
     std::vector<double> cycle_temporal_pe_array;                        // PA4: PE-array temporal-buffer pipelined-overlap cycle.

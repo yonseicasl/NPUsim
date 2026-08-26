@@ -74,6 +74,8 @@ stats_t::stats_t() :
     reduction_energy(0.0),
     weight_fold_energy(0.0),
     layer_setup_energy(0.0),
+    stripe_transition_energy(0.0),
+    stripe_transition_events(0.0),
     weight_fold_events(0.0),
     layer_setup_events(0.0),
     accumulator_reload_bytes(0),
@@ -96,6 +98,7 @@ stats_t::stats_t() :
     utilization_pe_array(0.0),
     fold_fill_cycle_pe_array(0.0),
     layer_setup_cycle_pe_array(0.0),
+    stripe_transition_cycle_pe_array(0.0),
     global_buffer_type(memory_type_t::UNDEFINED_MEMORY),
     total_utilization_global_buffer(0.0),
     utilization_multi_chip(0.0) {
@@ -314,9 +317,25 @@ void stats_t::init() {
     sfu_operations = 0;
     sfu_invocations = 0;
     sfu_chunks = 0;
+    sfu_commit_events = 0;
+    sfu_commit_note.clear();
+    sfu_profile_reference.clear();
     sfu_busy_cycle = 0.0;
+    sfu_serial_cycle = 0.0;
+    sfu_hidden_cycle = 0.0;
     sfu_stall_cycle = 0.0;
+    sfu_queue_depth = 0;
     sfu_tail_lane_utilization = 0.0;
+    sfu_pending = false;
+    sfu_pending_invocation = sfu_invocation_t();
+    sfu_pending_static_energy_per_cycle = 0.0;
+    output_repetition_tiles = 1;
+    sfu_stream_active = false;
+    sfu_stream_residency.clear();
+    sfu_stream_ingress_bytes = 0;
+    sfu_stream_egress_bytes = 0;
+    sfu_stream_ingress_cycle = 0.0;
+    sfu_stream_egress_cycle = 0.0;
     sfu_ingress_elements = 0;
     sfu_egress_elements = 0;
     sfu_ingress_bytes = 0;
@@ -860,7 +879,15 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             // Update transfer cycle from PE array to local buffers
             transfer_cycle_pe_array[j] = std::max(transfer_cycle_pe_array[j], m_pe_array[i]->transfer_cycle[j]);
-            chip_link_pe_array_types += m_pe_array[i]->transfer_cycle[j];
+            // CE4 rule per the declared fabric: one shared distribution medium serializes the
+            // datatype streams (sum); separate per-datatype buses run them concurrently (max).
+            // Mirrors the GLB shared/separate port rule.
+            if(m_pe_array[i]->array_fabric_separate) {
+                chip_link_pe_array_types = std::max(chip_link_pe_array_types,
+                                                    m_pe_array[i]->transfer_cycle[j]);
+            } else {
+                chip_link_pe_array_types += m_pe_array[i]->transfer_cycle[j];
+            }
             cycle_temporal_pe_array[j] = std::max(cycle_temporal_pe_array[j], m_pe_array[i]->cycle_temporal_pe[j]);
             chip_overlap_pe_array_types += m_pe_array[i]->cycle_temporal_pe[j];
             transfer_energy_pe_array[j] += m_pe_array[i]->transfer_energy[j];
@@ -897,12 +924,27 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             // Update transfer cost between the global buffer to the PE array
             transfer_cycle_global_buffer[j] = std::max(transfer_cycle_global_buffer[j], m_global_buffer[i]->transfer_cycle[j]);
-            chip_link_global_buffer_types += m_global_buffer[i]->transfer_cycle[j];
+            { static int d=0; if(d<3) std::cerr << "[GLBF] sep=" << m_global_buffer[i]->fabric_separate << " tc=" << m_global_buffer[i]->transfer_cycle[j] << std::endl; d++; }
+            // CE4 rule per the declared GLB fabric: shared medium serializes the datatype
+            // streams (sum); separate per-datatype buses run them concurrently (max).
+            if(m_global_buffer[i]->fabric_separate) {
+                chip_link_global_buffer_types = std::max(chip_link_global_buffer_types,
+                                                         m_global_buffer[i]->transfer_cycle[j]);
+            } else {
+                chip_link_global_buffer_types += m_global_buffer[i]->transfer_cycle[j];
+            }
             transfer_energy_global_buffer[j] += m_global_buffer[i]->transfer_energy[j];
 
             // Update overlapped cycle between the global buffer and PE array
             cycle_pe_array_global_buffer[j] = std::max(cycle_pe_array_global_buffer[j], m_global_buffer[i]->cycle_pe_array_global_buffer[j]);
-            chip_overlap_global_buffer_types += m_global_buffer[i]->cycle_pe_array_global_buffer[j];
+            // Same fabric rule for the per-transfer pipeline (overlap) axis: separate
+            // per-datatype buses fill and stream independently, so they combine by MAX.
+            if(m_global_buffer[i]->fabric_separate) {
+                chip_overlap_global_buffer_types = std::max(chip_overlap_global_buffer_types,
+                    m_global_buffer[i]->cycle_pe_array_global_buffer[j]);
+            } else {
+                chip_overlap_global_buffer_types += m_global_buffer[i]->cycle_pe_array_global_buffer[j];
+            }
 
             // Update global buffer utilization
             utilization_global_buffer[j] = std::max(utilization_global_buffer[j], m_global_buffer[i]->utilization[j]);
@@ -929,6 +971,11 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         // V2: fold fill serializes on the compute schedule (max across parallel arrays).
         fold_fill_cycle_pe_array = std::max(fold_fill_cycle_pe_array, m_pe_array[i]->fold_fill_cycle);
         layer_setup_cycle_pe_array = std::max(layer_setup_cycle_pe_array, m_pe_array[i]->u_layer_setup_cycle);
+        // Per-stripe schedule bubble: one-time total = unit bubble x legacy C*R*S*P count.
+        // Serializes on the compute schedule like fold fill / setup (max across arrays).
+        stripe_transition_cycle_pe_array = std::max(stripe_transition_cycle_pe_array,
+            m_pe_array[i]->u_stripe_transition_cycle
+            * static_cast<double>(m_pe_array[i]->stripe_transitions));
         // E5: fold energy accumulates across arrays like the events that produced it; the
         // per-layer schedule setup fires once per array.
         weight_fold_energy += m_pe_array[i]->weight_fold_energy;
@@ -943,6 +990,13 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
         if(m_pe_array[i]->u_layer_setup_cycle > 0.0) {
             layer_setup_energy += m_pe_array[i]->u_layer_setup_energy;
             layer_setup_events += 1.0;
+        }
+        // RE3 convention as above: the transition EVENTS exist when the model models them (a
+        // declared cycle cost), not when their energy is priced.
+        if(m_pe_array[i]->u_stripe_transition_cycle > 0.0 && m_pe_array[i]->stripe_transitions > 0) {
+            stripe_transition_events += static_cast<double>(m_pe_array[i]->stripe_transitions);
+            stripe_transition_energy += m_pe_array[i]->u_stripe_transition_energy
+                                      * static_cast<double>(m_pe_array[i]->stripe_transitions);
         }
     }
 
@@ -1131,9 +1185,13 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
         offchip_repetition_tiles = std::max(offchip_repetition_tiles, m_datatype_repetitions[i]);
     }
+    // Phase-5: how many tiles of the shared clock COMMIT final outputs -- what the
+    // streaming SFU stage consumes (see stats_t::output_repetition_tiles).
+    output_repetition_tiles = std::min(m_repetitions,
+                                       std::max(1u, m_datatype_repetitions[data_type_t::OUTPUT]));
     if(m_repetitions == 1) {
         // V2: the one-time per-layer setup applies regardless of repetition count.
-        fold_fill_cycle_pe_array += layer_setup_cycle_pe_array;
+        fold_fill_cycle_pe_array += layer_setup_cycle_pe_array + stripe_transition_cycle_pe_array;
         merge_global_buffer_fill();
         finalize_layer_timeline();
         return;
@@ -1215,7 +1273,8 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     entity_combined_overlap_pe_array *= m_repetitions;
     // V2: fold fill repeats with every global-buffer repetition; the per-layer setup
     // (config/flush/DMA prologue) is a one-time cost added after scaling.
-    fold_fill_cycle_pe_array = fold_fill_cycle_pe_array*m_repetitions + layer_setup_cycle_pe_array;
+    fold_fill_cycle_pe_array = fold_fill_cycle_pe_array*m_repetitions + layer_setup_cycle_pe_array
+                             + stripe_transition_cycle_pe_array;
     // E5: the same split on the energy side -- per-fold energy repeats with every GLB
     // repetition, the one-time layer setup does not.
     weight_fold_energy *= m_repetitions;
@@ -1564,6 +1623,63 @@ void stats_t::finalize_layer_timeline() {
         timeline_stall[stage] = (stage < stall.size()) ? stall[stage] : 0.0;
     }
 
+    // Phase-5 (plan_sfu.md): integrate the pending SFU activation window into the SAME
+    // timeline the producer ran on.
+    //
+    //   queue_depth = 1  (serial contract) -- the SFU drains the final output after the
+    //       producer pipeline completes; its whole window extends the critical path.
+    //       This reproduces the pre-streaming model bit for bit.
+    //   queue_depth >= 2 (streaming) -- the SFU is a SIXTH per-tile pipeline stage behind
+    //       a bounded output-tile queue. Final outputs are released only on the tiles
+    //       that COMMIT outputs: a repetition group over a reduction dimension commits
+    //       its output tile on the group's LAST tile (the activation cannot run before
+    //       the reduction finishes), so the SFU's cost lands there rather than being
+    //       spread optimistically over the whole group. A fast SFU then hides behind the
+    //       producer except for its drain tail; a slow one back-pressures the producer
+    //       through the queue, and that stall is attributed to the PE stage.
+    if(sfu_pending && sfu_pending_invocation.busy_cycle > 0.0) {
+        const double producer_latency = final_latency;
+        if(sfu_queue_depth >= 2) {
+            const unsigned sfu_tiles = std::min(tiles, std::max(1u, output_repetition_tiles));
+            std::vector<double> sfu_tile_costs(tiles, 0.0);
+            const double per_output_tile =
+                sfu_pending_invocation.busy_cycle/static_cast<double>(sfu_tiles);
+            // Serve on the LAST tile of each output-commit group (mirror of the off-chip
+            // stages' first-tile rule -- a commit CLOSES its reduction group): group g of
+            // the sfu_tiles groups closes at tile floor((g+1)*tiles/sfu_tiles) - 1.
+            for(unsigned g = 0; g < sfu_tiles; ++g) {
+                const unsigned close_tile = static_cast<unsigned>(
+                    (static_cast<unsigned long long>(g + 1)*tiles)/sfu_tiles) - 1u;
+                sfu_tile_costs[close_tile] += per_output_tile;
+            }
+            std::vector<std::vector<double>> streaming_costs = stage_tile_costs;
+            streaming_costs.push_back(sfu_tile_costs);
+            std::vector<unsigned> streaming_depths = boundary_depths;
+            streaming_depths.push_back(sfu_queue_depth);
+            std::vector<double> streaming_stall;
+            const double streaming_latency = pipeline_timeline_cycles(
+                streaming_costs, streaming_depths, &streaming_stall);
+            for(unsigned stage = 0; stage < 5; ++stage) {
+                timeline_stall[stage] = (stage < streaming_stall.size())
+                                        ? streaming_stall[stage] : 0.0;
+            }
+            final_latency = streaming_latency;
+            sfu_serial_cycle = std::max(0.0, streaming_latency - producer_latency);
+            sfu_hidden_cycle = std::max(0.0,
+                sfu_pending_invocation.busy_cycle - sfu_serial_cycle);
+            // The PE stage's stall in the six-stage run is time it sat blocked on a full
+            // SFU queue -- the producer back-pressure the plan asks to attribute.
+            sfu_stall_cycle = (4 < streaming_stall.size()) ? streaming_stall[4] : 0.0;
+        } else {
+            final_latency += sfu_pending_invocation.busy_cycle;
+            sfu_serial_cycle = sfu_pending_invocation.busy_cycle;
+            sfu_hidden_cycle = 0.0;
+            // Serial contract: the output drain waits for the whole SFU window.
+            sfu_stall_cycle = sfu_pending_invocation.busy_cycle;
+        }
+        sfu_busy_cycle = sfu_pending_invocation.busy_cycle;
+    }
+
     // Leakage accrued linearly over the uniform-scaled pre-recompute latency;
     // rescale it to the final window.
     if(layer_latency > 0.0 && final_latency != layer_latency) {
@@ -1579,6 +1695,13 @@ void stats_t::finalize_layer_timeline() {
     mac_available_cycle = timeline_physical_macs*layer_latency;
     utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
     utilization_mac = std::min(1.0, utilization_mac);
+    // Plan energy model: every physical SFU is always-on over the layer's final window
+    // (bypass layers included -- no power gating is modeled).
+    if(sfu_pending) {
+        sfu_static_energy = static_cast<double>(sfu_physical_units)*layer_latency*
+                            sfu_pending_static_energy_per_cycle;
+        sfu_pending = false;
+    }
 }
 
 void stats_t::merge_global_buffer_fill() {
@@ -1611,9 +1734,9 @@ void stats_t::merge_global_buffer_fill() {
     }
 }
 
-void stats_t::apply_sfu_activation(const sfu_invocation_t &m_invocation,
-                                   unsigned m_physical_units, unsigned m_lanes,
-                                   double m_static_energy_per_cycle) {
+void stats_t::set_sfu_activation(const sfu_invocation_t &m_invocation,
+                                 unsigned m_physical_units, unsigned m_lanes,
+                                 double m_static_energy_per_cycle, unsigned m_queue_depth) {
     sfu_present = true;
     // "Active" means an SFU event actually FIRED. A linear-bypass layer records the
     // operation name and accrues always-on leakage (no power gating is modeled), but it
@@ -1622,6 +1745,7 @@ void stats_t::apply_sfu_activation(const sfu_invocation_t &m_invocation,
     append_unique_segment(sfu_operation, m_invocation.operation, ", ");
     sfu_physical_units = m_physical_units;
     sfu_lanes = m_lanes;
+    sfu_queue_depth = m_queue_depth;
     sfu_valid_elements += m_invocation.valid_elements;
     sfu_operations += m_invocation.operations;
     sfu_invocations += m_invocation.invocations;
@@ -1645,15 +1769,25 @@ void stats_t::apply_sfu_activation(const sfu_invocation_t &m_invocation,
             sfu_unpriced_events.push_back(m_invocation.unpriced[i]);
         }
     }
+    // Timing integration is owned by finalize_layer_timeline(): serial append under the
+    // queue_depth = 1 contract, or the sixth pipeline stage under streaming.
+    sfu_pending = true;
+    sfu_pending_invocation = m_invocation;
+    sfu_pending_static_energy_per_cycle = m_static_energy_per_cycle;
+}
 
-    // Serial timeline integration (queue_depth = 1, plan Phase-4): the SFU is an
-    // output-path resource that drains the final output AFTER the pipeline timeline
-    // completes, so its window extends the critical path rather than hiding inside it.
-    // Streaming overlap (release-time/queue back-pressure) is a later phase; until then
-    // the serial contract is reported explicitly as producer drain stall.
+void stats_t::apply_sfu_activation(const sfu_invocation_t &m_invocation,
+                                   unsigned m_physical_units, unsigned m_lanes,
+                                   double m_static_energy_per_cycle) {
+    // SFU-only path (standalone softmax): there is no producer timeline to stream
+    // against -- the multi-pass window IS the layer's execution, serially.
+    set_sfu_activation(m_invocation, m_physical_units, m_lanes, m_static_energy_per_cycle, 1);
+    sfu_pending = false;   // consumed here; finalize_layer_timeline() never runs
+
     const double previous_latency = layer_latency;
     layer_latency += m_invocation.busy_cycle;
     sfu_busy_cycle += m_invocation.busy_cycle;
+    sfu_serial_cycle += m_invocation.busy_cycle;
     sfu_stall_cycle += m_invocation.busy_cycle;
     if(previous_latency > 0.0 && layer_latency != previous_latency) {
         // Leakage accrues over wall-clock: rescale every component's leakage window to
@@ -1682,7 +1816,8 @@ void stats_t::record_sfu_only_layer(const sfu_invocation_t &m_invocation,
                                     unsigned m_physical_units, unsigned m_lanes,
                                     double m_static_energy_per_cycle,
                                     double m_frequency_mhz, bool m_single_clock,
-                                    const std::string &m_clock_note) {
+                                    const std::string &m_clock_note,
+                                    const sfu_operand_stream_t &m_stream) {
     // The SFU is the only modeled resource of this layer: the contract fields that
     // update_stats() normally captures from the memory/compute components are stated
     // here so the layer report and the power gate stay well defined.
@@ -1694,7 +1829,10 @@ void stats_t::record_sfu_only_layer(const sfu_invocation_t &m_invocation,
     // qualification cannot be the reason its energy is not absolute.
     compute_energy_precision_calibrated = true;
     operand_precision = runtime_datatypes().accumulator_format().name;
-    dram_timing_model = "n/a (no DRAM activity is modeled for this SFU-only layer)";
+    dram_timing_model = m_stream.active
+        ? "analytical unit-cost streaming of the softmax operand tensor (no row-activation"
+          " or bank model for this layer)"
+        : "n/a (no DRAM activity is modeled for this SFU-only layer)";
     dram_timing_limits = "n/a";
     array_noc_link_contract = "n/a (SFU-only layer)";
     nop_link_contract = "n/a (SFU-only layer)";
@@ -1704,6 +1842,41 @@ void stats_t::record_sfu_only_layer(const sfu_invocation_t &m_invocation,
     }
     sfu_only_layer = true;
     apply_sfu_activation(m_invocation, m_physical_units, m_lanes, m_static_energy_per_cycle);
+
+    // Phase-7: operand streaming between the memory hierarchy and the SFU. The transfer
+    // costs land on the components that own them (DRAM device+link, GLB ports), so the
+    // energy summary's DRAM/GLB rows carry them; the serial ingress/egress makespans
+    // extend the layer's critical path around the SFU window
+    // (ingress -> multi-pass SFU -> egress -- the conservative serial contract).
+    if(m_stream.active) {
+        sfu_stream_active = true;
+        sfu_stream_residency = m_stream.residency;
+        sfu_stream_ingress_bytes += m_stream.ingress_bytes;
+        sfu_stream_egress_bytes += m_stream.egress_bytes;
+        sfu_stream_ingress_cycle += m_stream.ingress_cycle;
+        sfu_stream_egress_cycle += m_stream.egress_cycle;
+        access_cycle_dram[data_type_t::OUTPUT] += m_stream.dram_access_cycle;
+        access_energy_dram[data_type_t::OUTPUT] += m_stream.dram_access_energy;
+        transfer_cycle_dram[data_type_t::OUTPUT] += m_stream.dram_link_cycle;
+        transfer_energy_dram[data_type_t::OUTPUT] += m_stream.dram_link_energy;
+        storage_link_transactions_dram[data_type_t::OUTPUT] += m_stream.dram_link_transactions;
+        payload_link_transactions_dram[data_type_t::OUTPUT] += m_stream.dram_link_transactions;
+        access_cycle_global_buffer[data_type_t::OUTPUT] += m_stream.glb_access_cycle;
+        access_energy_global_buffer[data_type_t::OUTPUT] += m_stream.glb_access_energy;
+        // Busy axes for the layer-timeline table (busy = max of a stage's axes).
+        stage_axis_access[0] += m_stream.dram_access_cycle;
+        stage_axis_link[0] += m_stream.dram_link_cycle;
+        busy_cycle_dram = std::max(stage_axis_access[0], stage_axis_link[0]);
+        stage_axis_access[2] += m_stream.glb_access_cycle;
+        entity_combined_access_global_buffer += m_stream.glb_access_cycle;
+        busy_cycle_global_buffer = std::max(busy_cycle_global_buffer,
+                                            entity_combined_access_global_buffer);
+        // Serial critical path: operand in, multi-pass, operand out. Leakage windows
+        // (the SFU's own) follow the extended latency.
+        layer_latency += m_stream.ingress_cycle + m_stream.egress_cycle;
+        sfu_static_energy = static_cast<double>(m_physical_units)*layer_latency*
+                            m_static_energy_per_cycle;
+    }
 }
 
 void stats_t::mark_unmodeled_activation(const std::string &m_note) {
@@ -1810,8 +1983,28 @@ void stats_t::update_network_stats(stats_t *m_source) {
     sfu_operations += m_source->sfu_operations;
     sfu_invocations += m_source->sfu_invocations;
     sfu_chunks += m_source->sfu_chunks;
+    sfu_commit_events += m_source->sfu_commit_events;
+    if(!m_source->sfu_commit_note.empty()) {
+        merge_unique_segments(sfu_commit_note, m_source->sfu_commit_note, "; ");
+    }
+    if(sfu_profile_reference.empty()) {
+        sfu_profile_reference = m_source->sfu_profile_reference;
+    }
     sfu_busy_cycle += m_source->sfu_busy_cycle;
+    sfu_serial_cycle += m_source->sfu_serial_cycle;
+    sfu_hidden_cycle += m_source->sfu_hidden_cycle;
     sfu_stall_cycle += m_source->sfu_stall_cycle;
+    // Queue depth is a config property; the max survives the 0-default of layers that
+    // recorded no SFU event.
+    sfu_queue_depth = std::max(sfu_queue_depth, m_source->sfu_queue_depth);
+    sfu_stream_active = sfu_stream_active || m_source->sfu_stream_active;
+    if(m_source->sfu_stream_active) {
+        merge_unique_segments(sfu_stream_residency, m_source->sfu_stream_residency, "; ");
+        sfu_stream_ingress_bytes += m_source->sfu_stream_ingress_bytes;
+        sfu_stream_egress_bytes += m_source->sfu_stream_egress_bytes;
+        sfu_stream_ingress_cycle += m_source->sfu_stream_ingress_cycle;
+        sfu_stream_egress_cycle += m_source->sfu_stream_egress_cycle;
+    }
     sfu_tail_lane_utilization = std::max(sfu_tail_lane_utilization,
                                          m_source->sfu_tail_lane_utilization);
     sfu_ingress_elements += m_source->sfu_ingress_elements;
@@ -1847,8 +2040,10 @@ void stats_t::update_network_stats(stats_t *m_source) {
     weight_fold_energy += m_source->weight_fold_energy;
     pe_array_accumulator_energy += m_source->pe_array_accumulator_energy;
     layer_setup_energy += m_source->layer_setup_energy;
+    stripe_transition_energy += m_source->stripe_transition_energy;
     weight_fold_events += m_source->weight_fold_events;
     layer_setup_events += m_source->layer_setup_events;
+    stripe_transition_events += m_source->stripe_transition_events;
     accumulator_reload_bytes += m_source->accumulator_reload_bytes;
     accumulator_spill_bytes += m_source->accumulator_spill_bytes;
     accumulator_create_events += m_source->accumulator_create_events;
@@ -2054,6 +2249,7 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
     const double pe_array_dynamic = sum_types(access_energy_pe_array) +
                                     sum_types(transfer_energy_pe_array) +
                                     weight_fold_energy + layer_setup_energy +
+                                    stripe_transition_energy +
                                     pe_array_accumulator_energy;
     const double pe_array_static = sum_types(static_energy_pe_array);
     // GLB: its SRAM ports (the multi-chip fill write is already folded in by
@@ -2217,6 +2413,8 @@ std::vector<std::string> stats_t::unpriced_active_events() const {
     const entry_t entries[] = {
         { layer_setup_events > 0.0,   "layer setup",                "pe_array",
           "layer_setup_energy" },
+        { stripe_transition_events > 0.0, "stripe transition",      "pe_array",
+          "stripe_transition_energy" },
         { weight_fold_events > 0.0,   "weight fold",                "pe_array",
           "weight_fold_fill_energy" },
         { accumulator_bytes > 0.0,    "accumulator reload/spill",   "pe_array",
@@ -2482,22 +2680,53 @@ void stats_t::print_results(std::ofstream &m_output_file) {
         if(sfu_present || sfu_active) {
             m_output_file << "Operation             : " << (sfu_operation.empty() ? "none" : sfu_operation)
                           << std::endl;
+            const bool sfu_streaming_contract = sfu_queue_depth >= 2;
             m_output_file << "Physical units x lanes:" << std::setw(11) << sfu_physical_units
-                          << " x " << sfu_lanes
-                          << "  (queue_depth = 1: serial post-accumulator, fused)" << std::endl;
+                          << " x " << sfu_lanes << "  (post-accumulator, fused)" << std::endl;
+            m_output_file << "Queue depth           :" << std::setw(11)
+                          << std::max(1u, sfu_queue_depth)
+                          << (sfu_streaming_contract
+                              ? "  (STREAMING: bounded output-tile queue; the SFU overlaps"
+                                " the producer)"
+                              : "  (serial contract: the SFU drains after the producer)")
+                          << std::endl;
             m_output_file << "Valid output elements :" << std::setw(18) << sfu_valid_elements
                           << "  (network dims clamped by mapping coverage; padding excluded)"
                           << std::endl;
             m_output_file << "Scalar operations     :" << std::setw(18) << sfu_operations << std::endl;
             m_output_file << "Invocations / chunks  :" << std::setw(11) << sfu_invocations
                           << " / " << sfu_chunks << std::endl;
+            // Phase-2: the final_output_tile event contract in force for this scope.
+            if(!sfu_commit_note.empty()) {
+                m_output_file << "Output tile commits   :" << std::setw(11) << sfu_commit_events
+                              << "  (" << sfu_commit_note << ")" << std::endl;
+            }
+            // Phase-5 visibility split: busy = exposed (critical-path extension) + hidden
+            // (overlapped with the producer pipeline). Under the serial contract the
+            // whole window is exposed by definition.
             m_output_file << "SFU busy cycles       :" << std::setw(11) << std::setprecision(1)
-                          << sfu_busy_cycle << " cycles (added SERIALLY to the critical path)"
+                          << sfu_busy_cycle << " cycles" << std::endl;
+            m_output_file << " * on critical path   :" << std::setw(11) << std::setprecision(1)
+                          << sfu_serial_cycle << " cycles"
+                          << (sfu_streaming_contract ? " (fill/drain + bottleneck exposure)"
+                                                     : " (fully exposed by the serial contract)")
                           << std::endl;
-            m_output_file << "Producer drain stall  :" << std::setw(11) << std::setprecision(1)
+            m_output_file << " * hidden by producer :" << std::setw(11) << std::setprecision(1)
+                          << sfu_hidden_cycle << " cycles" << std::endl;
+            m_output_file << "Producer queue stall  :" << std::setw(11) << std::setprecision(1)
                           << sfu_stall_cycle
-                          << " cycles (queue_depth = 1: the output drain waits on the SFU)"
+                          << (sfu_streaming_contract
+                              ? " cycles (PE stage blocked on a full SFU queue)"
+                              : " cycles (serial contract: the output drain waits on the SFU)")
                           << std::endl;
+            if(sfu_streaming_contract && !network_rollup) {
+                m_output_file << "SFU bottleneck        : "
+                              << (sfu_stall_cycle > 0.0
+                                  ? "YES -- SFU throughput limits the producer"
+                                  : "no -- the SFU hides behind the producer except"
+                                    " fill/drain")
+                              << std::endl;
+            }
             m_output_file << "Tail lane utilization :" << std::setw(11) << std::setprecision(2)
                           << sfu_tail_lane_utilization << std::endl;
             m_output_file << "Ingress (elem/bytes/txn):" << std::setw(14) << sfu_ingress_elements
@@ -2507,10 +2736,32 @@ void stats_t::print_results(std::ofstream &m_output_file) {
             m_output_file << "Egress  (elem/bytes/txn):" << std::setw(14) << sfu_egress_elements
                           << "/" << sfu_egress_bytes << "/" << sfu_egress_transactions
                           << std::endl;
+            // Phase-7: standalone-softmax operand streaming between the memory hierarchy
+            // and the SFU. The DRAM/GLB costs sit on those components' energy rows; the
+            // serial makespans below are part of this layer's critical path.
+            if(sfu_stream_active) {
+                m_output_file << "Operand streaming     : " << sfu_stream_residency << std::endl;
+                m_output_file << " * ingress            :" << std::setw(14)
+                              << sfu_stream_ingress_bytes << " bytes / "
+                              << std::setprecision(1) << sfu_stream_ingress_cycle
+                              << " cycles (serial, before the SFU passes)" << std::endl;
+                m_output_file << " * egress             :" << std::setw(14)
+                              << sfu_stream_egress_bytes << " bytes / "
+                              << std::setprecision(1) << sfu_stream_egress_cycle
+                              << " cycles (serial, after the SFU passes)" << std::endl;
+            }
             m_output_file << "Timing profile        : "
                           << (sfu_timing_calibrated
                               ? "declared per-operation latency/II"
                               : "DEFAULTED (1/1) for some active operation -- UNCALIBRATED")
+                          << std::endl;
+            // Phase-8: a declared profile is still only calibration-grade with declared
+            // provenance -- otherwise the numbers cannot ground an absolute cycle claim.
+            m_output_file << "Timing provenance     : "
+                          << (sfu_profile_reference.empty()
+                              ? "NOT DECLARED -- the SFU cycle numbers are not"
+                                " calibration-grade (plan_sfu.md Phase 8)"
+                              : sfu_profile_reference)
                           << std::endl;
             m_output_file << "SFU energy (op/read/write/setup/static)" << std::endl;
             m_output_file << " * " << std::setw(15) << std::setprecision(2) << sfu_op_energy
@@ -2630,6 +2881,22 @@ void stats_t::print_results(std::ofstream &m_output_file) {
         }
     } else if(layer_setup_events == 0.0) {
         m_output_file << " [no layer setup is modeled for this architecture]";
+    }
+    m_output_file << std::endl;
+    // Per-stripe schedule bubble (see pe_array.h): same declared/modeled-zero discipline.
+    m_output_file << "Stripe-transition energy:" << std::setw(13) << std::setprecision(2)
+                  << stripe_transition_energy << " " << energy_units().label() << " over "
+                  << std::setprecision(0) << stripe_transition_events << " transition(s)";
+    if(stripe_transition_events > 0.0 && stripe_transition_energy == 0.0) {
+        if(energy_cost_schema().is_declared("pe_array", "stripe_transition_energy")) {
+            m_output_file << " [modeled zero: stripe_transition_energy is declared 0]";
+        } else {
+            m_output_file << " [unit cost UNCALIBRATED: transitions cost "
+                          << std::setprecision(0) << stripe_transition_cycle_pe_array
+                          << " cycle(s) total but no stripe_transition_energy is declared]";
+        }
+    } else if(stripe_transition_events == 0.0) {
+        m_output_file << " [not modeled: no stripe_transition_cycle declared]";
     }
     m_output_file << std::endl;
     m_output_file << "Reduction energy      :" << std::setw(15) << std::setprecision(2)
