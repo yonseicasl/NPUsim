@@ -100,11 +100,17 @@ public:
     unsigned calculate_output_partition_chips();
     // Print out the component of mapping table.
 	void print();
+    // Stable executable-IR binding. Legacy maps may leave operation_id empty and
+    // continue to use ordinal binding; IR runs require either all IDs or none.
+    const std::string &get_operation_id() const { return operation_id; }
+    const std::string &get_mapping_kind() const { return mapping_kind; }
 
 private:
     std::vector<std::vector<unsigned>> mapping_table;   // The mapping table of neural layer.
     // Legacy GLB factors are retained for temporal accounting only.
     std::vector<unsigned> legacy_global_buffer_mapping;
+    std::string operation_id;
+    std::string mapping_kind;
 
 };
 #endif

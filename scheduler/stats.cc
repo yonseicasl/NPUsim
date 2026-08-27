@@ -1857,15 +1857,21 @@ void stats_t::record_sfu_only_layer(const sfu_invocation_t &m_invocation,
         sfu_stream_egress_cycle += m_stream.egress_cycle;
         access_cycle_dram[data_type_t::OUTPUT] += m_stream.dram_access_cycle;
         access_energy_dram[data_type_t::OUTPUT] += m_stream.dram_access_energy;
-        transfer_cycle_dram[data_type_t::OUTPUT] += m_stream.dram_link_cycle;
-        transfer_energy_dram[data_type_t::OUTPUT] += m_stream.dram_link_energy;
+        // Row activations land on the DRAM transfer axis, exactly where dram_t puts its
+        // own (account_row_activations); the event count feeds the unpriced-active check
+        // for row_miss_energy like any other layer's activations.
+        transfer_cycle_dram[data_type_t::OUTPUT] += m_stream.dram_link_cycle +
+                                                    m_stream.dram_row_activation_cycle;
+        transfer_energy_dram[data_type_t::OUTPUT] += m_stream.dram_link_energy +
+                                                     m_stream.dram_row_activation_energy;
+        row_activation_events += m_stream.dram_row_activations;
         storage_link_transactions_dram[data_type_t::OUTPUT] += m_stream.dram_link_transactions;
         payload_link_transactions_dram[data_type_t::OUTPUT] += m_stream.dram_link_transactions;
         access_cycle_global_buffer[data_type_t::OUTPUT] += m_stream.glb_access_cycle;
         access_energy_global_buffer[data_type_t::OUTPUT] += m_stream.glb_access_energy;
         // Busy axes for the layer-timeline table (busy = max of a stage's axes).
         stage_axis_access[0] += m_stream.dram_access_cycle;
-        stage_axis_link[0] += m_stream.dram_link_cycle;
+        stage_axis_link[0] += m_stream.dram_link_cycle + m_stream.dram_row_activation_cycle;
         busy_cycle_dram = std::max(stage_axis_access[0], stage_axis_link[0]);
         stage_axis_access[2] += m_stream.glb_access_cycle;
         entity_combined_access_global_buffer += m_stream.glb_access_cycle;

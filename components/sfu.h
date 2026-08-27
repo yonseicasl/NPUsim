@@ -2,6 +2,7 @@
 #define __SFU_H__
 
 #include <cstddef>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -175,6 +176,13 @@ public:
     // strict_profiles and otherwise marks every invocation UNCALIBRATED, with the note
     // below carried into the layer report.
     const std::string &get_precision_note() const { return precision_note; }
+    // Phase-6/8: architecture allowlist. When `supported_ops` is declared, operations
+    // OUTSIDE the list do not exist in this SFU's hardware (e.g. nv_small's SDP has no
+    // LUT/EW engine at all -- spec SDP_LUT_DISABLE / SDP_EW_DISABLE), and any use fails
+    // fast: a missing execution unit is an architecture fact, not an uncalibrated cost.
+    // Undeclared = every modeled operation is available.
+    bool op_supported(sfu_op_t m_op) const;
+    bool has_supported_ops_contract() const { return !supported_ops.empty(); }
     const sfu_op_profile_t &profile(sfu_op_t m_op) const { return profiles[m_op]; }
 
     unsigned index;
@@ -207,6 +215,7 @@ private:
     std::string profile_precision;           // Phase-6: format the profile describes
     bool precision_mismatch;                 // declared precision != runtime accumulator
     std::string precision_note;              // report text for a mismatch
+    std::set<std::string> supported_ops;     // architecture allowlist (empty = all)
 
     double u_read_energy;           // per ingress element
     double u_write_energy;          // per egress element

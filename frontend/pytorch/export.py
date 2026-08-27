@@ -1,4 +1,4 @@
-"""PyTorch-to-NPUsim graph IR export. PyTorch is imported only on export."""
+"""PyTorch-to-NPUsim capture graph export. PyTorch is imported only on export."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 from .graph_ir import SCHEMA_VERSION, dump_graph_ir, validate_graph_ir
 
-FRONTEND_VERSION = "0.1"
+FRONTEND_VERSION = "0.2"
 
 
 def _torch() -> Any:
@@ -36,28 +36,43 @@ def _shape_dimension(dimension: Any) -> int | str:
         return symbol
 
 
-def _tensor_record(tensor_id: str, value: Any, kind: str) -> dict[str, Any]:
+def _tensor_record(
+    tensor_id: str, value: Any, kind: str, qualified_name: str | None = None
+) -> dict[str, Any]:
     torch = _torch()
     if isinstance(value, torch.Tensor):
         shape = [_shape_dimension(dimension) for dimension in value.shape]
         dtype = _dtype_name(value.dtype)
-        logical_bytes = value.numel() * value.element_size()
+        try:
+            logical_bytes = int(value.numel()) * int(value.element_size())
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"tensor {tensor_id} has a symbolic byte size; provide a concrete export example"
+            ) from error
+        strides = [int(stride) for stride in value.stride()]
+        storage_offset = int(value.storage_offset())
+        layout = "contiguous" if value.is_contiguous() else "strided"
     elif isinstance(value, bool):
-        shape, dtype, logical_bytes = [], "bool", 1
+        shape, dtype, logical_bytes, strides, storage_offset, layout = [], "bool", 1, [], 0, "scalar"
     elif isinstance(value, int):
-        shape, dtype, logical_bytes = [], "int64", 8
+        shape, dtype, logical_bytes, strides, storage_offset, layout = [], "int64", 8, [], 0, "scalar"
     elif isinstance(value, float):
-        shape, dtype, logical_bytes = [], "float64", 8
+        shape, dtype, logical_bytes, strides, storage_offset, layout = [], "float64", 8, [], 0, "scalar"
     else:
         raise ValueError(f"node {tensor_id} has unsupported exported value type {type(value)!r}")
-    return {
+    record = {
         "id": tensor_id,
         "shape": shape,
         "dtype": dtype,
-        "layout": "contiguous",
+        "layout": layout,
+        "strides": strides,
+        "storage_offset": storage_offset,
         "kind": kind,
         "logical_bytes": logical_bytes,
     }
+    if qualified_name:
+        record["qualified_name"] = qualified_name
+    return record
 
 
 def _node_references(value: Any, fx_node_type: type) -> list[str]:
@@ -74,6 +89,25 @@ def _node_references(value: Any, fx_node_type: type) -> list[str]:
             result.extend(_node_references(item, fx_node_type))
         return result
     return []
+
+
+def _json_argument(value: Any, fx_node_type: type) -> Any:
+    """Serialize literal arguments without losing their position around tensor operands."""
+    if isinstance(value, fx_node_type):
+        return {"tensor": value.name}
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_json_argument(item, fx_node_type) for item in value]
+    if isinstance(value, dict):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError("exported keyword dictionaries must use string keys")
+        return {key: _json_argument(item, fx_node_type) for key, item in value.items()}
+    # torch dtype/device/layout and enum-like export literals have stable string forms.
+    module_name = getattr(type(value), "__module__", "")
+    if module_name.startswith("torch"):
+        return str(value)
+    raise ValueError(f"unsupported exported literal argument type {type(value)!r}")
 
 
 def _structure_sha256(model: Any) -> str:
@@ -103,12 +137,7 @@ def export_model(
     model_name: str | None = None,
     dynamic_shapes: Any = None,
 ) -> dict[str, Any]:
-    """Capture a PyTorch module with torch.export and return NPUsim graph IR.
-
-    This timing frontend preserves graph shape/dtype/dependency metadata. It does
-    not serialize weight values and does not imply that every exported op has a
-    hardware timing model yet.
-    """
+    """Capture a PyTorch module with torch.export and return NPUsim capture IR."""
     torch = _torch()
     if not isinstance(model, torch.nn.Module):
         raise TypeError("model must be a torch.nn.Module")
@@ -133,6 +162,9 @@ def export_model(
         input_spec.arg.name: _input_kind(input_spec)
         for input_spec in exported.graph_signature.input_specs
     }
+    qualified_names: dict[str, str] = {}
+    qualified_names.update(getattr(exported.graph_signature, "inputs_to_parameters", {}))
+    qualified_names.update(getattr(exported.graph_signature, "inputs_to_buffers", {}))
 
     tensors: list[dict[str, Any]] = []
     nodes: list[dict[str, Any]] = []
@@ -154,7 +186,7 @@ def export_model(
             raise ValueError(f"node {node.name} is missing torch.export value metadata")
 
         kind = kinds.get(node.name, "activation")
-        tensors.append(_tensor_record(node.name, value, kind))
+        tensors.append(_tensor_record(node.name, value, kind, qualified_names.get(node.name)))
         if node.op == "placeholder":
             if kind == "input":
                 inputs.append(node.name)
@@ -165,6 +197,10 @@ def export_model(
                 "op": str(node.target),
                 "inputs": _node_references((node.args, node.kwargs), fx_node_type),
                 "outputs": [node.name],
+                "arguments": [_json_argument(item, fx_node_type) for item in node.args],
+                "keyword_arguments": {
+                    key: _json_argument(item, fx_node_type) for key, item in node.kwargs.items()
+                },
                 "attributes": {"fx_op": node.op},
                 "source": {"target": str(node.target)},
             }
@@ -185,6 +221,8 @@ def export_model(
             "export_mode": "torch.export",
             "dynamic_shapes_configured": dynamic_shapes is not None,
             "weight_values_included": False,
+            "literal_arguments_preserved": True,
+            "tensor_layout_preserved": True,
         },
         "inputs": inputs,
         "outputs": outputs,
@@ -202,12 +240,10 @@ def export_to_file(
     example_kwargs: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> str:
-    """Export a model and write a validated graph IR artifact."""
     return dump_graph_ir(export_model(model, example_args, example_kwargs, **kwargs), output_path)
 
 
 def load_callable(specification: str) -> Any:
-    """Resolve a user factory reference in the form ``module:attribute``."""
     module_name, separator, attribute = specification.partition(":")
     if not separator or not module_name or not attribute:
         raise ValueError("callable specification must use module:attribute")

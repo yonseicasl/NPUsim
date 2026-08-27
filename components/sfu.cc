@@ -276,6 +276,35 @@ void sfu_t::init(section_config_t m_section_config) {
     setup_energy_is_declared = m_section_config.get_setting("sfu_setup_energy", &u_setup_energy);
     static_energy_is_declared = m_section_config.get_setting("sfu_static_energy", &u_static_energy);
 
+    // Phase-6/8: architecture allowlist. Tokens must name modeled operations; a typo
+    // would otherwise silently mark a real operation unsupported.
+    std::string supported_list;
+    if(m_section_config.get_setting("supported_ops", &supported_list)) {
+        std::stringstream tokens(supported_list);
+        std::string token;
+        while(std::getline(tokens, token, ',')) {
+            if(token.empty()) continue;
+            bool known = false;
+            for(unsigned i = 0; i < NUM_SFU_OPS; ++i) {
+                if(token == profiles[i].name) { known = true; break; }
+            }
+            if(!known) {
+                std::cerr << "Error: [sfu] supported_ops names unknown operation '"
+                          << token << "'" << std::endl;
+                exit(1);
+            }
+            supported_ops.insert(token);
+        }
+        if(supported_ops.empty()) {
+            std::cerr << "Error: [sfu] supported_ops is declared empty; omit the key to"
+                      << " support every modeled operation" << std::endl;
+            exit(1);
+        }
+        // A declared allowlist that FORBIDS the bypass would reject every layer whose
+        // activation is identity; that is never an architecture statement.
+        supported_ops.insert("linear");
+    }
+
     // Phase-6: precision qualification. The SFU processes the final ACCUMULATOR value
     // (post-accumulator, pre-cast), so a declared profile precision is checked against
     // the runtime accumulator format. parse_data_format() fails fast on an unknown name
@@ -338,6 +367,11 @@ const char *sfu_t::op_name(sfu_op_t m_op) {
         "gelu", "silu", "loggy", "exp", "recip", "vmax", "vadd", "vmul",
     };
     return names[m_op];
+}
+
+bool sfu_t::op_supported(sfu_op_t m_op) const {
+    if(supported_ops.empty()) return true;
+    return supported_ops.count(profiles[m_op].name) != 0;
 }
 
 double sfu_t::invocation_cycles(const sfu_op_profile_t &m_profile, size_t m_chunks) const {
@@ -442,6 +476,13 @@ sfu_invocation_t sfu_t::elementwise_invocation(sfu_op_t m_op, size_t m_valid_ele
     if(profile.bypass || m_valid_elements == 0) {
         return invocation;
     }
+    // Architecture allowlist: an operation the hardware does not instantiate cannot be
+    // priced -- there is no unit to charge (normally caught up front by npu_t::run()).
+    if(!op_supported(m_op)) {
+        std::cerr << "Error: SFU operation '" << profile.name << "' is outside this"
+                  << " architecture's [sfu] supported_ops contract" << std::endl;
+        exit(1);
+    }
     require_profile(profile);
 
     invocation.valid_elements = m_valid_elements;
@@ -512,6 +553,19 @@ sfu_invocation_t sfu_t::softmax_invocation(size_t m_rows, size_t m_row_length) c
     // or sum performs zero operations, so it must charge zero cycles as well -- every
     // charged cycle needs an event source).
     const bool reduction_passes = m_row_length > 1;
+    // Architecture allowlist: softmax needs every micro-op it schedules to exist
+    // (normally caught up front by npu_t::run_standalone_softmax()).
+    const sfu_op_t micro_ops[5] = {SFU_OP_VMAX, SFU_OP_VADD, SFU_OP_EXP, SFU_OP_RECIP,
+                                   SFU_OP_VMUL};
+    for(unsigned i = 0; i < 5; ++i) {
+        if(i == 0 && !reduction_passes) continue;   // length-1 rows schedule no vmax
+        if(!op_supported(micro_ops[i])) {
+            std::cerr << "Error: softmax needs SFU micro-operation '"
+                      << profiles[micro_ops[i]].name << "', which is outside this"
+                      << " architecture's [sfu] supported_ops contract" << std::endl;
+            exit(1);
+        }
+    }
     if(reduction_passes) require_profile(vmax);
     require_profile(vadd);
     require_profile(vexp);
@@ -671,6 +725,19 @@ void sfu_t::print_specification() {
               << (profile_precision.empty() ? "not declared" : profile_precision)
               << (precision_mismatch ? "  [MISMATCH vs runtime accumulator -- UNCALIBRATED]"
                                      : "") << std::endl;
+    std::cout << "Supported ops      : ";
+    if(supported_ops.empty()) {
+        std::cout << "every modeled operation (no allowlist declared)";
+    } else {
+        bool first = true;
+        for(std::set<std::string>::const_iterator it = supported_ops.begin();
+            it != supported_ops.end(); ++it) {
+            std::cout << (first ? "" : ",") << *it;
+            first = false;
+        }
+        std::cout << "  (operations outside this list fail fast)";
+    }
+    std::cout << std::endl;
     std::cout << "Placement          :" << std::setw(24) << placement << std::endl;
     std::cout << "Fusion             :" << std::setw(24) << fusion << std::endl;
     std::cout << "Setup cycle        :" << std::setw(24) << std::setprecision(1)

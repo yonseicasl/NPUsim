@@ -1,0 +1,30 @@
+{
+  "schema_version": "npusim.graph.v1",
+  "producer": {"name": "fixture", "version": "1"},
+  "model": {"name": "linear-relu-fixture", "structure_sha256": "fixture-linear-relu"},
+  "inputs": ["input"],
+  "outputs": ["relu_output"],
+  "tensors": [
+    {"id": "input", "shape": [64, 64], "dtype": "float32", "layout": "contiguous", "kind": "input", "logical_bytes": 16384},
+    {"id": "weight", "shape": [64, 64], "dtype": "float32", "layout": "contiguous", "kind": "parameter", "logical_bytes": 16384},
+    {"id": "bias", "shape": [64], "dtype": "float32", "layout": "contiguous", "kind": "parameter", "logical_bytes": 256},
+    {"id": "linear_output", "shape": [64, 64], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 16384},
+    {"id": "relu_output", "shape": [64, 64], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 16384}
+  ],
+  "nodes": [
+    {
+      "id": "linear",
+      "op": "aten.linear.default",
+      "inputs": ["input", "weight", "bias"],
+      "outputs": ["linear_output"],
+      "attributes": {"fx_op": "call_function"}
+    },
+    {
+      "id": "relu",
+      "op": "aten.relu.default",
+      "inputs": ["linear_output"],
+      "outputs": ["relu_output"],
+      "attributes": {"fx_op": "call_function"}
+    }
+  ]
+}

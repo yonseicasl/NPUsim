@@ -1,0 +1,110 @@
+{
+  "coverage": {
+    "captured_nodes": 2,
+    "executable_operations": 1,
+    "lowered_source_nodes": 2,
+    "unsupported_nodes": 0
+  },
+  "executable_sha256": "d2f6e0941ef252406819c50f61db873075d70623e4c331e974d1102d09c25717",
+  "inputs": [
+    "input"
+  ],
+  "model": {
+    "name": "linear-relu-fixture",
+    "structure_sha256": "fixture-linear-relu"
+  },
+  "operations": [
+    {
+      "activation": "relu",
+      "geometry": {
+        "batch": 64,
+        "input_features": 64,
+        "output_features": 64
+      },
+      "id": "linear",
+      "inputs": [
+        "input",
+        "weight",
+        "bias"
+      ],
+      "kind": "npusim.linear",
+      "mapping_required": true,
+      "outputs": [
+        "relu_output"
+      ],
+      "source_nodes": [
+        "linear",
+        "relu"
+      ],
+      "status": "modeled"
+    }
+  ],
+  "outputs": [
+    "relu_output"
+  ],
+  "producer": {
+    "name": "npusim-pytorch-lowering",
+    "version": "0.1"
+  },
+  "schema_version": "npusim.exec.v1",
+  "source_graph": {
+    "schema_version": "npusim.graph.v1",
+    "sha256": "d1e6e431467e28f3c7630ca4b490300257178ebb5f605195dc887f3fc2643fd8"
+  },
+  "tensors": [
+    {
+      "dtype": "float32",
+      "id": "input",
+      "kind": "input",
+      "layout": "contiguous",
+      "logical_bytes": 16384,
+      "shape": [
+        64,
+        64
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 16384,
+      "shape": [
+        64,
+        64
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 256,
+      "shape": [
+        64
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "linear_output",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 16384,
+      "shape": [
+        64,
+        64
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "relu_output",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 16384,
+      "shape": [
+        64,
+        64
+      ]
+    }
+  ]
+}

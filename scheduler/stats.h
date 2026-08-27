@@ -24,6 +24,11 @@ struct sfu_operand_stream_t {
     double dram_link_cycle;         // off-chip link, both directions
     double dram_link_energy;
     size_t dram_link_transactions;
+    // Open-page row activations of the two sequential operand streams (dram residency
+    // only; same sequential-stream model dram_t uses -- see dram_row_activations()).
+    size_t dram_row_activations;
+    double dram_row_activation_cycle;   // busiest-bank serialization, both directions
+    double dram_row_activation_energy;  // every activation costs energy
     double glb_access_cycle;        // GLB ports: staging write + feed read (+ mirror out)
     double glb_access_energy;
 
@@ -31,6 +36,8 @@ struct sfu_operand_stream_t {
                              ingress_cycle(0.0), egress_cycle(0.0), dram_access_cycle(0.0),
                              dram_access_energy(0.0), dram_link_cycle(0.0),
                              dram_link_energy(0.0), dram_link_transactions(0),
+                             dram_row_activations(0), dram_row_activation_cycle(0.0),
+                             dram_row_activation_energy(0.0),
                              glb_access_cycle(0.0), glb_access_energy(0.0) {}
 };
 

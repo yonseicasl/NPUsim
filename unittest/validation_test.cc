@@ -840,6 +840,27 @@ void validate_accelerator(config_t &config, const std::string &path) {
             if(residency != "dram" && residency != "glb") {
                 fail(path + ": [sfu] softmax_operand_residency must be dram or glb");
             }
+            // Phase-6/8: supported_ops tokens must name modeled operations.
+            std::string supported_list;
+            if(section.get_setting("supported_ops", &supported_list)) {
+                static const char *known_ops[] = {
+                    "linear", "relu", "leaky", "elu", "sigmoid", "tanh", "hsigmoid",
+                    "hswish", "gelu", "silu", "loggy", "exp", "recip", "vmax", "vadd",
+                    "vmul"};
+                std::stringstream tokens(supported_list);
+                std::string token;
+                while(std::getline(tokens, token, ',')) {
+                    if(token.empty()) continue;
+                    bool known = false;
+                    for(const char *op : known_ops) {
+                        if(token == op) { known = true; break; }
+                    }
+                    if(!known) {
+                        fail(path + ": [sfu] supported_ops names unknown operation '" +
+                             token + "'");
+                    }
+                }
+            }
             // Phase-6: approximation declarations must name a known mode. The per-op
             // class legality (ALU vs transcendental) is enforced by sfu_t::init(); this
             // catches typos at config-validation time for every shipped file.

@@ -55,6 +55,9 @@ mapping_table_t::~mapping_table_t() {
 // Initialize the mapping table.
 void mapping_table_t::init(section_config_t m_section_config) {
 
+    operation_id.clear();
+    m_section_config.get_setting("op_id", &operation_id);
+    mapping_kind = lowercase(m_section_config.name);
 	mapping_table.reserve(component_type_t::NUM_COMPONENT_TYPES);
 
     std::vector<unsigned> parameters(parameter_type_t::NUM_PARAMETER_TYPES, 1);

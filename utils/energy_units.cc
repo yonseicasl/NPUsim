@@ -298,7 +298,11 @@ struct component_requirement_t {
 const component_requirement_t g_requirements[] = {
     { ENERGY_COMPONENT_MAC,           "pe_array",
       { "computation_energy", "mac_read_energy", "mac_write_energy", 0, 0 },
-      { "mac_energy_", "mac_reduction_energy", 0, 0, 0 } },
+      // accumulator_spill_energy: without edge_accumulation the accumulator sits in the MAC
+      // and its (declared, possibly calibrated) energy lands in this row -- so the row must
+      // read PARTIAL, not "NOT MODELED", when that is its only declared cost. The key stays
+      // in the PE roster too for the edge_accumulation ownership.
+      { "mac_energy_", "mac_reduction_energy", "accumulator_spill_energy", 0, 0 } },
     { ENERGY_COMPONENT_PE,            "pe_array",
       { "lb_read_energy", "lb_write_energy", "static_energy", "transfer_energy_pe", 0 },
       { "accumulator_spill_energy", 0, 0, 0, 0 } },
@@ -415,11 +419,23 @@ void energy_cost_schema_t::configure(config_t &m_config) {
                 missing_keys += need.keys[k];
             }
         }
-        for(unsigned k = 0; k < 4 && need.optional[k] != 0; ++k) {
-            declared_nonzero(m_config, need.section, need.optional[k], nonzero);
+        // 2026-08-26: count optional declarations too (and scan the widened 5-slot list --
+        // the bound had stayed at the old array size). The struct's own contract says a
+        // declared optional cost MAKES the component costed; the code only honored that when
+        // a required key was also declared, so a component whose ONLY declared cost was an
+        // optional one (nvdla_small_cacti22: the CACTI-calibrated accumulator on a MAC with
+        // no compute cost) printed "NOT MODELED" while carrying calibrated energy. With an
+        // optional declared and required keys missing it is a PARTIAL undercount, which is
+        // the truthful state.
+        unsigned optional_declared = 0;
+        for(unsigned k = 0; k < 5 && need.optional[k] != 0; ++k) {
+            if(declared_nonzero(m_config, need.section, need.optional[k], nonzero)) {
+                ++optional_declared;
+            }
         }
         missing[need.component] = missing_keys;
-        if(declared == 0)             state[need.component] = ENERGY_COST_NOT_MODELED;
+        if(declared == 0 && optional_declared == 0)
+                                      state[need.component] = ENERGY_COST_NOT_MODELED;
         else if(declared < required)  state[need.component] = ENERGY_COST_PARTIAL;
         else if(nonzero == 0)         state[need.component] = ENERGY_COST_MODELED_ZERO;
         else                          state[need.component] = ENERGY_COST_CALIBRATED;

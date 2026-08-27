@@ -1,4 +1,10 @@
 #include <thread>
+#include <cstdio>
+#include <map>
+#include <set>
+#include <stdexcept>
+#include <unistd.h>
+
 
 #include "npu.h"
 #include "energy_units.h"
@@ -13,6 +19,8 @@ npu_t::npu_t() :
  num_skipped_timing_layers(0),
  multi_chip(NULL),
  dram(NULL),
+ workload(NULL),
+ executable_ir_mode(false),
  network(NULL),
  layer(NULL),
  scheduler(NULL),
@@ -32,6 +40,7 @@ npu_t::~npu_t() {
 
 	// Free the memory for the network.
 	delete network;
+    delete workload;
 
 	// Free the memory for mapping table.
     for(auto mapping_table : mapping_tables) { delete mapping_table; }
@@ -196,7 +205,37 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     /* Initialize the Neural network */
     std::cout << "# Initialize neural network model ..." << std::endl;
 	network = new nebula::convolutional_t();
-	network->init(m_network_config);
+    executable_ir_mode = m_network_config.size() >= 5 &&
+        m_network_config.substr(m_network_config.size() - 5) == ".json";
+    if(executable_ir_mode) {
+        workload = new workload_graph_t();
+        try {
+            workload->load(m_network_config);
+            const std::string generated = workload->legacy_network_config();
+            char temporary_path[] = "/tmp/npusim-executable-XXXXXX";
+            const int temporary_fd = mkstemp(temporary_path);
+            if(temporary_fd == -1) throw std::runtime_error("cannot create transitional network config");
+            close(temporary_fd);
+            {
+                std::ofstream output(temporary_path, std::ios::out | std::ios::trunc);
+                if(!output.good()) {
+                    std::remove(temporary_path);
+                    throw std::runtime_error("cannot write transitional network config");
+                }
+                output << generated;
+            }
+            network->init(temporary_path);
+            std::remove(temporary_path);
+            std::cout << "# Frontend IR: " << workload->schema_version
+                      << " model=" << workload->model_name
+                      << " source_sha256=" << workload->source_sha256 << std::endl;
+        } catch(const std::exception &error) {
+            std::cerr << "Error: " << error.what() << std::endl;
+            exit(1);
+        }
+    } else {
+        network->init(m_network_config);
+    }
     std::cout << "  Done!" << std::endl;
 
 	/* Initialize the mapping table. */
@@ -214,6 +253,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         std::cerr << "Error: mapping config contains no layers" << std::endl;
         exit(1);
     }
+    bind_executable_mappings();
     std::cout << "  Done!" << std::endl;
 
     /* Initialize the scheduler */
@@ -311,6 +351,24 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
     // the END of that layer's simulation would discard every completed layer first.
     if(!sfus.empty()) {
         for(unsigned index = 0; index < network->num_layers; index++) {
+            // Standalone softmax needs every micro-op of its microprogram to exist in
+            // this architecture (e.g. nv_small's SDP has no LUT/EW engine, so exp is
+            // architecturally impossible -- fail before simulating anything).
+            if(network->layers[index]->layer_type == nebula::SOFTMAX_LAYER) {
+                const sfu_op_t micro_ops[5] = {SFU_OP_VMAX, SFU_OP_VADD, SFU_OP_EXP,
+                                               SFU_OP_RECIP, SFU_OP_VMUL};
+                for(unsigned m = 0; m < 5; ++m) {
+                    if(!sfus[0]->op_supported(micro_ops[m])) {
+                        std::cerr << "Error: network layer " << index << " (softmax)"
+                                  << " needs SFU micro-operation '"
+                                  << sfu_t::op_name(micro_ops[m])
+                                  << "', which is outside this architecture's [sfu]"
+                                  << " supported_ops contract" << std::endl;
+                        exit(1);
+                    }
+                }
+                continue;
+            }
             if(network->layers[index]->layer_type != nebula::CONVOLUTIONAL_LAYER &&
                network->layers[index]->layer_type != nebula::CONNECTED_LAYER) continue;
             const unsigned type = static_cast<unsigned>(network->layers[index]->activation_type);
@@ -325,6 +383,13 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                           << " ReLU" << std::endl;
                 exit(1);
             }
+            if(!sfus[0]->op_supported(op)) {
+                std::cerr << "Error: network layer " << index << " activation '"
+                          << nebula::activation_type_str[type]
+                          << "' is outside this architecture's [sfu] supported_ops"
+                          << " contract (the execution unit does not exist)" << std::endl;
+                exit(1);
+            }
         }
     }
 
@@ -332,7 +397,14 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
 	unsigned num_iteration = 1;
     // Run the network
 	for(unsigned iteration = 0; iteration < num_iteration; iteration++) {
-		network->load_data(iteration);
+#ifdef FUNCTIONAL
+        if(executable_ir_mode) {
+            std::cerr << "Error: executable IR currently supports timing-only builds; "
+                      << "functional mode requires a tensor artifact" << std::endl;
+            exit(1);
+        }
+#endif
+        if(!executable_ir_mode) network->load_data(iteration);
         num_skipped_timing_layers = 0;
 
         // Layer-wise simulation.
@@ -594,6 +666,7 @@ void npu_t::print_layerwise_results(const std::string m_accelerator_config, cons
 
     std::ofstream output_file;
     output_file.open(output_file_name, std::ios::out);
+    print_workload_provenance(output_file);
     layer_stats[m_index]->print_stats(output_file);
 
     layer_stats[m_index]->print_results(output_file);
@@ -620,6 +693,7 @@ void npu_t::print_total_result(const std::string m_accelerator_config, const std
     // next to the latency it qualifies rather than only as a trailing warning.
     network_stats->excluded_timing_layers = num_skipped_timing_layers;
     network_stats->print_results(output_file);
+    print_workload_provenance(output_file);
     if(num_skipped_timing_layers > 0) {
         const std::string warning = "WARNING: partial timing result; " +
             std::to_string(num_skipped_timing_layers) +
@@ -789,12 +863,25 @@ void npu_t::apply_fused_sfu_activation(unsigned m_index) {
 void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accelerator_config,
                                    const std::string &m_network_config) {
     nebula::layer_t *softmax_layer = network->layers[m_index];
-    const size_t rows = network->batch_size;
-    const size_t row_length = softmax_layer->output_size;
+    // Softmax groups (Darknet/Nebula semantics): the vector splits into `groups`
+    // independent normalization spans, so the SFU sees batch x groups rows of
+    // output_size/groups elements. Nebula's init fail-fasts on non-dividing groups;
+    // the guard here keeps the cost model safe against a frontend regression.
+    const size_t groups = std::max(1u, softmax_layer->group);
+    if(softmax_layer->output_size % groups != 0) {
+        std::cerr << "Error: softmax layer " << m_index << " groups = " << groups
+                  << " does not divide output size " << softmax_layer->output_size
+                  << std::endl;
+        exit(1);
+    }
+    const size_t rows = static_cast<size_t>(network->batch_size)*groups;
+    const size_t row_length = softmax_layer->output_size/groups;
 
     std::cout << "The network configuration of #" << m_index
               << " layer (standalone softmax on SFU)" << std::endl;
-    std::cout << " * softmax rows x length : " << rows << " x " << row_length << std::endl;
+    std::cout << " * softmax rows x length : " << rows << " x " << row_length
+              << "  (batch " << network->batch_size << " x groups " << groups << ")"
+              << std::endl;
 
     // Rows are independent, so they partition across every physical chip's SFU; the
     // window follows the busiest chip and work/energy/traffic sum (merge_parallel).
@@ -833,10 +920,14 @@ void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accele
     //          and result ports are exercised (the tensor must fit).
     const sfu_operand_stream_t stream = softmax_operand_stream(rows*row_length);
     stats->sfu_contract_note =
-        "standalone softmax distributes " + std::to_string(rows) + " row(s) across " +
-        std::to_string(num_processors) + " chip SFU(s); operand residency: " +
-        stream.residency + " (NoP hop and DRAM row-activation costs are not modeled for"
-        " this layer)";
+        "standalone softmax distributes " + std::to_string(rows) + " row(s) (batch x"
+        " groups) across " + std::to_string(num_processors) + " chip SFU(s); operand"
+        " residency: " + stream.residency +
+        (stream.dram_row_activations > 0
+             ? "; " + std::to_string(stream.dram_row_activations) +
+               " DRAM row activation(s) charged on the transfer axis"
+             : "") +
+        " (the NoP hop cost is not modeled for this layer)";
     if(!sfus[0]->get_precision_note().empty()) {
         stats->sfu_contract_note += "; " + sfus[0]->get_precision_note();
     }
@@ -930,6 +1021,25 @@ sfu_operand_stream_t npu_t::softmax_operand_stream(size_t m_elements) {
     stream.dram_link_energy = dram->u_transfer_energy*
         static_cast<double>(ingress.link_transactions + egress.link_transactions);
     stream.dram_link_transactions = ingress.link_transactions + egress.link_transactions;
+    // Open-page row activations of the two sequential streams -- the SAME model and cost
+    // resolution dram_t applies to its own streams (tRC when calibrated, else the flat
+    // row_miss cost; bank parallelism helps latency, never energy). Disabled, exactly
+    // like dram_t, when no row-buffer geometry is declared.
+    if(dram->row_buffer_bytes > 0) {
+        const double per_activation_cycle =
+            (dram->t_ras_cycle > 0.0 && dram->t_rp_cycle > 0.0)
+                ? dram->t_ras_cycle + dram->t_rp_cycle : dram->u_row_miss_cycle;
+        const dram_row_activation_cost_t ingress_rows = dram_row_activations(
+            tensor_bytes, dram->row_buffer_bytes, dram->num_banks);
+        const dram_row_activation_cost_t egress_rows = dram_row_activations(
+            tensor_bytes, dram->row_buffer_bytes, dram->num_banks);
+        stream.dram_row_activations = ingress_rows.activations + egress_rows.activations;
+        stream.dram_row_activation_cycle =
+            static_cast<double>(ingress_rows.busiest_bank + egress_rows.busiest_bank)*
+            per_activation_cycle;
+        stream.dram_row_activation_energy =
+            static_cast<double>(stream.dram_row_activations)*dram->u_row_miss_energy;
+    }
     // GLB staging ports: the off-chip transfers land in (and drain from) the GLB.
     stream.glb_access_cycle +=
         static_cast<double>(ingress.destination_accesses)*glb->u_write_cycle[data_type_t::OUTPUT] +
@@ -939,12 +1049,16 @@ sfu_operand_stream_t npu_t::softmax_operand_stream(size_t m_elements) {
         static_cast<double>(egress.source_accesses)*glb->u_read_energy[data_type_t::OUTPUT];
 
     // Serial makespans on the critical path: the off-chip hop pipelines internally
-    // (packet-level source/link/destination overlap), then the GLB->SFU feed runs.
+    // (packet-level source/link/destination overlap), then the GLB->SFU feed runs. Each
+    // direction additionally pays its own stream's busiest-bank row-activation
+    // serialization (split evenly: the two directions activate the same row count).
     stream.ingress_cycle = pipelined_transfer_cycles(ingress.groups,
         dram->u_read_cycle[data_type_t::OUTPUT], dram->u_transfer_cycle,
-        glb->u_write_cycle[data_type_t::OUTPUT]) + feed_read_cycle;
+        glb->u_write_cycle[data_type_t::OUTPUT]) + feed_read_cycle +
+        stream.dram_row_activation_cycle/2.0;
     stream.egress_cycle = result_write_cycle + pipelined_transfer_cycles(egress.groups,
         glb->u_read_cycle[data_type_t::OUTPUT], dram->u_transfer_cycle,
-        dram->u_write_cycle[data_type_t::OUTPUT]);
+        dram->u_write_cycle[data_type_t::OUTPUT]) +
+        stream.dram_row_activation_cycle/2.0;
     return stream;
 }

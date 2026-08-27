@@ -20,6 +20,7 @@
 #include "global_buffer.h"
 
 #include "multi_chip.h"
+#include "workload_graph.h"
 #include "dram.h"
 #include "sfu.h"
 
@@ -78,6 +79,9 @@ public:
 
     /* Print result of the simulation */
 
+    // Attach executable-IR provenance to every result artifact.
+    void print_workload_provenance(std::ofstream &m_output) const;
+    void bind_executable_mappings();
     // Print out the simulation result.
     void print_layerwise_results(const std::string m_accelerator_config, const std::string m_network_config, unsigned m_index);
     // Print out the simulation result.
@@ -118,6 +122,8 @@ protected:
     multi_chip_t *multi_chip;                       // On-chip processors
     dram_t *dram;                                   // DRAM
     std::vector<sfu_t*> sfus;                       // Per-chip SFU (empty without [sfu])
+    workload_graph_t *workload;                    // Framework-neutral executable IR, if used.
+    bool executable_ir_mode;
 
 	nebula::network_t *network;                     // DNN model obtained from the software framework (PyTorch and Nebula)
 	std::vector<mapping_table_t*> mapping_tables;	// Mapping tables.
