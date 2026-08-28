@@ -47,8 +47,18 @@ fact that runtime datatypes come from the accelerator configuration.
 Run frontend regression tests with:
 
 ```bash
-unittest/run_pytorch_frontend_validation.sh
+unittest/run_pytorch_frontend_validation.sh   # lowering + loader units, both fixtures
+python3 validation/frontend/check.py          # acceptance gate (FE1-FE4)
 ```
+
+The acceptance gate pins the whole-path claims: recompiling each checked-in
+graph fixture reproduces its executable fixture bit-for-bit (FE1); the
+linear_relu fixture -- which IS the RTL-validated gemm_64x64x64 -- produces
+compute-schedule and DRAM traffic IDENTICAL to the nebula path, with the
+critical-path delta equal to the SFU busy cycles exactly (FE2); the conv_relu
+fixture's computation count, SFU scalar operations, and output-commit identity
+all match its own geometry (FE3); and missing-SFU / wrong-op_id runs fail with
+their specific errors (FE4).
 
 ## Exporting a model
 

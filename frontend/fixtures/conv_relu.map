@@ -1,0 +1,15 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+#
+# conv-relu-fixture: 1x3x8x8 -> 8 filters 3x3 stride 1 -> 1x8x6x6, ReLU fused into
+# the producer. Full coverage: K=8 on PE_X, C=3 on PE_Y, R/S per-PE temporal,
+# P/Q at the GLB. MAC identity: 6*6*8*3*3*3 = 7,776 computations.
+[convolutional]
+op_id  = conv
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 3, 3, 0, 0, 1, 1,
+PE_X    = 8, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 3, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 6, 6, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

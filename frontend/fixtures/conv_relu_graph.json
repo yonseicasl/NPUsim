@@ -1,0 +1,112 @@
+{
+ "schema_version": "npusim.graph.v1",
+ "producer": {
+  "name": "npusim-frontend-fixture",
+  "version": "1"
+ },
+ "model": {
+  "name": "conv-relu-fixture",
+  "structure_sha256": "conv-relu-fixture"
+ },
+ "inputs": [
+  "input"
+ ],
+ "outputs": [
+  "relu_output"
+ ],
+ "tensors": [
+  {
+   "id": "input",
+   "shape": [
+    1,
+    3,
+    8,
+    8
+   ],
+   "dtype": "float32",
+   "layout": "contiguous",
+   "kind": "input",
+   "logical_bytes": 768
+  },
+  {
+   "id": "weight",
+   "shape": [
+    8,
+    3,
+    3,
+    3
+   ],
+   "dtype": "float32",
+   "layout": "contiguous",
+   "kind": "parameter",
+   "logical_bytes": 864
+  },
+  {
+   "id": "conv_output",
+   "shape": [
+    1,
+    8,
+    6,
+    6
+   ],
+   "dtype": "float32",
+   "layout": "contiguous",
+   "kind": "activation",
+   "logical_bytes": 1152
+  },
+  {
+   "id": "relu_output",
+   "shape": [
+    1,
+    8,
+    6,
+    6
+   ],
+   "dtype": "float32",
+   "layout": "contiguous",
+   "kind": "activation",
+   "logical_bytes": 1152
+  }
+ ],
+ "nodes": [
+  {
+   "id": "conv",
+   "op": "aten.conv2d.default",
+   "inputs": [
+    "input",
+    "weight"
+   ],
+   "outputs": [
+    "conv_output"
+   ],
+   "attributes": {
+    "stride": [
+     1,
+     1
+    ],
+    "padding": [
+     0,
+     0
+    ],
+    "dilation": [
+     1,
+     1
+    ],
+    "groups": 1
+   }
+  },
+  {
+   "id": "relu",
+   "op": "aten.relu.default",
+   "inputs": [
+    "conv_output"
+   ],
+   "outputs": [
+    "relu_output"
+   ],
+   "attributes": {
+    "fx_op": "call_function"
+   }
+  }
+ ]
+}

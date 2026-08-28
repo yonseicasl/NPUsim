@@ -14,3 +14,4 @@ g++ -std=c++11 -Wall -I"$repo_root/scheduler" \
     "$repo_root/unittest/workload_graph_test.cc" \
     -o "$test_binary"
 "$test_binary" "$repo_root/frontend/fixtures/linear_relu.exec.json"
+"$test_binary" "$repo_root/frontend/fixtures/conv_relu.exec.json"
