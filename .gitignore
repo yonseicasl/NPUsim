@@ -25,3 +25,9 @@ models/*.txt
 
 # SCALE-Sim per-layer traces (multi-GB); only the *REPORT*.csv summaries are committed
 validation/phase1/out/*/layer*/
+
+# Internal design/assessment/issue docs (local only, not published)
+plan/
+assessment/
+implementation/
+issue/
