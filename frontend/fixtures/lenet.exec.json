@@ -1,0 +1,598 @@
+{
+  "coverage": {
+    "captured_nodes": 11,
+    "executable_operations": 7,
+    "lowered_source_nodes": 11,
+    "unsupported_nodes": 0
+  },
+  "executable_sha256": "ed20b57f9a4787e447aae2a09de08ad0b6710f84ce1ddbd324943c303e448bc5",
+  "inputs": [
+    "x"
+  ],
+  "model": {
+    "name": "lenet-fixture",
+    "structure_sha256": "b2da1832fb6bfa4054283ffd96029c873af9ee5987ccbc3302bc111b1c197573"
+  },
+  "operations": [
+    {
+      "activation": "relu",
+      "geometry": {
+        "batch": 1,
+        "dilation_height": 1,
+        "dilation_width": 1,
+        "filter_height": 5,
+        "filter_width": 5,
+        "groups": 1,
+        "input_channels": 1,
+        "input_height": 28,
+        "input_width": 28,
+        "output_channels": 6,
+        "output_height": 24,
+        "output_width": 24,
+        "padding_height": 0,
+        "padding_width": 0,
+        "stride_height": 1,
+        "stride_width": 1
+      },
+      "id": "conv2d",
+      "inputs": [
+        "x",
+        "p_c1_weight",
+        "p_c1_bias"
+      ],
+      "kind": "npusim.conv2d",
+      "mapping_required": true,
+      "outputs": [
+        "relu"
+      ],
+      "source_nodes": [
+        "conv2d",
+        "relu"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "batch": 1,
+        "channels": 6,
+        "count_include_pad": true,
+        "dilation_height": 1,
+        "dilation_width": 1,
+        "input_height": 24,
+        "input_width": 24,
+        "kernel_height": 2,
+        "kernel_width": 2,
+        "mode": "max",
+        "output_height": 12,
+        "output_width": 12,
+        "padding_height": 0,
+        "padding_width": 0,
+        "stride_height": 2,
+        "stride_width": 2
+      },
+      "id": "max_pool2d",
+      "inputs": [
+        "relu"
+      ],
+      "kind": "npusim.pool2d",
+      "mapping_required": false,
+      "outputs": [
+        "max_pool2d"
+      ],
+      "source_nodes": [
+        "max_pool2d"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "relu",
+      "geometry": {
+        "batch": 1,
+        "dilation_height": 1,
+        "dilation_width": 1,
+        "filter_height": 5,
+        "filter_width": 5,
+        "groups": 1,
+        "input_channels": 6,
+        "input_height": 12,
+        "input_width": 12,
+        "output_channels": 16,
+        "output_height": 8,
+        "output_width": 8,
+        "padding_height": 0,
+        "padding_width": 0,
+        "stride_height": 1,
+        "stride_width": 1
+      },
+      "id": "conv2d_1",
+      "inputs": [
+        "max_pool2d",
+        "p_c2_weight",
+        "p_c2_bias"
+      ],
+      "kind": "npusim.conv2d",
+      "mapping_required": true,
+      "outputs": [
+        "relu_1"
+      ],
+      "source_nodes": [
+        "conv2d_1",
+        "relu_1"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "batch": 1,
+        "channels": 16,
+        "count_include_pad": true,
+        "dilation_height": 1,
+        "dilation_width": 1,
+        "input_height": 8,
+        "input_width": 8,
+        "kernel_height": 2,
+        "kernel_width": 2,
+        "mode": "max",
+        "output_height": 4,
+        "output_width": 4,
+        "padding_height": 0,
+        "padding_width": 0,
+        "stride_height": 2,
+        "stride_width": 2
+      },
+      "id": "max_pool2d_1",
+      "inputs": [
+        "relu_1"
+      ],
+      "kind": "npusim.pool2d",
+      "mapping_required": false,
+      "outputs": [
+        "max_pool2d_1"
+      ],
+      "source_nodes": [
+        "max_pool2d_1"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "relu",
+      "geometry": {
+        "batch": 1,
+        "input_features": 256,
+        "output_features": 120
+      },
+      "id": "linear",
+      "inputs": [
+        "flatten",
+        "p_f1_weight",
+        "p_f1_bias"
+      ],
+      "kind": "npusim.linear",
+      "mapping_required": true,
+      "outputs": [
+        "relu_2"
+      ],
+      "source_nodes": [
+        "linear",
+        "relu_2"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "batch": 1,
+        "input_features": 120,
+        "output_features": 10
+      },
+      "id": "linear_1",
+      "inputs": [
+        "relu_2",
+        "p_f2_weight",
+        "p_f2_bias"
+      ],
+      "kind": "npusim.linear",
+      "mapping_required": true,
+      "outputs": [
+        "linear_1"
+      ],
+      "source_nodes": [
+        "linear_1"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "row_length": 10,
+        "rows": 1
+      },
+      "id": "softmax",
+      "inputs": [
+        "linear_1"
+      ],
+      "kind": "npusim.softmax",
+      "mapping_required": false,
+      "outputs": [
+        "softmax"
+      ],
+      "source_nodes": [
+        "softmax"
+      ],
+      "status": "modeled"
+    }
+  ],
+  "outputs": [
+    "softmax"
+  ],
+  "producer": {
+    "name": "npusim-pytorch-lowering",
+    "version": "0.1"
+  },
+  "schema_version": "npusim.exec.v1",
+  "source_graph": {
+    "schema_version": "npusim.graph.v1",
+    "sha256": "67d44a78b3e13a846b696761eb37a76d902117c9ba7010f5117762c5fda9d0c5"
+  },
+  "tensors": [
+    {
+      "dtype": "float32",
+      "id": "p_c1_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 600,
+      "qualified_name": "c1.weight",
+      "shape": [
+        6,
+        1,
+        5,
+        5
+      ],
+      "storage_offset": 0,
+      "strides": [
+        25,
+        25,
+        5,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_c1_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 24,
+      "qualified_name": "c1.bias",
+      "shape": [
+        6
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_c2_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 9600,
+      "qualified_name": "c2.weight",
+      "shape": [
+        16,
+        6,
+        5,
+        5
+      ],
+      "storage_offset": 0,
+      "strides": [
+        150,
+        25,
+        5,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_c2_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 64,
+      "qualified_name": "c2.bias",
+      "shape": [
+        16
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f1_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 122880,
+      "qualified_name": "f1.weight",
+      "shape": [
+        120,
+        256
+      ],
+      "storage_offset": 0,
+      "strides": [
+        256,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f1_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 480,
+      "qualified_name": "f1.bias",
+      "shape": [
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f2_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 4800,
+      "qualified_name": "f2.weight",
+      "shape": [
+        10,
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        120,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f2_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 40,
+      "qualified_name": "f2.bias",
+      "shape": [
+        10
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "x",
+      "kind": "input",
+      "layout": "contiguous",
+      "logical_bytes": 3136,
+      "shape": [
+        1,
+        1,
+        28,
+        28
+      ],
+      "storage_offset": 0,
+      "strides": [
+        784,
+        784,
+        28,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "conv2d",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 13824,
+      "shape": [
+        1,
+        6,
+        24,
+        24
+      ],
+      "storage_offset": 0,
+      "strides": [
+        3456,
+        576,
+        24,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "relu",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 13824,
+      "shape": [
+        1,
+        6,
+        24,
+        24
+      ],
+      "storage_offset": 0,
+      "strides": [
+        3456,
+        576,
+        24,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "max_pool2d",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 3456,
+      "shape": [
+        1,
+        6,
+        12,
+        12
+      ],
+      "storage_offset": 0,
+      "strides": [
+        864,
+        144,
+        12,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "conv2d_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 4096,
+      "shape": [
+        1,
+        16,
+        8,
+        8
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1024,
+        64,
+        8,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "relu_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 4096,
+      "shape": [
+        1,
+        16,
+        8,
+        8
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1024,
+        64,
+        8,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "max_pool2d_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        16,
+        4,
+        4
+      ],
+      "storage_offset": 0,
+      "strides": [
+        256,
+        16,
+        4,
+        1
+      ]
+    },
+    {
+      "alias_of": "max_pool2d_1",
+      "dtype": "float32",
+      "id": "flatten",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        256
+      ],
+      "storage_offset": 0,
+      "strides": [
+        256,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "linear",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 480,
+      "shape": [
+        1,
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        120,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "relu_2",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 480,
+      "shape": [
+        1,
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        120,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "linear_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 40,
+      "shape": [
+        1,
+        10
+      ],
+      "storage_offset": 0,
+      "strides": [
+        10,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "softmax",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 40,
+      "shape": [
+        1,
+        10
+      ],
+      "storage_offset": 0,
+      "strides": [
+        10,
+        1
+      ]
+    }
+  ]
+}

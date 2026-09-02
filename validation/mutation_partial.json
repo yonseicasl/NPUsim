@@ -1,0 +1,132 @@
+[
+ {
+  "file": "utils/interconnect_timing.cc",
+  "op": "accum_sign",
+  "index": 0,
+  "line": 46,
+  "verdict": "KILLED",
+  "killer": "nop_energy",
+  "context": "= nop_route_hops(chip, columns); unicast_traversals += hops; max_hops = std:",
+  "seconds": 59.4
+ },
+ {
+  "file": "utils/interconnect_timing.cc",
+  "op": "max_to_min",
+  "index": 4,
+  "line": 65,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "_row = std::max(tallest_row, y); column_height[x] = std::max(column_height[x], y); } ",
+  "seconds": 116.1
+ },
+ {
+  "file": "utils/interconnect_timing.cc",
+  "op": "max_to_min",
+  "index": 17,
+  "line": 396,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "ource_accesses, std::max(timing.destination_accesses, ",
+  "seconds": 115.5
+ },
+ {
+  "file": "utils/interconnect_timing.cc",
+  "op": "le_to_lt",
+  "index": 0,
+  "line": 77,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "ent, double bandwidth, double frequency) { if(frequency <= 0.0) return 0; const doub",
+  "seconds": 117.3
+ },
+ {
+  "file": "utils/interconnect_timing.cc",
+  "op": "off_by_one",
+  "index": 3,
+  "line": 103,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": ") { return width_bits >= 8 && (width_bits & (width_bits - 1)) == 0; }  const char *spatia",
+  "seconds": 121.2
+ },
+ {
+  "file": "utils/interconnect_timing.cc",
+  "op": "off_by_one",
+  "index": 16,
+  "line": 217,
+  "verdict": "KILLED",
+  "killer": "knobs",
+  "context": "sactions() const { return (packets == 0) ? 0 : (packets - 1)*destination_per_packet + des",
+  "seconds": 96.4
+ },
+ {
+  "file": "utils/pe_lane.cc",
+  "op": "accum_sign",
+  "index": 1,
+  "line": 61,
+  "verdict": "KILLED",
+  "killer": "reduction",
+  "context": "if(lanes.final_accumulator_lanes > 1) { additions += static_cast<double>(lanes.fin",
+  "seconds": 38.5
+ },
+ {
+  "file": "components/pe.cc",
+  "op": "accum_sign",
+  "index": 2,
+  "line": 737,
+  "verdict": "KILLED",
+  "killer": "format",
+  "context": "oad_link_transactions; metadata_link_transactions[type] += timing.metadata_link_transact",
+  "seconds": 42.6
+ },
+ {
+  "file": "components/pe.cc",
+  "op": "accum_sign",
+  "index": 15,
+  "line": 758,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "ansactions*u_transfer_cycle; } transfer_cycle[type] += timing.link_transactions*u_tr",
+  "seconds": 117.3
+ },
+ {
+  "file": "components/pe.cc",
+  "op": "accum_sign",
+  "index": 86,
+  "line": 1765,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "access_energy_lb[data_type_t::WEIGHT] += u_read_energy_lb[data_type_t:",
+  "seconds": 116.4
+ },
+ {
+  "file": "components/pe.cc",
+  "op": "accum_sign",
+  "index": 99,
+  "line": 1950,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "dth)); transfer_energy[data_type_t::OUTPUT] += num_access_lb*u_transfer_ener",
+  "seconds": 116.3
+ },
+ {
+  "file": "components/pe.cc",
+  "op": "accum_sign",
+  "index": 112,
+  "line": 2234,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "ata_type_t::OUTPUT]; pe_array->write_back_cycle += runtime_datatypes().storage_t",
+  "seconds": 115.1
+ },
+ {
+  "file": "components/pe.cc",
+  "op": "accum_sign",
+  "index": 125,
+  "line": 2392,
+  "verdict": "SURVIVED",
+  "killer": "",
+  "context": "access_cycle_lb[data_type_t::OUTPUT] += u_read_cycle_lb[data_type_t::",
+  "seconds": 115.6
+ }
+]

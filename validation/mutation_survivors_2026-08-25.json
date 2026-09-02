@@ -1,0 +1,83 @@
+[
+ {
+  "mutant": "interconnect/tallest_row",
+  "file": "utils/interconnect_timing.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 96.8,
+  "adjudication": "EQUIVALENT_DEAD_CODE_DELETED",
+  "reason": "tallest_row was assigned, (void)-cast and never read, so no test could kill this mutant. The variable was DELETED, which removes the site."
+ },
+ {
+  "mutant": "interconnect/pipeline_max",
+  "file": "utils/interconnect_timing.cc",
+  "verdict": "KILLED",
+  "killer": "unittest",
+  "seconds": 5.8,
+  "adjudication": "KILLED_BY_UNITTEST",
+  "reason": "unittest/validation_test.cc pins pipeline_transactions at 10/2/5/18/3. The original campaign ran only the gate suite, never the unit tests, which is why it was recorded as a survivor."
+ },
+ {
+  "mutant": "interconnect/freq_guard",
+  "file": "utils/interconnect_timing.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 99.2,
+  "adjudication": "EQUIVALENT_UNDER_UB",
+  "reason": "Removing the frequency<=0 guard lets 8.0*bandwidth/0.0 = inf reach static_cast<unsigned>, which is undefined behaviour that this compiler realises as 0 -- the same value the guard returns. unittest asserts the return value, so it cannot separate them. The guard is kept: relying on a UB realisation is not a contract."
+ },
+ {
+  "mutant": "interconnect/pow2_check",
+  "file": "utils/interconnect_timing.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 109.7,
+  "adjudication": "EQUIVALENT_PROVEN",
+  "reason": "w&(w-1)==0 and w&(w-2)==0 agree for every w>=8 (verified by exhaustive check over [0,2^20)), and the >=8 guard precedes it. Provably equivalent; unkillable by construction."
+ },
+ {
+  "mutant": "pe/transfer_cycle",
+  "file": "components/pe.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 107.7,
+  "adjudication": "REAL_GAP_FIXED",
+  "reason": "The only survivor that changes the report. The sign flip drives every PE's MAC<->LB transfer cycle negative; stats_t aggregates with max() from 0, so the report shows 0.0. No gate read the 'Cycle (MAC-Local buffer)' block; KN4 passes because liveness has no sign, KN7 only guards the critical path, and T7's max() combination hides a collapsed link axis. FIXED by validation/pe_transfer (PT1 kills it)."
+ },
+ {
+  "mutant": "pe/lb_weight_read_energy",
+  "file": "components/pe.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 108.7,
+  "adjudication": "DEAD_BOTH_BUILDS_DELETED",
+  "reason": "CORRECTED 2026-08-25: first recorded as 'unreachable legacy'. It sits in the #else branch of an #ifdef FUNCTIONAL group that is positioned AFTER data_transfer_to_mac's `#ifndef FUNCTIONAL ... return; #endif`. That branch is not compiled in a FUNCTIONAL build and is unreachable past the early return in the analytical build -- dead in BOTH. DELETED with the rest of its 103-line branch."
+ },
+ {
+  "mutant": "pe/output_transfer_energy",
+  "file": "components/pe.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 107.6,
+  "adjudication": "LIVE_IN_FUNCTIONAL_BUILD",
+  "reason": "CORRECTED 2026-08-25: NOT dead. It is always-compiled code after the early return, so the analytical build never reaches it, but it IS the implementation the FUNCTIONAL build (npusim.sh FUNCTIONAL=1) runs. The 131-run sweep only exercised the analytical build, so its zero hit count was a property of the early return, not evidence of dead code. Kept. Its live analytical counterpart (pe.cc transfer_energy[type] += ...) is covered by validation/pe_transfer PT4."
+ },
+ {
+  "mutant": "pe/array_write_back_cycle",
+  "file": "components/pe.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 110.3,
+  "adjudication": "DEAD_COMMENTED_OUT_DELETED",
+  "reason": "The line sits inside a /* ... */ block the compiler never sees; the campaign harness tracked #ifdef regions but not block comments. The 13-line comment block was DELETED."
+ },
+ {
+  "mutant": "pe/lb_output_read_cycle",
+  "file": "components/pe.cc",
+  "verdict": "SURVIVED",
+  "killer": "",
+  "seconds": 101.9,
+  "adjudication": "LIVE_IN_FUNCTIONAL_BUILD",
+  "reason": "CORRECTED 2026-08-25: NOT dead, same reason -- flush_data has the same `#ifndef FUNCTIONAL ... return; #endif` shape and this line is the FUNCTIONAL build's implementation. Kept."
+ }
+]

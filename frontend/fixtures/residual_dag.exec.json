@@ -1,0 +1,346 @@
+{
+  "coverage": {
+    "captured_nodes": 6,
+    "executable_operations": 6,
+    "lowered_source_nodes": 6,
+    "unsupported_nodes": 0
+  },
+  "executable_sha256": "7ac24137115f02013afe5d80fc2c9eaae98592e8a8d9f090b7f26d0ec7a0302f",
+  "inputs": [
+    "input"
+  ],
+  "model": {
+    "name": "residual-dag-fixture",
+    "structure_sha256": "residual-dag-fixture"
+  },
+  "operations": [
+    {
+      "activation": "linear",
+      "geometry": {
+        "batch": 1,
+        "dilation_height": 1,
+        "dilation_width": 1,
+        "filter_height": 3,
+        "filter_width": 3,
+        "groups": 1,
+        "input_channels": 4,
+        "input_height": 8,
+        "input_width": 8,
+        "output_channels": 4,
+        "output_height": 8,
+        "output_width": 8,
+        "padding_height": 1,
+        "padding_width": 1,
+        "stride_height": 1,
+        "stride_width": 1
+      },
+      "id": "conv",
+      "inputs": [
+        "input",
+        "conv_weight"
+      ],
+      "kind": "npusim.conv2d",
+      "mapping_required": true,
+      "outputs": [
+        "conv_output"
+      ],
+      "source_nodes": [
+        "conv"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "channels": 4,
+        "elements": 256,
+        "epsilon": 1e-05
+      },
+      "id": "batch_norm",
+      "inputs": [
+        "conv_output",
+        "bn_weight",
+        "bn_bias",
+        "running_mean",
+        "running_var"
+      ],
+      "kind": "npusim.batch_norm",
+      "mapping_required": false,
+      "outputs": [
+        "bn_output"
+      ],
+      "source_nodes": [
+        "batch_norm"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "elements": 256,
+        "operator": "add"
+      },
+      "id": "residual_add",
+      "inputs": [
+        "bn_output",
+        "input"
+      ],
+      "kind": "npusim.elementwise",
+      "mapping_required": false,
+      "outputs": [
+        "residual"
+      ],
+      "source_nodes": [
+        "residual_add"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "batch": 1,
+        "channels": 4,
+        "count_include_pad": true,
+        "dilation_height": 1,
+        "dilation_width": 1,
+        "input_height": 8,
+        "input_width": 8,
+        "kernel_height": 2,
+        "kernel_width": 2,
+        "mode": "max",
+        "output_height": 4,
+        "output_width": 4,
+        "padding_height": 0,
+        "padding_width": 0,
+        "stride_height": 2,
+        "stride_width": 2
+      },
+      "id": "max_pool",
+      "inputs": [
+        "residual"
+      ],
+      "kind": "npusim.pool2d",
+      "mapping_required": false,
+      "outputs": [
+        "max_pool"
+      ],
+      "source_nodes": [
+        "max_pool"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "batch": 1,
+        "channels": 4,
+        "count_include_pad": true,
+        "dilation_height": 1,
+        "dilation_width": 1,
+        "input_height": 8,
+        "input_width": 8,
+        "kernel_height": 2,
+        "kernel_width": 2,
+        "mode": "average",
+        "output_height": 4,
+        "output_width": 4,
+        "padding_height": 0,
+        "padding_width": 0,
+        "stride_height": 2,
+        "stride_width": 2
+      },
+      "id": "avg_pool",
+      "inputs": [
+        "residual"
+      ],
+      "kind": "npusim.pool2d",
+      "mapping_required": false,
+      "outputs": [
+        "avg_pool"
+      ],
+      "source_nodes": [
+        "avg_pool"
+      ],
+      "status": "modeled"
+    },
+    {
+      "activation": "linear",
+      "geometry": {
+        "axis": 1,
+        "elements": 128
+      },
+      "id": "concat",
+      "inputs": [
+        "max_pool",
+        "avg_pool"
+      ],
+      "kind": "npusim.concat",
+      "mapping_required": false,
+      "outputs": [
+        "output"
+      ],
+      "source_nodes": [
+        "concat"
+      ],
+      "status": "modeled"
+    }
+  ],
+  "outputs": [
+    "output"
+  ],
+  "producer": {
+    "name": "npusim-pytorch-lowering",
+    "version": "0.1"
+  },
+  "schema_version": "npusim.exec.v1",
+  "source_graph": {
+    "schema_version": "npusim.graph.v1",
+    "sha256": "d02428abf25d31e1e26e4ac952a34d8fcc1fc252806cf32410750ab57fba3855"
+  },
+  "tensors": [
+    {
+      "dtype": "float32",
+      "id": "input",
+      "kind": "input",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        4,
+        8,
+        8
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "conv_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 576,
+      "shape": [
+        4,
+        4,
+        3,
+        3
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "conv_output",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        4,
+        8,
+        8
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "bn_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 16,
+      "shape": [
+        4
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "bn_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 16,
+      "shape": [
+        4
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "running_mean",
+      "kind": "buffer",
+      "layout": "contiguous",
+      "logical_bytes": 16,
+      "shape": [
+        4
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "running_var",
+      "kind": "buffer",
+      "layout": "contiguous",
+      "logical_bytes": 16,
+      "shape": [
+        4
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "bn_output",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        4,
+        8,
+        8
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "residual",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        4,
+        8,
+        8
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "max_pool",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 256,
+      "shape": [
+        1,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "avg_pool",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 256,
+      "shape": [
+        1,
+        4,
+        4,
+        4
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "output",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 512,
+      "shape": [
+        1,
+        8,
+        4,
+        4
+      ]
+    }
+  ]
+}

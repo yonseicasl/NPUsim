@@ -1,4 +1,7 @@
 #include <thread>
+#include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <cstdio>
 #include <map>
 #include <set>
@@ -12,6 +15,48 @@
 #include "datatype.h"
 #include "interconnect_timing.h"
 
+namespace {
+
+size_t pool_reduction_operations(const workload_geometry_t &geometry,
+                                 size_t output_begin, size_t output_count) {
+    const size_t spatial = static_cast<size_t>(geometry.output_height)*
+                           geometry.output_width;
+    const size_t window = static_cast<size_t>(geometry.kernel_height)*
+                          geometry.kernel_width;
+    size_t reductions = 0;
+    for(size_t flat = output_begin; flat < output_begin + output_count; ++flat) {
+        const size_t location = flat % spatial;
+        const size_t output_h = location/geometry.output_width;
+        const size_t output_w = location%geometry.output_width;
+        size_t valid = 0;
+        for(unsigned kernel_h = 0; kernel_h < geometry.kernel_height; ++kernel_h) {
+            const int64_t input_h =
+                static_cast<int64_t>(output_h*geometry.stride_height) -
+                geometry.padding_height +
+                static_cast<int64_t>(kernel_h)*geometry.dilation_height;
+            if(input_h < 0 || input_h >= static_cast<int64_t>(geometry.input_height)) continue;
+            for(unsigned kernel_w = 0; kernel_w < geometry.kernel_width; ++kernel_w) {
+                const int64_t input_w =
+                    static_cast<int64_t>(output_w*geometry.stride_width) -
+                    geometry.padding_width +
+                    static_cast<int64_t>(kernel_w)*geometry.dilation_width;
+                if(input_w >= 0 && input_w < static_cast<int64_t>(geometry.input_width)) ++valid;
+            }
+        }
+        const size_t samples = geometry.mode == "average" && geometry.count_include_pad
+            ? window : valid;
+        if(samples > 0) {
+            if(reductions > std::numeric_limits<size_t>::max() - (samples - 1)) {
+                throw std::runtime_error("pool reduction operation count overflows");
+            }
+            reductions += samples - 1;
+        }
+    }
+    return reductions;
+}
+
+} // namespace
+
 npu_t::npu_t() :
  num_processors(1),
  num_pes(1),
@@ -20,6 +65,7 @@ npu_t::npu_t() :
  multi_chip(NULL),
  dram(NULL),
  workload(NULL),
+ workload_lifetime(NULL),
  executable_ir_mode(false),
  network(NULL),
  layer(NULL),
@@ -41,6 +87,7 @@ npu_t::~npu_t() {
 	// Free the memory for the network.
 	delete network;
     delete workload;
+    delete workload_lifetime;
 
 	// Free the memory for mapping table.
     for(auto mapping_table : mapping_tables) { delete mapping_table; }
@@ -226,6 +273,29 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             }
             network->init(temporary_path);
             std::remove(temporary_path);
+            override_executable_layer_geometry();
+            std::map<std::string, size_t> runtime_bytes;
+            for(const workload_tensor_t &tensor_value : workload->tensors) {
+                // Alias views take the classification and bytes of their storage
+                // tensor so lifetime accounting never double-books a reshape.
+                const workload_tensor_t &storage = workload->storage_tensor(tensor_value.id);
+                data_type_t type = data_type_t::OUTPUT;
+                if(storage.kind == "parameter" || storage.kind == "buffer" ||
+                   storage.kind == "constant") {
+                    type = data_type_t::WEIGHT;
+                } else if(std::find(workload->inputs.begin(), workload->inputs.end(),
+                                    storage.id) != workload->inputs.end()) {
+                    type = data_type_t::INPUT;
+                }
+                runtime_bytes[tensor_value.id] = runtime_datatypes().storage_bytes(
+                    type, storage.elements());
+            }
+            const size_t per_chip_capacity = global_buffers[0]->tensor_residency_capacity();
+            if(num_processors != 0 && per_chip_capacity > std::numeric_limits<size_t>::max()/num_processors) {
+                throw std::runtime_error("aggregate GLB residency capacity overflows");
+            }
+            workload_lifetime = new workload_lifetime_t(
+                *workload, per_chip_capacity*num_processors, runtime_bytes);
             std::cout << "# Frontend IR: " << workload->schema_version
                       << " model=" << workload->model_name
                       << " source_sha256=" << workload->source_sha256 << std::endl;
@@ -279,6 +349,69 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     network_stats = new stats_t();
     std::cout << "  Done!" << std::endl;
 }
+void npu_t::override_executable_layer_geometry() {
+    if(workload == NULL) return;
+    if(network->layers.size() != workload->operations.size()) {
+        throw std::runtime_error("transitional layer count disagrees with executable operations");
+    }
+    for(size_t index = 0; index < workload->operations.size(); ++index) {
+        const workload_operation_t &operation = workload->operations[index];
+        nebula::layer_t *current = network->layers[index];
+        const workload_tensor_t &input = workload->tensor(operation.inputs.front());
+        const workload_tensor_t &output = workload->tensor(operation.outputs.front());
+        const size_t batch = input.shape.empty() ? 1 : input.shape.front();
+        if(batch == 0 || input.elements() % batch != 0 || output.elements() % batch != 0 ||
+           input.elements()/batch > std::numeric_limits<unsigned>::max() ||
+           output.elements()/batch > std::numeric_limits<unsigned>::max()) {
+            throw std::runtime_error("operation " + operation.id + " tensor volume exceeds Nebula bridge range");
+        }
+        current->input_size = static_cast<unsigned>(input.elements()/batch);
+        current->output_size = static_cast<unsigned>(output.elements()/batch);
+        if(input.shape.size() == 4) {
+            current->input_channel = static_cast<unsigned>(input.shape[1]);
+            current->input_height = static_cast<unsigned>(input.shape[2]);
+            current->input_width = static_cast<unsigned>(input.shape[3]);
+        } else {
+            current->input_channel = 1;
+            current->input_height = 1;
+            current->input_width = current->input_size;
+        }
+        if(output.shape.size() == 4) {
+            current->output_channel = static_cast<unsigned>(output.shape[1]);
+            current->output_height = static_cast<unsigned>(output.shape[2]);
+            current->output_width = static_cast<unsigned>(output.shape[3]);
+        } else {
+            current->output_channel = current->output_size;
+            current->output_height = 1;
+            current->output_width = 1;
+        }
+        if(operation.kind == WORKLOAD_LINEAR) {
+            current->input_channel = operation.geometry.input_features;
+            current->input_height = current->input_width = 1;
+            current->output_channel = operation.geometry.output_features;
+            current->output_height = current->output_width = 1;
+            current->weight_size = operation.geometry.input_features*operation.geometry.output_features;
+        } else if(operation.kind == WORKLOAD_CONV2D) {
+            if(operation.geometry.stride_height != operation.geometry.stride_width ||
+               operation.geometry.dilation_height != 1 || operation.geometry.dilation_width != 1) {
+                throw std::runtime_error("operation " + operation.id +
+                    " uses asymmetric stride or dilation, which the mapped MAC core cannot represent yet");
+            }
+            current->filter_height = operation.geometry.filter_height;
+            current->filter_width = operation.geometry.filter_width;
+            current->filter_size = operation.geometry.filter_height*operation.geometry.filter_width;
+            current->stride = operation.geometry.stride_height;
+            current->padding_h = operation.geometry.padding_height;
+            current->padding_w = operation.geometry.padding_width;
+            current->group = operation.geometry.groups;
+            current->num_filters = operation.geometry.output_channels;
+            current->weight_size = operation.geometry.output_channels*
+                (operation.geometry.input_channels/operation.geometry.groups)*
+                operation.geometry.filter_height*operation.geometry.filter_width;
+        }
+    }
+}
+
 void npu_t::validate_accelerator_components() {
     if(pe_arrays.size() != num_processors || global_buffers.size() != num_processors) {
         std::cerr << "Error: expected " << num_processors
@@ -343,60 +476,71 @@ void npu_t::connect() {
 }
 
 void npu_t::run(const std::string m_accelerator_config, const std::string m_network_config) {
-	// Initialize the mapping table.
-	std::cout << "# Run the network" << std::endl;
+    std::cout << "# Run the network" << std::endl;
 
-    // SFU: validate every layer's activation BEFORE simulating anything. An unsupported
-    // operation must fail fast at layer-start/config time (plan_sfu.md) -- aborting at
-    // the END of that layer's simulation would discard every completed layer first.
-    if(!sfus.empty()) {
-        for(unsigned index = 0; index < network->num_layers; index++) {
-            // Standalone softmax needs every micro-op of its microprogram to exist in
-            // this architecture (e.g. nv_small's SDP has no LUT/EW engine, so exp is
-            // architecturally impossible -- fail before simulating anything).
-            if(network->layers[index]->layer_type == nebula::SOFTMAX_LAYER) {
-                const sfu_op_t micro_ops[5] = {SFU_OP_VMAX, SFU_OP_VADD, SFU_OP_EXP,
-                                               SFU_OP_RECIP, SFU_OP_VMUL};
-                for(unsigned m = 0; m < 5; ++m) {
-                    if(!sfus[0]->op_supported(micro_ops[m])) {
-                        std::cerr << "Error: network layer " << index << " (softmax)"
-                                  << " needs SFU micro-operation '"
-                                  << sfu_t::op_name(micro_ops[m])
-                                  << "', which is outside this architecture's [sfu]"
-                                  << " supported_ops contract" << std::endl;
-                        exit(1);
-                    }
-                }
-                continue;
-            }
-            if(network->layers[index]->layer_type != nebula::CONVOLUTIONAL_LAYER &&
-               network->layers[index]->layer_type != nebula::CONNECTED_LAYER) continue;
-            const unsigned type = static_cast<unsigned>(network->layers[index]->activation_type);
-            if(type == nebula::UNDEFINED_ACTIVATION ||
-               type >= nebula::NUM_ACTIVATION_TYPES) continue;   // identity: linear bypass
-            sfu_op_t op;
-            if(!sfu_t::op_from_name(nebula::activation_type_str[type], &op)) {
-                std::cerr << "Error: network layer " << index << " activation '"
-                          << nebula::activation_type_str[type]
-                          << "' is not supported by the SFU; unsupported operations fail"
-                          << " fast before simulation instead of silently falling back to"
-                          << " ReLU" << std::endl;
-                exit(1);
-            }
-            if(!sfus[0]->op_supported(op)) {
-                std::cerr << "Error: network layer " << index << " activation '"
-                          << nebula::activation_type_str[type]
-                          << "' is outside this architecture's [sfu] supported_ops"
-                          << " contract (the execution unit does not exist)" << std::endl;
+    if(executable_ir_mode && sfus.empty()) {
+        for(const workload_operation_t &operation : workload->operations) {
+            if(!operation.mapping_required) {
+                std::cerr << "Error: executable operation " << operation.id
+                          << " requires an [sfu] section for non-MAC timing" << std::endl;
                 exit(1);
             }
         }
     }
+    // Validate all SFU capabilities before the first operation, so a missing primitive
+    // never leaves a partially simulated DAG behind.
+    if(!sfus.empty()) {
+        auto require_sfu = [&](unsigned index, sfu_op_t op) {
+            if(!sfus[0]->op_supported(op)) {
+                std::cerr << "Error: network operation " << index << " needs SFU primitive '"
+                          << sfu_t::op_name(op) << "', outside this architecture's"
+                          << " [sfu] supported_ops contract" << std::endl;
+                exit(1);
+            }
+        };
+        if(executable_ir_mode) {
+            for(unsigned index = 0; index < workload->operations.size(); ++index) {
+                const workload_operation_t &operation = workload->operations[index];
+                if(operation.kind == WORKLOAD_SOFTMAX) {
+                    const sfu_op_t ops[5] = {SFU_OP_VMAX, SFU_OP_VADD, SFU_OP_EXP,
+                                             SFU_OP_RECIP, SFU_OP_VMUL};
+                    for(unsigned op = 0; op < 5; ++op) require_sfu(index, ops[op]);
+                } else if(operation.kind == WORKLOAD_POOL2D) {
+                    require_sfu(index, operation.geometry.mode == "max" ? SFU_OP_VMAX : SFU_OP_VADD);
+                    if(operation.geometry.mode == "average") require_sfu(index, SFU_OP_VMUL);
+                } else if(operation.kind == WORKLOAD_ELEMENTWISE) {
+                    require_sfu(index, operation.geometry.elementwise_operator == "add"
+                        ? SFU_OP_VADD : SFU_OP_VMUL);
+                } else if(operation.kind == WORKLOAD_BATCH_NORM) {
+                    require_sfu(index, SFU_OP_VMUL);
+                    require_sfu(index, SFU_OP_VADD);
+                }
+            }
+        } else {
+            for(unsigned index = 0; index < network->num_layers; index++) {
+                if(network->layers[index]->layer_type == nebula::SOFTMAX_LAYER) {
+                    const sfu_op_t ops[5] = {SFU_OP_VMAX, SFU_OP_VADD, SFU_OP_EXP,
+                                             SFU_OP_RECIP, SFU_OP_VMUL};
+                    for(unsigned op = 0; op < 5; ++op) require_sfu(index, ops[op]);
+                    continue;
+                }
+                if(network->layers[index]->layer_type != nebula::CONVOLUTIONAL_LAYER &&
+                   network->layers[index]->layer_type != nebula::CONNECTED_LAYER) continue;
+                const unsigned type = static_cast<unsigned>(network->layers[index]->activation_type);
+                if(type == nebula::UNDEFINED_ACTIVATION || type >= nebula::NUM_ACTIVATION_TYPES) continue;
+                sfu_op_t op;
+                if(!sfu_t::op_from_name(nebula::activation_type_str[type], &op)) {
+                    std::cerr << "Error: network layer " << index << " activation '"
+                              << nebula::activation_type_str[type] << "' is unsupported" << std::endl;
+                    exit(1);
+                }
+                require_sfu(index, op);
+            }
+        }
+    }
 
-    // the number of iterations.
-	unsigned num_iteration = 1;
-    // Run the network
-	for(unsigned iteration = 0; iteration < num_iteration; iteration++) {
+    const unsigned num_iteration = 1;
+    for(unsigned iteration = 0; iteration < num_iteration; iteration++) {
 #ifdef FUNCTIONAL
         if(executable_ir_mode) {
             std::cerr << "Error: executable IR currently supports timing-only builds; "
@@ -406,46 +550,47 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
 #endif
         if(!executable_ir_mode) network->load_data(iteration);
         num_skipped_timing_layers = 0;
+        unsigned mapping_index = 0;
 
-        // Layer-wise simulation.
-		for(unsigned index = 0; index < network->num_layers; index++) {
-            network->layers[index]->input_data = index > 0 ? network->layers[index-1]->output_data : network->input_data;
-            // The current accelerator timing path supports convolution and fully-connected layers.
-			if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
-			   network->layers[index]->layer_type == nebula::CONNECTED_LAYER) {
-                if(index >= schedulers.size()) {
-                    std::cerr << "Error: no mapping section for executable network layer "
-                              << index << std::endl;
+        for(unsigned index = 0; index < network->num_layers; index++) {
+            const workload_operation_t *operation = executable_ir_mode
+                ? &workload->operations[index] : NULL;
+            workload_residency_plan_t residency;
+            if(executable_ir_mode) residency = workload_lifetime->plan(index);
+            if(!executable_ir_mode) {
+                network->layers[index]->input_data = index > 0
+                    ? network->layers[index-1]->output_data : network->input_data;
+            }
+            const bool mapped = executable_ir_mode
+                ? operation->mapping_required
+                : (network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
+                   network->layers[index]->layer_type == nebula::CONNECTED_LAYER);
+            if(mapped) {
+                const unsigned stats_index = executable_ir_mode ? mapping_index : index;
+                if(stats_index >= schedulers.size() || stats_index >= layer_stats.size()) {
+                    std::cerr << "Error: no mapping section for network operation " << index << std::endl;
                     exit(1);
                 }
-                if(network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::CONVOLUTIONAL_LAYER;
-                } else if(network->layers[index]->layer_type == nebula::CONNECTED_LAYER) {
-                    schedulers[index]->layer_name = layer_name_t::CONNECTED_LAYER;
-                }
-
+                const bool convolution = executable_ir_mode
+                    ? operation->kind == WORKLOAD_CONV2D
+                    : network->layers[index]->layer_type == nebula::CONVOLUTIONAL_LAYER;
+                schedulers[stats_index]->layer_name = convolution
+                    ? layer_name_t::CONVOLUTIONAL_LAYER : layer_name_t::CONNECTED_LAYER;
                 layer = network->layers[index];
                 dram->connect_layer(layer);
-
-                scheduler = schedulers[index];
-                const unsigned global_buffer_repetitions = scheduler->mapping_table->calculate_active_component(component_type_t::GLOBAL_BUFFER);
-
-                // Spatial-padding guard: mapping factor products may exceed the layer
-                // dimensions (silicon-style padding, e.g. Eyeriss computes 55 output
-                // columns as 7x8 = 56), but that padding -- or an accidental
-                // under-coverage -- must be visible, not silent.
+                scheduler = schedulers[stats_index];
+                const unsigned global_buffer_repetitions =
+                    scheduler->mapping_table->calculate_active_component(component_type_t::GLOBAL_BUFFER);
                 {
-                    const std::vector<unsigned> mapped =
+                    const std::vector<unsigned> mapped_size =
                         scheduler->mapping_table->calculate_total_parameter_size();
-                    // Connected layers fold the input volume into a flat C dimension.
-                    const unsigned layer_c =
-                        (scheduler->layer_name == layer_name_t::CONNECTED_LAYER)
-                            ? layer->input_size : layer->input_channel;
+                    const unsigned layer_c = scheduler->layer_name == layer_name_t::CONNECTED_LAYER
+                        ? layer->input_size : layer->input_channel;
                     const struct { const char *name; unsigned mapped_size; unsigned layer_size; } dims[] = {
-                        {"K", mapped[parameter_type_t::OUTPUT_CHANNEL], layer->output_channel},
-                        {"P", mapped[parameter_type_t::OUTPUT_HEIGHT], layer->output_height},
-                        {"Q", mapped[parameter_type_t::OUTPUT_WIDTH], layer->output_width},
-                        {"C", mapped[parameter_type_t::INPUT_CHANNEL], layer_c},
+                        {"K", mapped_size[parameter_type_t::OUTPUT_CHANNEL], layer->output_channel},
+                        {"P", mapped_size[parameter_type_t::OUTPUT_HEIGHT], layer->output_height},
+                        {"Q", mapped_size[parameter_type_t::OUTPUT_WIDTH], layer->output_width},
+                        {"C", mapped_size[parameter_type_t::INPUT_CHANNEL], layer_c},
                     };
                     for(const auto &dim : dims) {
                         if(dim.layer_size == 0) continue;
@@ -454,6 +599,12 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                                       << " from " << dim.layer_size << " to " << dim.mapped_size
                                       << " (padded work is charged as compute)" << std::endl;
                         } else if(dim.mapped_size < dim.layer_size) {
+                            if(executable_ir_mode) {
+                                std::cerr << "Error: executable operation " << operation->id
+                                          << " mapping covers only " << dim.mapped_size << " of "
+                                          << dim.layer_size << " in " << dim.name << std::endl;
+                                exit(1);
+                            }
                             std::cerr << "Warning: layer " << index << " mapping covers only "
                                       << dim.mapped_size << " of " << dim.layer_size << " in " << dim.name
                                       << " (layer is partially simulated)" << std::endl;
@@ -461,79 +612,77 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     }
                 }
 
-                print_network_configuration(index);
+                print_network_configuration(index, stats_index);
                 reset();
                 update_tile_size();
-
                 while(!is_idle()) {
-                    // Process simulation in backward path.
                     execute();
-                    // Transfer data from PE array to PE
                     transfer_data_to_pe();
-                    // Transfer data from GLB to PE array
                     transfer_data_to_pe_array();
-                    // Transfer data from Multi Chip to GLB
                     transfer_data_to_global_buffer();
-                    // Transfer data from DRAM to Multi Chip
                     transfer_data_to_multi_chip();
-
-                    // Request data from Multi Chip to DRAM.
                     request_to_dram();
-                    // Request data from GLB to Multi Chip.
                     request_to_multi_chip();
-                    // Request data from PE array to PE.
                     request_to_global_buffer();
-                    // Request data from PEs to PE array.
                     request_to_pe_array();
                 }
-                // E20-3b: store the array's final resident output tile, then DR6's final
-                // multi-chip -> DRAM store. Innermost boundary first, so the tile is written out
-                // of the array before the level above flushes it off-chip.
-                for(unsigned i = 0; i < pe_arrays.size(); i++) pe_arrays[i]->flush_psum_writeback();
-                // DR6: store the layer's final resident output tile.
+                for(unsigned chip = 0; chip < pe_arrays.size(); chip++) {
+                    pe_arrays[chip]->flush_psum_writeback();
+                }
                 multi_chip->flush_output_writeback();
-                // Pipelined operand registers expose no per-op MAC<->LB transfer time; zero
-                // those cycle views (energies/counters untouched) before collection. No-op
-                // unless [spatial_arch] operand_streams_pipelined is declared.
-                for(unsigned p = 0; p < pe_arrays.size(); p++) {
-                    for(unsigned q = 0; q < pe_arrays[p]->get_number_of_pes(); q++) {
-                        pe_arrays[p]->pes[q]->suppress_streaming_cycles();
+                for(unsigned chip = 0; chip < pe_arrays.size(); chip++) {
+                    for(unsigned pe = 0; pe < pe_arrays[chip]->get_number_of_pes(); pe++) {
+                        pe_arrays[chip]->pes[pe]->suppress_streaming_cycles();
                     }
                 }
-                layer_stats[index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
-                const input_halo_reuse_t input_halo =
-                    scheduler->mapping_table->input_halo_reuse();
+                layer_stats[stats_index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
+                if(executable_ir_mode) {
+                    workload_lifetime->commit(index, &residency);
+                    const bool input_in_glb = !residency.inputs.empty() &&
+                        residency.inputs.front() == WORKLOAD_RESIDENCY_GLB;
+                    const size_t retained_inputs = static_cast<size_t>(std::count(
+                        residency.retain_inputs.begin(), residency.retain_inputs.end(), true));
+                    const std::string note = std::string("input ") +
+                        (input_in_glb ? "GLB-resident" : "DRAM-backed") + ", output " +
+                        (residency.retain_output ? "retained in GLB" : "materialized to DRAM") +
+                        (retained_inputs ? "; " + std::to_string(retained_inputs) +
+                         " future-use input(s) pinned" : "") +
+                        "; GLB occupancy " + std::to_string(residency.occupied_before) + " -> " +
+                        std::to_string(residency.occupied_after) + " / " +
+                        std::to_string(residency.capacity) + " bytes";
+                    layer_stats[stats_index]->apply_graph_residency(
+                        input_in_glb, residency.retain_output, note);
+                }
+                const input_halo_reuse_t input_halo = scheduler->mapping_table->input_halo_reuse();
                 const bool halo_capacity_sufficient = !global_buffers.empty() &&
                     global_buffers[0]->can_retain_input_halo(input_halo.working_set_elements);
-                // SFU: stage the fused-activation event BEFORE repetition scaling so
-                // finalize_layer_timeline() can integrate it -- serially under
-                // queue_depth = 1, or as a streaming post-processing stage behind the
-                // bounded output-tile queue (Phase 5). Event counts stay repetition-
-                // independent: one activation per valid output element.
-                apply_fused_sfu_activation(index);
-                layer_stats[index]->scale_serial_repetitions(global_buffer_repetitions,
-                    scheduler->mapping_table->datatype_repetitions(), input_halo,
-                    halo_capacity_sufficient);
-                print_layerwise_results(m_accelerator_config, m_network_config, index);
-                //dram->disconnect_layer();
-			}
-            // Phase-7 (plan_sfu.md): a standalone softmax layer runs on the SFU's
-            // multi-pass microprogram when an [sfu] section is configured. It needs no
-            // mapping section -- the SFU is the only modeled resource.
-            else if(network->layers[index]->layer_type == nebula::SOFTMAX_LAYER && !sfus.empty()) {
+                apply_fused_sfu_activation(index, stats_index);
+                layer_stats[stats_index]->scale_serial_repetitions(
+                    global_buffer_repetitions, scheduler->mapping_table->datatype_repetitions(),
+                    input_halo, halo_capacity_sufficient);
+                print_layerwise_results(m_accelerator_config, m_network_config, index, stats_index);
+                ++mapping_index;
+            } else if(executable_ir_mode) {
+                run_standalone_graph_operation(index, residency,
+                    m_accelerator_config, m_network_config);
+            } else if(network->layers[index]->layer_type == nebula::SOFTMAX_LAYER && !sfus.empty()) {
                 run_standalone_softmax(index, m_accelerator_config, m_network_config);
-            }
-            else {
-                num_skipped_timing_layers++;
+            } else {
+                ++num_skipped_timing_layers;
                 std::cerr << "Warning: network layer " << index
-                          << " is excluded from accelerator timing (only convolution/connected are supported)" << std::endl;
+                          << " is excluded from accelerator timing (only convolution/connected are supported)"
+                          << std::endl;
             }
 #ifdef FUNCTIONAL
             network->layers[index]->forward();
 #endif
-		}
+        }
+        if(executable_ir_mode && mapping_index != schedulers.size()) {
+            std::cerr << "Error: executable DAG did not consume every mapping" << std::endl;
+            exit(1);
+        }
         print_total_result(m_accelerator_config, m_network_config);
-	}
+    }
 }
 
 bool npu_t::is_idle() {
@@ -650,33 +799,35 @@ void npu_t::print_accelerator_specification() {
 }
 
 // Print out the network stats (e.g., tile size)
-void npu_t::print_network_configuration(unsigned m_index) {
-    std::cout << "The network configuration of #" << m_index << " layer" << std::endl;
-    layer_stats[m_index]->print_stats();
+void npu_t::print_network_configuration(unsigned m_layer_index, unsigned m_stats_index) {
+    std::cout << "The network configuration of #" << m_layer_index << " layer" << std::endl;
+    layer_stats[m_stats_index]->print_stats();
 }
 
 // Print out the simulation result
-void npu_t::print_layerwise_results(const std::string m_accelerator_config, const std::string m_network_config, unsigned m_index) {
-    std::cout << "The simulation result of #" << m_index << " layer" << std::endl;
+void npu_t::print_layerwise_results(const std::string m_accelerator_config,
+                                    const std::string m_network_config,
+                                    unsigned m_layer_index, unsigned m_stats_index) {
+    std::cout << "The simulation result of #" << m_layer_index << " layer" << std::endl;
     std::cout << std::endl;
 
     // Concatenate the name of output file.
-    std::string output_file_name = m_accelerator_config + "_" + m_network_config + "_layer_" + std::to_string(m_index) + ".txt";
+    std::string output_file_name = m_accelerator_config + "_" + m_network_config + "_layer_" + std::to_string(m_layer_index) + ".txt";
     std::cout << output_file_name << std::endl;
 
     std::ofstream output_file;
     output_file.open(output_file_name, std::ios::out);
     print_workload_provenance(output_file);
-    layer_stats[m_index]->print_stats(output_file);
+    layer_stats[m_stats_index]->print_stats(output_file);
 
-    layer_stats[m_index]->print_results(output_file);
+    layer_stats[m_stats_index]->print_results(output_file);
 
 #ifdef DRAMSIM3
     dram->print_result();
 #endif
 
     output_file.close();
-    network_stats->update_network_stats(layer_stats[m_index]);
+    network_stats->update_network_stats(layer_stats[m_stats_index]);
 }
 
 void npu_t::print_total_result(const std::string m_accelerator_config, const std::string m_network_config) {
@@ -735,8 +886,8 @@ void npu_t::update_tile_size() {
 // which is guaranteed here because the whole layer, including the final psum flush and
 // repetition scaling, is already accounted. Nebula's forward() remains the functional
 // owner; this only generates the hardware cost event.
-void npu_t::apply_fused_sfu_activation(unsigned m_index) {
-    nebula::layer_t *current_layer = network->layers[m_index];
+void npu_t::apply_fused_sfu_activation(unsigned m_layer_index, unsigned m_stats_index) {
+    nebula::layer_t *current_layer = network->layers[m_layer_index];
     const unsigned activation_index = static_cast<unsigned>(current_layer->activation_type);
     // An undeclared activation behaves as identity in Nebula, so it maps to the linear
     // bypass; every other name must map to a supported SFU operation or fail fast.
@@ -782,7 +933,7 @@ void npu_t::apply_fused_sfu_activation(unsigned m_index) {
         // Compatibility policy: no [sfu] section keeps every legacy number bit-identical,
         // but a nonlinear activation that DID execute must be stated as out of scope.
         if(activation_name != "linear" && valid_elements > 0) {
-            layer_stats[m_index]->mark_unmodeled_activation(
+            layer_stats[m_stats_index]->mark_unmodeled_activation(
                 "activation '" + activation_name + "' over " +
                 std::to_string(valid_elements) + " output element(s) executed with no [sfu]"
                 " section; its cycles/traffic/energy are ABSENT from this report");
@@ -793,7 +944,7 @@ void npu_t::apply_fused_sfu_activation(unsigned m_index) {
     sfu_op_t op;
     if(!sfu_t::op_from_name(activation_name, &op)) {
         // Normally unreachable: run() validates every layer's activation up front.
-        std::cerr << "Error: layer " << m_index << " activation '" << activation_name
+        std::cerr << "Error: layer " << m_layer_index << " activation '" << activation_name
                   << "' is not supported by the SFU; unsupported operations fail fast"
                   << " instead of silently falling back to ReLU" << std::endl;
         exit(1);
@@ -820,8 +971,8 @@ void npu_t::apply_fused_sfu_activation(unsigned m_index) {
     const bool commit_identity_ok = commit_events > 0 &&
                                     committed_elements == mapped_output_volume;
     const size_t model_events = commit_identity_ok ? commit_events : 1;
-    layer_stats[m_index]->sfu_commit_events = model_events;
-    layer_stats[m_index]->sfu_commit_note = commit_identity_ok
+    layer_stats[m_stats_index]->sfu_commit_events = model_events;
+    layer_stats[m_stats_index]->sfu_commit_note = commit_identity_ok
         ? std::to_string(multi_chip->final_output_tile_events) + " commit(s) x " +
           std::to_string(output_repetitions) + " output repetition(s); identity OK: " +
           std::to_string(committed_elements) + " committed = mapped output volume"
@@ -843,16 +994,221 @@ void npu_t::apply_fused_sfu_activation(unsigned m_index) {
         const size_t share = base + (c < remainder ? 1 : 0);
         combined.merge_parallel(sfus[c]->elementwise_invocation(op, share, model_events));
     }
-    layer_stats[m_index]->sfu_contract_note =
+    layer_stats[m_stats_index]->sfu_contract_note =
         "fused post-accumulator activation; input/weight/output DRAM traffic is unchanged"
         " by the SFU (fused invariant)";
     if(!sfus[0]->get_precision_note().empty()) {
-        layer_stats[m_index]->sfu_contract_note += "; " + sfus[0]->get_precision_note();
+        layer_stats[m_stats_index]->sfu_contract_note += "; " + sfus[0]->get_precision_note();
     }
-    layer_stats[m_index]->sfu_profile_reference = sfus[0]->get_profile_reference();
-    layer_stats[m_index]->set_sfu_activation(combined,
+    layer_stats[m_stats_index]->sfu_profile_reference = sfus[0]->get_profile_reference();
+    layer_stats[m_stats_index]->set_sfu_activation(combined,
         num_processors*sfus[0]->get_num_units(), sfus[0]->get_lanes(),
         sfus[0]->get_static_energy_per_cycle(), sfus[0]->get_queue_depth());
+}
+
+sfu_operand_stream_t npu_t::graph_operand_stream(
+    const workload_operation_t &m_operation, const workload_residency_plan_t &m_plan) {
+    if(m_plan.inputs.size() != m_operation.inputs.size()) {
+        throw std::runtime_error("graph residency/input count mismatch");
+    }
+    sfu_operand_stream_t stream;
+    stream.active = true;
+    global_buffer_t *glb = global_buffers[0];
+    size_t resident_inputs = 0;
+    for(size_t index = 0; index < m_operation.inputs.size(); ++index) {
+        // Datatype classification follows the storage tensor: reading through an
+        // elided reshape view streams the aliased buffer, not a new tensor.
+        const workload_tensor_t &tensor_value = workload->storage_tensor(m_operation.inputs[index]);
+        data_type_t type = data_type_t::OUTPUT;
+        if(tensor_value.kind == "parameter" || tensor_value.kind == "buffer" ||
+           tensor_value.kind == "constant") type = data_type_t::WEIGHT;
+        else if(std::find(workload->inputs.begin(), workload->inputs.end(), tensor_value.id) !=
+                workload->inputs.end()) type = data_type_t::INPUT;
+        const size_t elements = tensor_value.elements();
+        stream.ingress_bytes += runtime_datatypes().storage_bytes(type, elements);
+        const size_t bits = runtime_datatypes().storage_bits(type, elements);
+        const size_t glb_accesses = (bits + glb->line_size[type] - 1)/glb->line_size[type];
+        const double feed_cycle = static_cast<double>(glb_accesses)*glb->u_read_cycle[type];
+        stream.glb_access_cycle += feed_cycle;
+        stream.glb_access_energy += static_cast<double>(glb_accesses)*glb->u_read_energy[type];
+        if(m_plan.inputs[index] == WORKLOAD_RESIDENCY_GLB) {
+            ++resident_inputs;
+            stream.ingress_cycle += feed_cycle;
+            continue;
+        }
+        const datatype_transfer_timing_t timing = datatype_transfer_timing(
+            type, elements, dram->line_size[type], glb->line_size[type], dram->get_bitwidth());
+        stream.dram_access_cycle += static_cast<double>(timing.source_accesses)*dram->u_read_cycle[type];
+        stream.dram_access_energy += static_cast<double>(timing.source_accesses)*dram->u_read_energy[type];
+        stream.dram_link_cycle += static_cast<double>(timing.link_transactions)*dram->u_transfer_cycle;
+        stream.dram_link_energy += static_cast<double>(timing.link_transactions)*dram->u_transfer_energy;
+        stream.dram_link_transactions += timing.link_transactions;
+        stream.glb_access_cycle += static_cast<double>(timing.destination_accesses)*glb->u_write_cycle[type];
+        stream.glb_access_energy += static_cast<double>(timing.destination_accesses)*glb->u_write_energy[type];
+        double row_cycle = 0.0;
+        if(dram->row_buffer_bytes > 0) {
+            const dram_row_activation_cost_t rows = dram_row_activations(
+                runtime_datatypes().storage_bytes(type, elements), dram->row_buffer_bytes,
+                dram->num_banks);
+            const double unit_cycle = (dram->t_ras_cycle > 0.0 && dram->t_rp_cycle > 0.0)
+                ? dram->t_ras_cycle + dram->t_rp_cycle : dram->u_row_miss_cycle;
+            row_cycle = static_cast<double>(rows.busiest_bank)*unit_cycle;
+            stream.dram_row_activations += rows.activations;
+            stream.dram_row_activation_cycle += row_cycle;
+            stream.dram_row_activation_energy += static_cast<double>(rows.activations)*dram->u_row_miss_energy;
+        }
+        stream.ingress_cycle += pipelined_transfer_cycles(
+            timing.groups, dram->u_read_cycle[type], dram->u_transfer_cycle,
+            glb->u_write_cycle[type]) + feed_cycle + row_cycle;
+    }
+
+    const workload_tensor_t &output = workload->tensor(m_operation.outputs.front());
+    const size_t output_elements = output.elements();
+    stream.egress_bytes = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, output_elements);
+    const size_t output_bits = runtime_datatypes().storage_bits(data_type_t::OUTPUT, output_elements);
+    const size_t output_glb_accesses =
+        (output_bits + glb->line_size[data_type_t::OUTPUT] - 1)/glb->line_size[data_type_t::OUTPUT];
+    const double result_cycle = static_cast<double>(output_glb_accesses)*
+                                glb->u_write_cycle[data_type_t::OUTPUT];
+    stream.glb_access_cycle += result_cycle;
+    stream.glb_access_energy += static_cast<double>(output_glb_accesses)*
+                                glb->u_write_energy[data_type_t::OUTPUT];
+    stream.egress_cycle = result_cycle;
+    if(!m_plan.retain_output) {
+        const datatype_transfer_timing_t timing = datatype_transfer_timing(
+            data_type_t::OUTPUT, output_elements, glb->line_size[data_type_t::OUTPUT],
+            dram->line_size[data_type_t::OUTPUT], dram->get_bitwidth());
+        stream.dram_access_cycle += static_cast<double>(timing.destination_accesses)*
+                                    dram->u_write_cycle[data_type_t::OUTPUT];
+        stream.dram_access_energy += static_cast<double>(timing.destination_accesses)*
+                                     dram->u_write_energy[data_type_t::OUTPUT];
+        stream.dram_link_cycle += static_cast<double>(timing.link_transactions)*dram->u_transfer_cycle;
+        stream.dram_link_energy += static_cast<double>(timing.link_transactions)*dram->u_transfer_energy;
+        stream.dram_link_transactions += timing.link_transactions;
+        stream.glb_access_cycle += static_cast<double>(timing.source_accesses)*
+                                   glb->u_read_cycle[data_type_t::OUTPUT];
+        stream.glb_access_energy += static_cast<double>(timing.source_accesses)*
+                                    glb->u_read_energy[data_type_t::OUTPUT];
+        double row_cycle = 0.0;
+        if(dram->row_buffer_bytes > 0) {
+            const dram_row_activation_cost_t rows = dram_row_activations(
+                stream.egress_bytes, dram->row_buffer_bytes, dram->num_banks);
+            const double unit_cycle = (dram->t_ras_cycle > 0.0 && dram->t_rp_cycle > 0.0)
+                ? dram->t_ras_cycle + dram->t_rp_cycle : dram->u_row_miss_cycle;
+            row_cycle = static_cast<double>(rows.busiest_bank)*unit_cycle;
+            stream.dram_row_activations += rows.activations;
+            stream.dram_row_activation_cycle += row_cycle;
+            stream.dram_row_activation_energy += static_cast<double>(rows.activations)*dram->u_row_miss_energy;
+        }
+        stream.egress_cycle += pipelined_transfer_cycles(
+            timing.groups, glb->u_read_cycle[data_type_t::OUTPUT], dram->u_transfer_cycle,
+            dram->u_write_cycle[data_type_t::OUTPUT]) + row_cycle;
+    }
+    const size_t retained_inputs = static_cast<size_t>(std::count(
+        m_plan.retain_inputs.begin(), m_plan.retain_inputs.end(), true));
+    stream.residency = std::to_string(resident_inputs) + "/" +
+        std::to_string(m_operation.inputs.size()) + " input tensor(s) in GLB; output " +
+        (m_plan.retain_output ? "retained in GLB" : "materialized to DRAM") +
+        (retained_inputs ? "; " + std::to_string(retained_inputs) +
+         " future-use input(s) pinned" : "");
+    return stream;
+}
+
+void npu_t::run_standalone_graph_operation(
+    unsigned m_index, workload_residency_plan_t m_plan,
+    const std::string &m_accelerator_config, const std::string &m_network_config) {
+    if(sfus.empty()) {
+        std::cerr << "Error: executable operation " << workload->operations[m_index].id
+                  << " requires an [sfu] section for non-MAC timing" << std::endl;
+        exit(1);
+    }
+    const workload_operation_t &operation = workload->operations[m_index];
+    const size_t output_elements = workload->tensor(operation.outputs.front()).elements();
+    sfu_invocation_t combined;
+    const size_t base = output_elements/num_processors;
+    const size_t remainder = output_elements % num_processors;
+    size_t output_begin = 0;
+    for(unsigned chip = 0; chip < num_processors; ++chip) {
+        const size_t share = base + (chip < remainder ? 1 : 0);
+        sfu_invocation_t local;
+        if(operation.kind == WORKLOAD_SOFTMAX) {
+            const size_t row_base = operation.geometry.rows/num_processors;
+            const size_t row_remainder = operation.geometry.rows % num_processors;
+            local = sfus[chip]->softmax_invocation(
+                row_base + (chip < row_remainder ? 1 : 0), operation.geometry.row_length);
+        } else if(operation.kind == WORKLOAD_POOL2D) {
+            const size_t reductions =
+                pool_reduction_operations(operation.geometry, output_begin, share);
+            if(operation.geometry.mode == "max") {
+                local = sfus[chip]->elementwise_invocation(SFU_OP_VMAX, reductions);
+            } else {
+                local = sfus[chip]->elementwise_invocation(SFU_OP_VADD, reductions);
+                local.merge_serial(sfus[chip]->elementwise_invocation(SFU_OP_VMUL, share));
+            }
+        } else if(operation.kind == WORKLOAD_ELEMENTWISE) {
+            const sfu_op_t op = operation.geometry.elementwise_operator == "add"
+                ? SFU_OP_VADD : SFU_OP_VMUL;
+            local = sfus[chip]->elementwise_invocation(op, share);
+        } else if(operation.kind == WORKLOAD_BATCH_NORM) {
+            local = sfus[chip]->elementwise_invocation(SFU_OP_VMUL, share);
+            local.merge_serial(sfus[chip]->elementwise_invocation(SFU_OP_VADD, share));
+        } else if(operation.kind == WORKLOAD_CONCAT) {
+            local.operation = "concat (copy-only)";
+        } else {
+            std::cerr << "Error: unsupported standalone graph operation " << operation.id << std::endl;
+            exit(1);
+        }
+        combined.merge_parallel(local);
+        output_begin += share;
+    }
+    combined.valid_elements = output_elements;
+    if(operation.kind == WORKLOAD_POOL2D) {
+        combined.operation = operation.geometry.mode + " pool2d";
+    } else if(operation.kind == WORKLOAD_ELEMENTWISE) {
+        combined.operation = "elementwise " + operation.geometry.elementwise_operator;
+    } else if(operation.kind == WORKLOAD_BATCH_NORM) {
+        combined.operation = "batch_norm inference (mul-add)";
+    } else if(operation.kind == WORKLOAD_CONCAT) {
+        combined.operation = "concat (copy-only)";
+    }
+
+    const sfu_operand_stream_t stream = graph_operand_stream(operation, m_plan);
+    workload_lifetime->commit(m_index, &m_plan);
+    stats_t *stats = new stats_t();
+    sfu_layer_stats.push_back(stats);
+    const double frequencies[5] = {
+        pe_arrays[0]->pes[0]->clock_mhz(), pe_arrays[0]->clock_mhz(),
+        global_buffers[0]->clock_mhz(), multi_chip->clock_mhz(), dram->clock_mhz()};
+    bool single_clock = frequencies[0] > 0.0;
+    for(unsigned f = 1; f < 5; ++f) if(frequencies[f] != frequencies[0]) single_clock = false;
+    const std::string clock_note = single_clock
+        ? "all modeled components share one clock"
+        : "mixed or undeclared clock domains; cycles are not convertible to time";
+    stats->sfu_contract_note = "framework-neutral DAG operation " + operation.id +
+        "; memory stream uses tensor liveness/residency; parameter traffic is aggregated"
+        " on the standalone stream rows";
+    stats->sfu_profile_reference = sfus[0]->get_profile_reference();
+    stats->record_sfu_only_layer(combined,
+        num_processors*sfus[0]->get_num_units(), sfus[0]->get_lanes(),
+        sfus[0]->get_static_energy_per_cycle(), single_clock ? frequencies[0] : 0.0,
+        single_clock, clock_note, stream);
+    const std::string residency_note = stream.residency + "; GLB occupancy " +
+        std::to_string(m_plan.occupied_before) + " -> " +
+        std::to_string(m_plan.occupied_after) + " / " +
+        std::to_string(m_plan.capacity) + " bytes";
+    stats->apply_graph_residency(false, false, residency_note);
+
+    std::cout << "The simulation result of #" << m_index << " operation "
+              << operation.id << std::endl << std::endl;
+    const std::string output_file_name = m_accelerator_config + "_" + m_network_config +
+        "_layer_" + std::to_string(m_index) + ".txt";
+    std::ofstream output_file(output_file_name.c_str(), std::ios::out);
+    print_workload_provenance(output_file);
+    output_file << "Executable DAG operation: " << workload->operation_kind_name(operation.kind)
+                << " (" << operation.id << ")" << std::endl << std::endl;
+    stats->print_results(output_file);
+    output_file.close();
+    network_stats->update_network_stats(stats);
 }
 
 // Phase-7 (plan_sfu.md): standalone softmax on the SFU multi-pass microprogram

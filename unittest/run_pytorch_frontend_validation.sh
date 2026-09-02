@@ -15,3 +15,6 @@ g++ -std=c++11 -Wall -I"$repo_root/scheduler" \
     -o "$test_binary"
 "$test_binary" "$repo_root/frontend/fixtures/linear_relu.exec.json"
 "$test_binary" "$repo_root/frontend/fixtures/conv_relu.exec.json"
+"$test_binary" "$repo_root/frontend/fixtures/residual_dag.exec.json"
+"$test_binary" "$repo_root/frontend/fixtures/pool_chain.exec.json"
+"$test_binary" "$repo_root/frontend/fixtures/lenet.exec.json"

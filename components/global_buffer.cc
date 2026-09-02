@@ -83,6 +83,13 @@ memory_type_t global_buffer_t::get_memory_type() { return memory_type;}
 
 // Get global buffer's size
 double global_buffer_t::get_buffer_size() { return size; }
+size_t global_buffer_t::tensor_residency_capacity() const {
+    if(memory_type == memory_type_t::SEPARATE) {
+        return static_cast<size_t>(std::min(capacity_per_type[data_type_t::INPUT],
+                                            capacity_per_type[data_type_t::OUTPUT]));
+    }
+    return static_cast<size_t>(size);
+}
 bool global_buffer_t::can_retain_input_halo(size_t input_working_set_elements) const {
     if(bypass[data_type_t::INPUT] || input_working_set_elements == 0) return false;
     const size_t copies = double_buffer ? 2 : 1;

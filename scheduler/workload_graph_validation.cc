@@ -93,14 +93,102 @@ void workload_graph_t::validate_operation_geometry(const workload_operation_t &o
         return;
     }
 
-    if(operation.inputs.size() != 1) {
-        geometry_fail(operation.id, "softmax needs exactly one input tensor");
+    if(operation.kind == WORKLOAD_SOFTMAX) {
+        if(operation.inputs.size() != 1) {
+            geometry_fail(operation.id, "softmax needs exactly one input tensor");
+        }
+        const workload_tensor_t &input = tensor(operation.inputs[0]);
+        if(input.shape.empty() || input.shape != output.shape ||
+           input.shape.back() != operation.geometry.row_length ||
+           shape_product(input.shape, 0, input.shape.size() - 1, operation.id) !=
+               operation.geometry.rows) {
+            geometry_fail(operation.id, "softmax geometry disagrees with tensor shapes");
+        }
+        return;
     }
-    const workload_tensor_t &input = tensor(operation.inputs[0]);
-    if(input.shape.empty() || input.shape != output.shape ||
-       input.shape.back() != operation.geometry.row_length ||
-       shape_product(input.shape, 0, input.shape.size() - 1, operation.id) !=
-           operation.geometry.rows) {
-        geometry_fail(operation.id, "softmax geometry disagrees with tensor shapes");
+
+    if(operation.kind == WORKLOAD_POOL2D) {
+        if(operation.inputs.size() != 1) geometry_fail(operation.id, "pool2d needs one input");
+        const workload_tensor_t &input = tensor(operation.inputs[0]);
+        const workload_geometry_t &g = operation.geometry;
+        if((g.mode != "max" && g.mode != "average") || input.shape.size() != 4 ||
+           output.shape.size() != 4 || input.shape[0] != g.batch ||
+           input.shape[1] != g.input_channels || input.shape[2] != g.input_height ||
+           input.shape[3] != g.input_width || output.shape[0] != g.batch ||
+           output.shape[1] != g.output_channels || output.shape[2] != g.output_height ||
+           output.shape[3] != g.output_width) {
+            geometry_fail(operation.id, "pool2d geometry disagrees with tensor shapes");
+        }
+        const size_t effective_h = static_cast<size_t>(g.dilation_height)*(g.kernel_height - 1) + 1;
+        const size_t effective_w = static_cast<size_t>(g.dilation_width)*(g.kernel_width - 1) + 1;
+        const size_t padded_h = static_cast<size_t>(g.input_height) + 2ULL*g.padding_height;
+        const size_t padded_w = static_cast<size_t>(g.input_width) + 2ULL*g.padding_width;
+        if(padded_h < effective_h || padded_w < effective_w ||
+           (padded_h - effective_h)/g.stride_height + 1 != g.output_height ||
+           (padded_w - effective_w)/g.stride_width + 1 != g.output_width) {
+            geometry_fail(operation.id, "pool2d output extent is invalid");
+        }
+        return;
     }
+
+    if(operation.kind == WORKLOAD_ELEMENTWISE) {
+        if(operation.inputs.size() != 2 ||
+           (operation.geometry.elementwise_operator != "add" &&
+            operation.geometry.elementwise_operator != "multiply")) {
+            geometry_fail(operation.id, "elementwise contract is invalid");
+        }
+        const workload_tensor_t &lhs = tensor(operation.inputs[0]);
+        const workload_tensor_t &rhs = tensor(operation.inputs[1]);
+        if(lhs.shape != rhs.shape || lhs.shape != output.shape ||
+           output.elements() != operation.geometry.elements) {
+            geometry_fail(operation.id, "elementwise shapes disagree (broadcasting is unsupported)");
+        }
+        return;
+    }
+
+    if(operation.kind == WORKLOAD_CONCAT) {
+        if(operation.inputs.size() < 2 || operation.geometry.axis >= output.shape.size()) {
+            geometry_fail(operation.id, "concat needs two inputs and a valid axis");
+        }
+        std::vector<size_t> expected = tensor(operation.inputs[0]).shape;
+        if(expected.size() != output.shape.size()) geometry_fail(operation.id, "concat rank mismatch");
+        expected[operation.geometry.axis] = 0;
+        for(const std::string &input_id : operation.inputs) {
+            const workload_tensor_t &input = tensor(input_id);
+            if(input.shape.size() != output.shape.size()) geometry_fail(operation.id, "concat rank mismatch");
+            for(size_t axis = 0; axis < output.shape.size(); ++axis) {
+                if(axis != operation.geometry.axis && input.shape[axis] != output.shape[axis]) {
+                    geometry_fail(operation.id, "concat non-axis dimensions disagree");
+                }
+            }
+            expected[operation.geometry.axis] += input.shape[operation.geometry.axis];
+        }
+        if(expected != output.shape || output.elements() != operation.geometry.elements) {
+            geometry_fail(operation.id, "concat output shape disagrees with inputs");
+        }
+        return;
+    }
+
+    if(operation.kind == WORKLOAD_BATCH_NORM) {
+        if(operation.inputs.size() < 3 || operation.inputs.size() > 5) {
+            geometry_fail(operation.id,
+                          "batch_norm needs activation, running statistics, and optional affine tensors");
+        }
+        const workload_tensor_t &input = tensor(operation.inputs[0]);
+        if(input.shape.size() < 2 || input.shape != output.shape ||
+           output.elements() != operation.geometry.elements ||
+           input.shape[1] != operation.geometry.output_channels) {
+            geometry_fail(operation.id, "batch_norm geometry disagrees with tensor shapes");
+        }
+        for(size_t index = 1; index < operation.inputs.size(); ++index) {
+            const workload_tensor_t &parameter = tensor(operation.inputs[index]);
+            if(parameter.shape.size() != 1 ||
+               parameter.shape[0] != operation.geometry.output_channels) {
+                geometry_fail(operation.id, "batch_norm parameter/stat shape is invalid");
+            }
+        }
+        return;
+    }
+
+    geometry_fail(operation.id, "has no geometry validator");
 }

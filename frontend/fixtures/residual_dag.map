@@ -1,0 +1,12 @@
+# One mapped Conv2d followed by timing-only BN, residual add, two pooling branches,
+# and concat. Full Conv coverage: B=1, K=4, P=8, Q=8, C=4, R=S=3.
+[convolutional]
+op_id  = conv
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 3, 3, 0, 0, 1, 1,
+PE_X    = 4, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 4, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 8, 8, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

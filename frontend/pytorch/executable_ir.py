@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -23,7 +24,15 @@ _DTYPE_BYTES = {
     "float64": 8,
 }
 
-_MODELED_KINDS = {"npusim.linear", "npusim.conv2d", "npusim.softmax"}
+_MODELED_KINDS = {
+    "npusim.linear",
+    "npusim.conv2d",
+    "npusim.softmax",
+    "npusim.pool2d",
+    "npusim.elementwise",
+    "npusim.concat",
+    "npusim.batch_norm",
+}
 _ACTIVATIONS = {"linear", "relu", "leaky"}
 
 
@@ -89,6 +98,36 @@ def _validate_tensor(tensor: Mapping[str, Any], tensor_ids: set[str]) -> None:
         )
     _string(tensor.get("kind"), f"tensor {tensor_id} kind")
     _string(tensor.get("layout", "contiguous"), f"tensor {tensor_id} layout")
+    if tensor.get("alias_of") is not None:
+        _string(tensor.get("alias_of"), f"tensor {tensor_id} alias_of")
+
+
+def _validate_aliases(tensors: Sequence[Mapping[str, Any]]) -> dict[str, str]:
+    """Cross-tensor validation of alias views; returns {alias_id: storage_id}."""
+    tensor_by_id = {str(tensor["id"]): tensor for tensor in tensors}
+    aliases: dict[str, str] = {}
+    for tensor in tensors:
+        target_id = tensor.get("alias_of")
+        if target_id is None:
+            continue
+        tensor_id = str(tensor["id"])
+        target = tensor_by_id.get(target_id)
+        if target is None:
+            raise ExecutableIRError(f"tensor {tensor_id} aliases undeclared tensor {target_id}")
+        if target.get("alias_of") is not None:
+            raise ExecutableIRError(
+                f"tensor {tensor_id} aliases {target_id}, which is itself an alias"
+            )
+        if tensor.get("dtype") != target.get("dtype") or tensor.get(
+            "logical_bytes"
+        ) != target.get("logical_bytes"):
+            raise ExecutableIRError(
+                f"tensor {tensor_id} alias does not preserve its storage dtype and bytes"
+            )
+        if tensor.get("kind") != "activation":
+            raise ExecutableIRError(f"tensor {tensor_id} alias must be an activation view")
+        aliases[tensor_id] = str(target_id)
+    return aliases
 
 
 def _validate_geometry(operation: Mapping[str, Any]) -> None:
@@ -132,6 +171,37 @@ def _validate_geometry(operation: Mapping[str, Any]) -> None:
         _positive_integer(
             geometry.get("row_length"), f"operation {operation_id} geometry.row_length"
         )
+    elif kind == "npusim.pool2d":
+        if geometry.get("mode") not in {"max", "average"}:
+            raise ExecutableIRError(f"operation {operation_id} pool mode must be max or average")
+        for field in (
+            "batch", "channels", "input_height", "input_width", "output_height",
+            "output_width", "kernel_height", "kernel_width", "stride_height",
+            "stride_width", "dilation_height", "dilation_width",
+        ):
+            _positive_integer(geometry.get(field), f"operation {operation_id} geometry.{field}")
+        for field in ("padding_height", "padding_width"):
+            _nonnegative_integer(geometry.get(field), f"operation {operation_id} geometry.{field}")
+    elif kind == "npusim.elementwise":
+        if geometry.get("operator") not in {"add", "multiply"}:
+            raise ExecutableIRError(f"operation {operation_id} elementwise operator is invalid")
+        _positive_integer(geometry.get("elements"), f"operation {operation_id} geometry.elements")
+    elif kind == "npusim.concat":
+        _nonnegative_integer(geometry.get("axis"), f"operation {operation_id} geometry.axis")
+        _positive_integer(geometry.get("elements"), f"operation {operation_id} geometry.elements")
+    elif kind == "npusim.batch_norm":
+        _positive_integer(geometry.get("elements"), f"operation {operation_id} geometry.elements")
+        _positive_integer(geometry.get("channels"), f"operation {operation_id} geometry.channels")
+        epsilon = geometry.get("epsilon")
+        if (
+            isinstance(epsilon, bool)
+            or not isinstance(epsilon, (int, float))
+            or not math.isfinite(epsilon)
+            or epsilon <= 0
+        ):
+            raise ExecutableIRError(
+                f"operation {operation_id} geometry.epsilon must be a positive finite number"
+            )
 
 
 def validate_executable_ir(executable: Mapping[str, Any]) -> None:
@@ -154,11 +224,17 @@ def validate_executable_ir(executable: Mapping[str, Any]) -> None:
     tensor_ids: set[str] = set()
     for tensor in tensors:
         _validate_tensor(_mapping(tensor, "tensor"), tensor_ids)
+    aliases = _validate_aliases(tensors)
+
+    def _storage(tensor_id: str) -> str:
+        return aliases.get(tensor_id, tensor_id)
 
     inputs = _strings(root.get("inputs"), "inputs")
     outputs = _strings(root.get("outputs"), "outputs")
     if any(tensor_id not in tensor_ids for tensor_id in inputs + outputs):
         raise ExecutableIRError("inputs and outputs must reference declared tensors")
+    if any(tensor_id in aliases for tensor_id in inputs):
+        raise ExecutableIRError("graph inputs must be storage tensors, not aliases")
 
     operations = root.get("operations")
     if not isinstance(operations, list) or not operations:
@@ -186,8 +262,10 @@ def validate_executable_ir(executable: Mapping[str, Any]) -> None:
             raise ExecutableIRError(f"operation {operation_id} must produce at least one tensor")
         if any(tensor_id not in tensor_ids for tensor_id in operation_inputs + operation_outputs):
             raise ExecutableIRError(f"operation {operation_id} references an undeclared tensor")
-        if any(tensor_id not in produced for tensor_id in operation_inputs):
+        if any(_storage(tensor_id) not in produced for tensor_id in operation_inputs):
             raise ExecutableIRError(f"operation {operation_id} is not topologically ordered")
+        if any(tensor_id in aliases for tensor_id in operation_outputs):
+            raise ExecutableIRError(f"operation {operation_id} cannot produce an alias tensor")
         if any(tensor_id in produced for tensor_id in operation_outputs):
             raise ExecutableIRError(f"operation {operation_id} redefines a tensor")
         activation = _string(operation.get("activation", "linear"), f"operation {operation_id} activation")
@@ -203,7 +281,7 @@ def validate_executable_ir(executable: Mapping[str, Any]) -> None:
         _validate_geometry(operation)
         produced.update(operation_outputs)
 
-    if any(tensor_id not in produced for tensor_id in outputs):
+    if any(_storage(tensor_id) not in produced for tensor_id in outputs):
         raise ExecutableIRError("graph outputs are not produced by executable operations")
 
 

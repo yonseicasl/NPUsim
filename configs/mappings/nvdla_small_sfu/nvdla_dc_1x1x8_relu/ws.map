@@ -1,0 +1,18 @@
+# The order of mapping table is
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+#
+# dc_1x1x8_1x1x8x1_int8_0 expressed as [connected]: K(output)=1, B(batch)=1,
+# C(input features)=8. Whole tensor fits in a single PE-array pass
+# (Atomic-C=8 fully used, only 1 of 8 Atomic-K lanes used -- a K-tail case).
+# No GLB/DRAM-level tiling needed.
+
+[connected]
+#         1, 1, 1, 1, 8, 1, 1, 0, 0, 1, 1,
+MAC     = 1,1,1,1,1,1,1,0,0,1,1,
+PE      = 1,1,1,1,1,1,1,0,0,1,1,
+PE_X    = 1,1,1,1,1,1,1,0,0,1,1,
+PE_Y    = 1,1,1,1,8,1,1,0,0,1,1,
+GLB     = 1,1,1,1,1,1,1,0,0,1,1,
+CHIPS_X = 1,1,1,1,1,1,1,0,0,1,1,
+CHIPS_Y = 1,1,1,1,1,1,1,0,0,1,1,
+DRAM    = 1,1,1,1,1,1,1,0,0,1,1,

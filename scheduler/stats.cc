@@ -71,13 +71,15 @@ stats_t::stats_t() :
     min_computation_cycle(0.0),
     avg_computation_cycle(0.0),
     computation_energy(0.0),
+    mac_busy_cycle(0.0),
+    mac_available_cycle(0.0),
     reduction_energy(0.0),
     weight_fold_energy(0.0),
     layer_setup_energy(0.0),
-    stripe_transition_energy(0.0),
-    stripe_transition_events(0.0),
     weight_fold_events(0.0),
     layer_setup_events(0.0),
+    stripe_transition_energy(0.0),
+    stripe_transition_events(0.0),
     accumulator_reload_bytes(0),
     accumulator_spill_bytes(0),
     accumulator_create_events(0),
@@ -91,8 +93,6 @@ stats_t::stats_t() :
     format_metadata_events(0),
     reduction_additions(0.0),
     pe_array_accumulator_energy(0.0),
-    mac_busy_cycle(0.0),
-    mac_available_cycle(0.0),
     utilization_mac(0.0),
     total_utilization_local_buffer(0.0),
     utilization_pe_array(0.0),
@@ -351,6 +351,8 @@ void stats_t::init() {
     sfu_only_layer = false;
     sfu_unpriced_events.clear();
     sfu_contract_note.clear();
+    graph_residency_applied = false;
+    graph_residency_note.clear();
     activation_unmodeled = false;
     activation_unmodeled_note.clear();
 
@@ -1830,8 +1832,8 @@ void stats_t::record_sfu_only_layer(const sfu_invocation_t &m_invocation,
     compute_energy_precision_calibrated = true;
     operand_precision = runtime_datatypes().accumulator_format().name;
     dram_timing_model = m_stream.active
-        ? "analytical unit-cost streaming of the softmax operand tensor (no row-activation"
-          " or bank model for this layer)"
+        ? "analytical unit-cost streaming of standalone graph operands (no bank-conflict"
+          " scheduling for this layer)"
         : "n/a (no DRAM activity is modeled for this SFU-only layer)";
     dram_timing_limits = "n/a";
     array_noc_link_contract = "n/a (SFU-only layer)";
@@ -1882,6 +1884,49 @@ void stats_t::record_sfu_only_layer(const sfu_invocation_t &m_invocation,
         layer_latency += m_stream.ingress_cycle + m_stream.egress_cycle;
         sfu_static_energy = static_cast<double>(m_physical_units)*layer_latency*
                             m_static_energy_per_cycle;
+    }
+}
+
+void stats_t::apply_graph_residency(bool m_input_in_glb, bool m_output_in_glb,
+                                    const std::string &m_note) {
+    graph_residency_applied = m_input_in_glb || m_output_in_glb;
+    if(!m_note.empty()) graph_residency_note = m_note;
+    const unsigned input = data_type_t::INPUT;
+    const unsigned output = data_type_t::OUTPUT;
+    if(m_input_in_glb) {
+        num_request_multi_chip[input] = num_data_transfer_multi_chip[input] = 0;
+        payload_link_transactions_multi_chip[input] = 0;
+        metadata_link_transactions_multi_chip[input] = 0;
+        storage_link_transactions_multi_chip[input] = 0;
+        access_cycle_multi_chip[input] = access_energy_multi_chip[input] = 0.0;
+        transfer_cycle_multi_chip[input] = transfer_energy_multi_chip[input] = 0.0;
+        num_request_dram[input] = num_data_transfer_dram[input] = 0;
+        payload_link_transactions_dram[input] = 0;
+        metadata_link_transactions_dram[input] = 0;
+        storage_link_transactions_dram[input] = 0;
+        access_cycle_dram[input] = access_energy_dram[input] = 0.0;
+        transfer_cycle_dram[input] = transfer_energy_dram[input] = 0.0;
+        cycle_chip_dram[input] = 0.0;
+        fill_access_cycle_global_buffer[input] = 0.0;
+        fill_access_energy_global_buffer[input] = 0.0;
+        for(std::vector<double> &chip : chip_fill_access_cycle_global_buffer) {
+            if(input < chip.size()) chip[input] = 0.0;
+        }
+    }
+    if(m_output_in_glb) {
+        num_request_multi_chip[output] = num_data_transfer_multi_chip[output] = 0;
+        payload_link_transactions_multi_chip[output] = 0;
+        metadata_link_transactions_multi_chip[output] = 0;
+        storage_link_transactions_multi_chip[output] = 0;
+        access_cycle_multi_chip[output] = access_energy_multi_chip[output] = 0.0;
+        transfer_cycle_multi_chip[output] = transfer_energy_multi_chip[output] = 0.0;
+        num_request_dram[output] = num_data_transfer_dram[output] = 0;
+        payload_link_transactions_dram[output] = 0;
+        metadata_link_transactions_dram[output] = 0;
+        storage_link_transactions_dram[output] = 0;
+        access_cycle_dram[output] = access_energy_dram[output] = 0.0;
+        transfer_cycle_dram[output] = transfer_energy_dram[output] = 0.0;
+        cycle_chip_dram[output] = 0.0;
     }
 }
 
@@ -2033,6 +2078,10 @@ void stats_t::update_network_stats(stats_t *m_source) {
     }
     if(!m_source->sfu_contract_note.empty()) {
         merge_unique_segments(sfu_contract_note, m_source->sfu_contract_note, "; ");
+    }
+    if(m_source->graph_residency_applied) graph_residency_applied = true;
+    if(!m_source->graph_residency_note.empty()) {
+        merge_unique_segments(graph_residency_note, m_source->graph_residency_note, "; ");
     }
     if(m_source->activation_unmodeled) {
         mark_unmodeled_activation(m_source->activation_unmodeled_note);
@@ -2591,6 +2640,9 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                   << stage_axis_compute << " cycles (validated metric)" << std::endl;
     m_output_file << "Critical-path latency :" << std::setw(11) << std::setprecision(1)
                                                << layer_latency << " cycles" << std::endl;
+    if(!graph_residency_note.empty()) {
+        m_output_file << "Tensor residency     : " << graph_residency_note << std::endl;
+    }
     const char *stage_names[5] = {"DRAM", "Multi-chip (NoP)", "Global buffer", "PE array", "PE (compute+LB)"};
     const double stage_values[5] = {busy_cycle_dram, busy_cycle_multi_chip,
                                     busy_cycle_global_buffer, busy_cycle_pe_array, busy_cycle_pe};

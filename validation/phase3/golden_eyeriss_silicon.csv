@@ -1,0 +1,6 @@
+layer,layer_index,processing_ms,total_ms,active_pes,glb_mb,dram_mb,source
+conv1,0,16.5,20.9,154,18.5,5.0,Chen et al. JSSC 2017 Table V
+conv2,2,39.2,41.9,135,77.6,4.0,Chen et al. JSSC 2017 Table V
+conv3,4,21.8,23.6,156,50.2,3.0,Chen et al. JSSC 2017 Table V
+conv4,5,16.0,18.4,156,37.4,2.1,Chen et al. JSSC 2017 Table V
+conv5,6,10.0,10.5,156,24.9,1.3,Chen et al. JSSC 2017 Table V

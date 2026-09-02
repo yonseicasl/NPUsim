@@ -1,0 +1,25 @@
+# The order of mapping table is
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+# layer 0: shaping dummy 1x1x3->76 conv on 32x26; everything at GLB.
+[convolutional]
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 8, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 3, 1, 1, 0, 0, 1, 1,
+GLB     = 10, 1, 26, 32, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+
+# layer 1: dc_32x26x76_6x3x76x270_int8_0. Atomic-K=8 on PE_X, Atomic-C=8 on PE_Y,
+# remaining K/8=34, C/8=10, R=3, S=6, P=28, Q=29 at GLB (CBUF-resident).
+[convolutional]
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 8, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 8, 1, 1, 0, 0, 1, 1,
+GLB     = 34, 1, 28, 29, 10, 3, 6, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

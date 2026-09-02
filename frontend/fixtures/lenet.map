@@ -1,0 +1,50 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+#
+# lenet-fixture: real torch.export capture of Conv(1->6,5x5) -> ReLU -> MaxPool(2)
+# -> Conv(6->16,5x5) -> ReLU -> MaxPool(2) -> [flatten elided as alias] ->
+# Linear(256->120)+ReLU -> Linear(120->10) -> Softmax. Pools and softmax take no
+# MAC mapping; flatten never appears (alias of max_pool2d_1's storage).
+
+[convolutional]
+op_id  = conv2d
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 5, 5, 0, 0, 1, 1,
+PE_X    = 6, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 24, 24, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+
+[convolutional]
+op_id  = conv2d_1
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 5, 5, 0, 0, 1, 1,
+PE_X    = 16, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 6, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 8, 8, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+
+[connected]
+op_id  = linear
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 15, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 8, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 16, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 16, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+
+[connected]
+op_id  = linear_1
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 10, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 15, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 8, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

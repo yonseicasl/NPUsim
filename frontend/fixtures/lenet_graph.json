@@ -1,0 +1,678 @@
+{
+  "graph_sha256": "67d44a78b3e13a846b696761eb37a76d902117c9ba7010f5117762c5fda9d0c5",
+  "inputs": [
+    "x"
+  ],
+  "metadata": {
+    "dynamic_shapes_configured": false,
+    "export_mode": "torch.export",
+    "literal_arguments_preserved": true,
+    "pytorch_version": "2.13.0+cpu",
+    "tensor_layout_preserved": true,
+    "weight_values_included": false
+  },
+  "model": {
+    "name": "lenet-fixture",
+    "structure_sha256": "b2da1832fb6bfa4054283ffd96029c873af9ee5987ccbc3302bc111b1c197573"
+  },
+  "nodes": [
+    {
+      "arguments": [
+        {
+          "tensor": "x"
+        },
+        {
+          "tensor": "p_c1_weight"
+        },
+        {
+          "tensor": "p_c1_bias"
+        }
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "conv2d",
+      "inputs": [
+        "x",
+        "p_c1_weight",
+        "p_c1_bias"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.conv2d.default",
+      "outputs": [
+        "conv2d"
+      ],
+      "source": {
+        "target": "aten.conv2d.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "conv2d"
+        }
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "relu",
+      "inputs": [
+        "conv2d"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.relu.default",
+      "outputs": [
+        "relu"
+      ],
+      "source": {
+        "target": "aten.relu.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "relu"
+        },
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "max_pool2d",
+      "inputs": [
+        "relu"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.max_pool2d.default",
+      "outputs": [
+        "max_pool2d"
+      ],
+      "source": {
+        "target": "aten.max_pool2d.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "max_pool2d"
+        },
+        {
+          "tensor": "p_c2_weight"
+        },
+        {
+          "tensor": "p_c2_bias"
+        }
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "conv2d_1",
+      "inputs": [
+        "max_pool2d",
+        "p_c2_weight",
+        "p_c2_bias"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.conv2d.default",
+      "outputs": [
+        "conv2d_1"
+      ],
+      "source": {
+        "target": "aten.conv2d.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "conv2d_1"
+        }
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "relu_1",
+      "inputs": [
+        "conv2d_1"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.relu.default",
+      "outputs": [
+        "relu_1"
+      ],
+      "source": {
+        "target": "aten.relu.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "relu_1"
+        },
+        [
+          2,
+          2
+        ],
+        [
+          2,
+          2
+        ]
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "max_pool2d_1",
+      "inputs": [
+        "relu_1"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.max_pool2d.default",
+      "outputs": [
+        "max_pool2d_1"
+      ],
+      "source": {
+        "target": "aten.max_pool2d.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "max_pool2d_1"
+        },
+        1
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "flatten",
+      "inputs": [
+        "max_pool2d_1"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.flatten.using_ints",
+      "outputs": [
+        "flatten"
+      ],
+      "source": {
+        "target": "aten.flatten.using_ints"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "flatten"
+        },
+        {
+          "tensor": "p_f1_weight"
+        },
+        {
+          "tensor": "p_f1_bias"
+        }
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "linear",
+      "inputs": [
+        "flatten",
+        "p_f1_weight",
+        "p_f1_bias"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.linear.default",
+      "outputs": [
+        "linear"
+      ],
+      "source": {
+        "target": "aten.linear.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "linear"
+        }
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "relu_2",
+      "inputs": [
+        "linear"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.relu.default",
+      "outputs": [
+        "relu_2"
+      ],
+      "source": {
+        "target": "aten.relu.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "relu_2"
+        },
+        {
+          "tensor": "p_f2_weight"
+        },
+        {
+          "tensor": "p_f2_bias"
+        }
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "linear_1",
+      "inputs": [
+        "relu_2",
+        "p_f2_weight",
+        "p_f2_bias"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.linear.default",
+      "outputs": [
+        "linear_1"
+      ],
+      "source": {
+        "target": "aten.linear.default"
+      }
+    },
+    {
+      "arguments": [
+        {
+          "tensor": "linear_1"
+        },
+        -1
+      ],
+      "attributes": {
+        "fx_op": "call_function"
+      },
+      "id": "softmax",
+      "inputs": [
+        "linear_1"
+      ],
+      "keyword_arguments": {},
+      "op": "aten.softmax.int",
+      "outputs": [
+        "softmax"
+      ],
+      "source": {
+        "target": "aten.softmax.int"
+      }
+    }
+  ],
+  "outputs": [
+    "softmax"
+  ],
+  "producer": {
+    "name": "npusim-pytorch-frontend",
+    "version": "0.2"
+  },
+  "schema_version": "npusim.graph.v1",
+  "tensors": [
+    {
+      "dtype": "float32",
+      "id": "p_c1_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 600,
+      "qualified_name": "c1.weight",
+      "shape": [
+        6,
+        1,
+        5,
+        5
+      ],
+      "storage_offset": 0,
+      "strides": [
+        25,
+        25,
+        5,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_c1_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 24,
+      "qualified_name": "c1.bias",
+      "shape": [
+        6
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_c2_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 9600,
+      "qualified_name": "c2.weight",
+      "shape": [
+        16,
+        6,
+        5,
+        5
+      ],
+      "storage_offset": 0,
+      "strides": [
+        150,
+        25,
+        5,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_c2_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 64,
+      "qualified_name": "c2.bias",
+      "shape": [
+        16
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f1_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 122880,
+      "qualified_name": "f1.weight",
+      "shape": [
+        120,
+        256
+      ],
+      "storage_offset": 0,
+      "strides": [
+        256,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f1_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 480,
+      "qualified_name": "f1.bias",
+      "shape": [
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f2_weight",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 4800,
+      "qualified_name": "f2.weight",
+      "shape": [
+        10,
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        120,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "p_f2_bias",
+      "kind": "parameter",
+      "layout": "contiguous",
+      "logical_bytes": 40,
+      "qualified_name": "f2.bias",
+      "shape": [
+        10
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "x",
+      "kind": "input",
+      "layout": "contiguous",
+      "logical_bytes": 3136,
+      "shape": [
+        1,
+        1,
+        28,
+        28
+      ],
+      "storage_offset": 0,
+      "strides": [
+        784,
+        784,
+        28,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "conv2d",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 13824,
+      "shape": [
+        1,
+        6,
+        24,
+        24
+      ],
+      "storage_offset": 0,
+      "strides": [
+        3456,
+        576,
+        24,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "relu",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 13824,
+      "shape": [
+        1,
+        6,
+        24,
+        24
+      ],
+      "storage_offset": 0,
+      "strides": [
+        3456,
+        576,
+        24,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "max_pool2d",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 3456,
+      "shape": [
+        1,
+        6,
+        12,
+        12
+      ],
+      "storage_offset": 0,
+      "strides": [
+        864,
+        144,
+        12,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "conv2d_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 4096,
+      "shape": [
+        1,
+        16,
+        8,
+        8
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1024,
+        64,
+        8,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "relu_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 4096,
+      "shape": [
+        1,
+        16,
+        8,
+        8
+      ],
+      "storage_offset": 0,
+      "strides": [
+        1024,
+        64,
+        8,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "max_pool2d_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        16,
+        4,
+        4
+      ],
+      "storage_offset": 0,
+      "strides": [
+        256,
+        16,
+        4,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "flatten",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 1024,
+      "shape": [
+        1,
+        256
+      ],
+      "storage_offset": 0,
+      "strides": [
+        256,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "linear",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 480,
+      "shape": [
+        1,
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        120,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "relu_2",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 480,
+      "shape": [
+        1,
+        120
+      ],
+      "storage_offset": 0,
+      "strides": [
+        120,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "linear_1",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 40,
+      "shape": [
+        1,
+        10
+      ],
+      "storage_offset": 0,
+      "strides": [
+        10,
+        1
+      ]
+    },
+    {
+      "dtype": "float32",
+      "id": "softmax",
+      "kind": "activation",
+      "layout": "contiguous",
+      "logical_bytes": 40,
+      "shape": [
+        1,
+        10
+      ],
+      "storage_offset": 0,
+      "strides": [
+        10,
+        1
+      ]
+    }
+  ]
+}

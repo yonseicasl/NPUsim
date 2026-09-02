@@ -73,7 +73,7 @@ public:
     // Print out the Accelerator specification.
     void print_accelerator_specification();
     // Print out DNN configuration.
-    void print_network_configuration(unsigned m_index);
+    void print_network_configuration(unsigned m_layer_index, unsigned m_stats_index);
     // Print out the stats.
     void print_stats(const std::string m_accelerator_config, const std::string m_network_config, unsigned m_index);
 
@@ -83,7 +83,9 @@ public:
     void print_workload_provenance(std::ofstream &m_output) const;
     void bind_executable_mappings();
     // Print out the simulation result.
-    void print_layerwise_results(const std::string m_accelerator_config, const std::string m_network_config, unsigned m_index);
+    void print_layerwise_results(const std::string m_accelerator_config,
+                                 const std::string m_network_config,
+                                 unsigned m_layer_index, unsigned m_stats_index);
     // Print out the simulation result.
     void print_total_result(const std::string m_accelerator_config, const std::string m_network_config);
 
@@ -97,7 +99,7 @@ protected:
     // convolution/connected layer -- once per valid output element, AFTER repetition
     // scaling. Without an [sfu] section it only marks nonlinear activations as
     // out-of-scope (legacy numbers unchanged).
-    void apply_fused_sfu_activation(unsigned m_index);
+    void apply_fused_sfu_activation(unsigned m_layer_index, unsigned m_stats_index);
     // Standalone softmax layer executed on the SFU's multi-pass microprogram (Phase 7).
     void run_standalone_softmax(unsigned m_index, const std::string &m_accelerator_config,
                                 const std::string &m_network_config);
@@ -106,6 +108,13 @@ protected:
     // costs (dram: DRAM device + off-chip link + GLB staging/feed ports; glb: GLB
     // feed/result ports only, with a capacity fail-fast).
     sfu_operand_stream_t softmax_operand_stream(size_t m_elements);
+    sfu_operand_stream_t graph_operand_stream(const workload_operation_t &m_operation,
+                                              const workload_residency_plan_t &m_plan);
+    void run_standalone_graph_operation(unsigned m_index,
+                                        workload_residency_plan_t m_plan,
+                                        const std::string &m_accelerator_config,
+                                        const std::string &m_network_config);
+    void override_executable_layer_geometry();
     unsigned num_processors;                        // The number of on-chip processors.
     unsigned num_pes;                               // The number of processing elements for each processors.
     compression_type_t compression_type;            // Compression type : Dense, CSR, CSC, SparseMap
@@ -123,6 +132,7 @@ protected:
     dram_t *dram;                                   // DRAM
     std::vector<sfu_t*> sfus;                       // Per-chip SFU (empty without [sfu])
     workload_graph_t *workload;                    // Framework-neutral executable IR, if used.
+    workload_lifetime_t *workload_lifetime;        // DAG tensor liveness/GLB residency state.
     bool executable_ir_mode;
 
 	nebula::network_t *network;                     // DNN model obtained from the software framework (PyTorch and Nebula)

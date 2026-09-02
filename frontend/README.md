@@ -47,8 +47,8 @@ fact that runtime datatypes come from the accelerator configuration.
 Run frontend regression tests with:
 
 ```bash
-unittest/run_pytorch_frontend_validation.sh   # lowering + loader units, both fixtures
-python3 validation/frontend/check.py          # acceptance gate (FE1-FE4)
+unittest/run_pytorch_frontend_validation.sh   # lowering + loader/lifetime units
+python3 validation/frontend/check.py          # acceptance gate (FE1-FE8)
 ```
 
 The acceptance gate pins the whole-path claims: recompiling each checked-in
@@ -57,8 +57,14 @@ linear_relu fixture -- which IS the RTL-validated gemm_64x64x64 -- produces
 compute-schedule and DRAM traffic IDENTICAL to the nebula path, with the
 critical-path delta equal to the SFU busy cycles exactly (FE2); the conv_relu
 fixture's computation count, SFU scalar operations, and output-commit identity
-all match its own geometry (FE3); and missing-SFU / wrong-op_id runs fail with
-their specific errors (FE4).
+all match its own geometry (FE3); missing-SFU / wrong-op_id runs fail with
+their specific errors (FE4); the residual DAG pins and releases live tensors
+while executing BatchNorm, add, pooling branches, and concat end to end (FE5);
+the real-capture pool chain reproduces its max/avg scalar-op identities (FE6)
+and pool SFU-contract refusals (FE7); and the lenet classifier -- a real
+torch.export capture with a flatten between conv and FC -- runs end to end as
+exactly 7 operations, with the flatten elided as an alias and the first Linear
+reading the pool's storage GLB-resident through it (FE8).
 
 ## Exporting a model
 
@@ -112,22 +118,42 @@ duplicate, missing, extra, or wrong-kind bindings fail before simulation.
 
 ## Current milestone scope
 
-Supported lowering is intentionally narrow:
+Supported executable lowering now includes:
 
-- `aten.linear.default` -> `npusim.linear`;
-- `aten.conv2d.default` and non-transposed `aten.convolution.default` ->
-  `npusim.conv2d`;
-- single-consumer ReLU/Leaky ReLU fused into Linear or Conv2d;
-- last-axis Softmax -> terminal `npusim.softmax`.
+- `aten.linear.default`, `aten.conv2d.default`, and non-transposed
+  `aten.convolution.default`;
+- single-consumer ReLU/Leaky ReLU fusion and last-axis Softmax;
+- NCHW MaxPool2d and AvgPool2d (`ceil_mode=False`);
+- equal-shape tensor add/multiply for residual paths (broadcasting is fail-fast);
+- tensor concat on a static axis;
+- inference BatchNorm with static channel vectors;
+- element-preserving flatten/view/reshape of contiguous whole-storage tensors,
+  elided during lowering as `alias_of` views of the producer's storage: they
+  never become operations, cost zero cycles/bytes by construction, and the
+  lifetime tracker keys residency on the storage tensor so a consumer reading
+  through the view keeps the producer's buffer alive instead of forcing a
+  fictitious DRAM round trip. Non-contiguous or offset views are rejected,
+  because eliding those would hide a real copy.
 
-The transitional C++ adapter currently accepts a linear tensor chain. It rejects
-asymmetric Conv2d stride, dilation, transposed convolution, nonzero output padding,
-and non-terminal Softmax. Nonlinear activation and Softmax require an accelerator
-`[sfu]` section. Executable-IR runs are timing-only until a versioned tensor-value
-artifact is implemented; functional builds fail fast instead of using random
-Nebula tensors.
+Executable operations are consumed in validated topological order, so branches and
+residual dependencies no longer need to form a linear tensor chain. A capacity-aware
+lifetime tracker keeps live graph inputs and intermediate activations in the GLB,
+reuses last-use storage, and materializes only graph outputs or tensors that do not
+fit. The policy does not silently evict: an unretained tensor is explicitly read from
+or written to DRAM by its consumer/producer model.
 
-Nebula remains as a temporary layer-allocation adapter for differential parity.
-Removing that final dependency, adding general DAG/view/materialization handling,
-dynamic-shape bindings, tensor values, broader operator coverage, and calibrated
-SFU profiles are later migration phases.
+Pooling, elementwise, BatchNorm, concat, nonlinear activation, and Softmax timing use
+the configured `[sfu]` datapath. Max/average pooling count valid boundary samples;
+AvgPool additionally honors `count_include_pad`. BatchNorm is inference-only and is
+costed as a per-element affine mul-add; training BatchNorm and LayerNorm remain
+unsupported. Concat is a copy-only memory operation with zero arithmetic operations.
+Every unsupported form fails during lowering or C++ validation.
+
+Asymmetric Conv2d stride, dilation, transposed convolution, nonzero output padding,
+pool `ceil_mode`, elementwise broadcasting, dynamic executable shapes, and tensor
+values are not yet supported. Executable-IR runs remain timing-only; functional builds
+fail fast. Nebula remains only as a temporary layer-allocation bridge, while operation
+geometry, topology, residency, and non-MAC timing are owned by executable IR.
+Removing that bridge, materialization semantics for non-contiguous views (only
+whole-storage contiguous reshapes alias today), broader LLM
+operators/normalization, and calibrated SFU profiles are later migration phases.

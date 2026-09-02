@@ -1,0 +1,29 @@
+{
+  "schema_version": "npusim.graph.v1",
+  "producer": {"name": "npusim-frontend-fixture", "version": "1"},
+  "model": {"name": "residual-dag-fixture", "structure_sha256": "residual-dag-fixture"},
+  "inputs": ["input"],
+  "outputs": ["output"],
+  "tensors": [
+    {"id": "input", "shape": [1, 4, 8, 8], "dtype": "float32", "layout": "contiguous", "kind": "input", "logical_bytes": 1024},
+    {"id": "conv_weight", "shape": [4, 4, 3, 3], "dtype": "float32", "layout": "contiguous", "kind": "parameter", "logical_bytes": 576},
+    {"id": "conv_output", "shape": [1, 4, 8, 8], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 1024},
+    {"id": "bn_weight", "shape": [4], "dtype": "float32", "layout": "contiguous", "kind": "parameter", "logical_bytes": 16},
+    {"id": "bn_bias", "shape": [4], "dtype": "float32", "layout": "contiguous", "kind": "parameter", "logical_bytes": 16},
+    {"id": "running_mean", "shape": [4], "dtype": "float32", "layout": "contiguous", "kind": "buffer", "logical_bytes": 16},
+    {"id": "running_var", "shape": [4], "dtype": "float32", "layout": "contiguous", "kind": "buffer", "logical_bytes": 16},
+    {"id": "bn_output", "shape": [1, 4, 8, 8], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 1024},
+    {"id": "residual", "shape": [1, 4, 8, 8], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 1024},
+    {"id": "max_pool", "shape": [1, 4, 4, 4], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 256},
+    {"id": "avg_pool", "shape": [1, 4, 4, 4], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 256},
+    {"id": "output", "shape": [1, 8, 4, 4], "dtype": "float32", "layout": "contiguous", "kind": "activation", "logical_bytes": 512}
+  ],
+  "nodes": [
+    {"id": "conv", "op": "aten.conv2d.default", "inputs": ["input", "conv_weight"], "outputs": ["conv_output"], "attributes": {"stride": [1, 1], "padding": [1, 1], "dilation": [1, 1], "groups": 1}},
+    {"id": "batch_norm", "op": "aten.batch_norm.default", "inputs": ["conv_output", "bn_weight", "bn_bias", "running_mean", "running_var"], "outputs": ["bn_output"], "arguments": [{"tensor": "conv_output"}, {"tensor": "bn_weight"}, {"tensor": "bn_bias"}, {"tensor": "running_mean"}, {"tensor": "running_var"}, false, 0.1, 0.00001, true], "attributes": {"training": false, "epsilon": 0.00001}},
+    {"id": "residual_add", "op": "aten.add.Tensor", "inputs": ["bn_output", "input"], "outputs": ["residual"], "arguments": [{"tensor": "bn_output"}, {"tensor": "input"}], "attributes": {}},
+    {"id": "max_pool", "op": "aten.max_pool2d.default", "inputs": ["residual"], "outputs": ["max_pool"], "arguments": [{"tensor": "residual"}, [2, 2], [2, 2], [0, 0], [1, 1], false], "attributes": {}},
+    {"id": "avg_pool", "op": "aten.avg_pool2d.default", "inputs": ["residual"], "outputs": ["avg_pool"], "arguments": [{"tensor": "residual"}, [2, 2], [2, 2], [0, 0], false, true], "attributes": {}},
+    {"id": "concat", "op": "aten.cat.default", "inputs": ["max_pool", "avg_pool"], "outputs": ["output"], "arguments": [[{"tensor": "max_pool"}, {"tensor": "avg_pool"}], 1], "attributes": {}}
+  ]
+}

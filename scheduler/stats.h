@@ -111,6 +111,11 @@ public:
     // untouched, but the report must state that the activation is outside the modeled
     // scope instead of silently reading as free.
     void mark_unmodeled_activation(const std::string &m_note);
+    // Remove the off-chip activation legs that the mapped-layer core charged when the
+    // graph lifetime allocator proves the producer/consumer tensor stays in the GLB.
+    // Called after update_stats() and before repetition scaling/final timeline assembly.
+    void apply_graph_residency(bool m_input_in_glb, bool m_output_in_glb,
+                               const std::string &m_note);
 
     // Print out the result of simulation.
     void print_results(std::ofstream &m_output_file);
@@ -296,6 +301,8 @@ public:
     bool sfu_only_layer;
     std::vector<std::string> sfu_unpriced_events;
     std::string sfu_contract_note;       // per-layer scope statement (e.g. softmax streaming)
+    bool graph_residency_applied;
+    std::string graph_residency_note;
     // Nonlinear activation executed with no [sfu] section: scope statement only.
     bool activation_unmodeled;
     std::string activation_unmodeled_note;

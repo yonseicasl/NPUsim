@@ -1,0 +1,7 @@
+m,k,n,rtl_cycles,source
+64,64,64,3810,GemminiRocketConfig Verilator read_cycles
+128,128,128,10530,GemminiRocketConfig Verilator read_cycles
+256,256,256,69653,GemminiRocketConfig Verilator read_cycles
+16,512,512,32506,GemminiRocketConfig Verilator read_cycles
+512,512,64,74413,GemminiRocketConfig Verilator read_cycles
+512,512,512,543240,GemminiRocketConfig Verilator read_cycles

@@ -68,6 +68,10 @@ public:
     // Default false = the historical per-transfer pipeline, bit-identical.
     bool streams_pipelined = false;
     double get_buffer_size();
+    // Capacity available to an activation that must survive an operation boundary.
+    // Shared GLBs use the full SRAM; separate GLBs conservatively require the tensor
+    // to fit both the producer-output and consumer-input partitions.
+    size_t tensor_residency_capacity() const;
     // Get global buffer bitwidth
     unsigned get_bitwidth();
 
