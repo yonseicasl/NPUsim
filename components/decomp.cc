@@ -10,12 +10,23 @@ namespace {
 size_t ceil_div(size_t m_value, size_t m_divisor) {
     return m_divisor == 0 ? 0 : (m_value + m_divisor - 1)/m_divisor;
 }
+
+// Deterministic unit-interval hash (splitmix64 finalizer): the per-tile compression
+// factors must be exactly reproducible across runs and platforms, so no libc rand().
+double unit_hash(unsigned long long m_seed, unsigned long long m_index) {
+    unsigned long long z = m_seed + 0x9e3779b97f4a7c15ULL*(m_index + 1ULL);
+    z = (z ^ (z >> 30))*0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27))*0x94d049bb133111ebULL;
+    z ^= z >> 31;
+    return static_cast<double>(z >> 11)/9007199254740992.0;   // [0, 1), 53-bit
+}
 }  // namespace
 
 decomp_invocation_t::decomp_invocation_t() :
     active(false),
     bypassed(false),
     tiles(0),
+    bypassed_tiles(0),
     dense_weight_bytes(0),
     compressed_weight_bytes(0),
     effective_ratio(1.0),
@@ -33,6 +44,8 @@ decomp_t::decomp_t(section_config_t m_section_config) :
     decoder_bytes_per_cycle(0.0),
     decoder_ratio(0.0),
     startup_cycles(0.0),
+    tile_ratio_cv(0.0),
+    tile_ratio_seed(1),
     input_queue_depth(4),
     output_buffer_tiles(2),
     overlap(true),
@@ -55,6 +68,8 @@ void decomp_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("decoder_bytes_per_cycle", &decoder_bytes_per_cycle);
     m_section_config.get_setting("decoder_ratio", &decoder_ratio);
     m_section_config.get_setting("startup_cycles", &startup_cycles);
+    m_section_config.get_setting("tile_ratio_cv", &tile_ratio_cv);
+    m_section_config.get_setting("tile_ratio_seed", &tile_ratio_seed);
     m_section_config.get_setting("input_queue_depth", &input_queue_depth);
     m_section_config.get_setting("output_buffer_tiles", &output_buffer_tiles);
     m_section_config.get_setting("overlap", &overlap);
@@ -77,6 +92,11 @@ void decomp_t::init(section_config_t m_section_config) {
     }
     if(decoder_ratio < 0.0) {
         std::cerr << "Error: [decomp] decoder_ratio must not be negative" << std::endl;
+        exit(1);
+    }
+    // cv >= 1 would allow a non-positive per-tile compressed size (factor 1 - cv <= 0).
+    if(tile_ratio_cv < 0.0 || tile_ratio_cv >= 1.0) {
+        std::cerr << "Error: [decomp] tile_ratio_cv must be in [0, 1)" << std::endl;
         exit(1);
     }
     // decoder_ratio (relative to weight demand) and decoder_bytes_per_cycle (absolute) are
@@ -146,14 +166,56 @@ decomp_invocation_t decomp_t::decompress(size_t m_dense_weight_bytes,
         return inv;
     }
     inv.dense_weight_bytes = m_dense_weight_bytes;
-    bool bypassed = false;
-    inv.compressed_weight_bytes = compressed_bytes(m_dense_weight_bytes, &bypassed);
-    inv.bypassed = bypassed;
-    inv.effective_ratio = static_cast<double>(m_dense_weight_bytes)/
-                          static_cast<double>(std::max<size_t>(1, inv.compressed_weight_bytes));
-
     const size_t tile_bytes = std::max<size_t>(1, m_tile_bytes);
     inv.tiles = ceil_div(m_dense_weight_bytes, tile_bytes);
+
+    if(tile_ratio_cv > 0.0 && inv.tiles > 1) {
+        // Per-tile compression model (evaluation discussion 2026-09-03 Sec 5): each weight
+        // tile compresses by its own deterministic factor around the layer mean, the layer
+        // TOTAL is pinned to dense/CR pre-bypass (so uniform vs varied runs move identical
+        // DRAM bytes), and a tile whose compressed size would reach dense is stored dense
+        // (the PER-TILE bypass evaluation.md specifies -- the layer-level path below can
+        // only bypass whole layers). The resulting non-uniform arrival is what a bounded
+        // decoder queue turns into backpressure.
+        const size_t last_tile = m_dense_weight_bytes - (inv.tiles - 1)*tile_bytes;
+        const double target_total = static_cast<double>(m_dense_weight_bytes)/compression_ratio;
+        double raw_sum = 0.0;
+        for(size_t i = 0; i < inv.tiles; ++i) {
+            const double dense_i = static_cast<double>(i + 1 == inv.tiles ? last_tile : tile_bytes);
+            raw_sum += dense_i/compression_ratio*
+                       (1.0 + tile_ratio_cv*(2.0*unit_hash(tile_ratio_seed, i) - 1.0));
+        }
+        const double scale = raw_sum > 0.0 ? target_total/raw_sum : 1.0;
+        const size_t chunks = std::min<size_t>(inv.tiles, 4096);
+        inv.tile_supply_fraction.assign(chunks, 0.0);
+        double realized = 0.0;
+        for(size_t i = 0; i < inv.tiles; ++i) {
+            const double dense_i = static_cast<double>(i + 1 == inv.tiles ? last_tile : tile_bytes);
+            double comp_i = dense_i/compression_ratio*
+                            (1.0 + tile_ratio_cv*(2.0*unit_hash(tile_ratio_seed, i) - 1.0))*scale;
+            if(comp_i >= dense_i) {   // per-tile bypass: this tile did not shrink
+                comp_i = dense_i;
+                ++inv.bypassed_tiles;
+            }
+            realized += comp_i;
+            inv.tile_supply_fraction[i*chunks/inv.tiles] += comp_i;
+        }
+        const double total = realized + metadata_scale_bytes_per_tile;
+        inv.bypassed = total >= static_cast<double>(m_dense_weight_bytes);
+        inv.compressed_weight_bytes = inv.bypassed
+            ? m_dense_weight_bytes : static_cast<size_t>(std::ceil(total));
+        if(inv.bypassed || realized <= 0.0) {
+            inv.tile_supply_fraction.clear();
+        } else {
+            for(size_t j = 0; j < chunks; ++j) inv.tile_supply_fraction[j] /= realized;
+        }
+    } else {
+        bool bypassed = false;
+        inv.compressed_weight_bytes = compressed_bytes(m_dense_weight_bytes, &bypassed);
+        inv.bypassed = bypassed;
+    }
+    inv.effective_ratio = static_cast<double>(m_dense_weight_bytes)/
+                          static_cast<double>(std::max<size_t>(1, inv.compressed_weight_bytes));
 
     // DRAM weight transfer cost: dense vs compressed, at the DRAM link rate. The saving
     // is the difference -- what the compression buys on the memory side.
@@ -204,7 +266,13 @@ decomp_invocation_t decomp_t::decompress(size_t m_dense_weight_bytes,
 void decomp_t::print_specification() {
     std::cout << "======= Decompression engine ========" << std::endl;
     std::cout << "Compression ratio  :" << std::setw(20) << std::setprecision(2)
-              << std::fixed << compression_ratio << "x" << std::endl;
+              << std::fixed << compression_ratio << "x"
+              << (tile_ratio_cv > 0.0 ? "  (per-tile variation below)" : "") << std::endl;
+    if(tile_ratio_cv > 0.0) {
+        std::cout << "Per-tile variation :" << std::setw(19) << std::setprecision(2)
+                  << tile_ratio_cv << " +-relative spread (seed " << tile_ratio_seed
+                  << ", layer total pinned)" << std::endl;
+    }
     if(decoder_ratio > 0.0) {
         std::cout << "Decoder throughput :" << std::setw(18) << std::setprecision(2)
                   << decoder_ratio << "x weight demand (per-layer)" << std::endl;

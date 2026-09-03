@@ -843,6 +843,12 @@ void validate_accelerator(config_t &config, const std::string &path) {
                 fail(path + ": [decomp] set either decoder_ratio or"
                             " decoder_bytes_per_cycle, not both");
             }
+            // Per-tile compression variation: cv >= 1 allows a non-positive tile size.
+            double tcv = 0.0;
+            section.get_setting("tile_ratio_cv", &tcv);
+            if(tcv < 0.0 || tcv >= 1.0) {
+                fail(path + ": [decomp] tile_ratio_cv must be in [0, 1)");
+            }
         } else if(section.name == "kvcache") {
             // KV-cache read (evaluation.md Sec 4): opt-in. Mirror kvcache_t's fail-fast
             // contract -- a present read must describe a real read.
@@ -859,6 +865,20 @@ void validate_accelerator(config_t &config, const std::string &path) {
             section.get_setting("kv_compression_ratio", &kvcr);
             if(kvcr < 1.0) {
                 fail(path + ": [kvcache] kv_compression_ratio must be >= 1");
+            }
+            // KV supply schedule: mirror kvcache_t's fail-fast contract.
+            std::string sched = "aggregate";
+            section.get_setting("kv_schedule", &sched);
+            if(sched != "aggregate" && sched != "blocking" &&
+               sched != "streaming" && sched != "double_buffered") {
+                fail(path + ": [kvcache] kv_schedule must be aggregate, blocking,"
+                            " streaming, or double_buffered");
+            }
+            unsigned long ktb = 0;
+            section.get_setting("kv_tile_bytes", &ktb);
+            if((sched == "streaming" || sched == "double_buffered") && ktb == 0) {
+                fail(path + ": [kvcache] kv_schedule = " + sched +
+                     " requires a positive kv_tile_bytes");
             }
         } else if(section.name == "sfu") {
             // SFU (plan/plan_sfu.md): opt-in per-chip activation unit. Mirror sfu_t's

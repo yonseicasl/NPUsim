@@ -384,6 +384,10 @@ void stats_t::init() {
     decomp_pending_static_energy_per_cycle = 0.0;
     decomp_decoder_ratio = 0.0;
     decomp_startup_cycles = 0.0;
+    decomp_tile_supply_fraction.clear();
+    decomp_bypassed_tiles = 0;
+    decomp_tile_ratio_cv = 0.0;
+    decomp_output_buffer_tiles = 1;
 
     kv_present = false;
     kv_pending = false;
@@ -401,6 +405,13 @@ void stats_t::init() {
     kv_priced = true;
     kv_unpriced.clear();
     kv_profile_reference.clear();
+    kv_schedule.clear();
+    kv_sched_pending = false;
+    kv_tiles = 0;
+    kv_buffer_tiles = 1;
+    kv_exposed_cycle = 0.0;
+    kv_hidden_cycle = 0.0;
+    kv_stall_cycle = 0.0;
 
     // Initialize access energy of the global buffer
     access_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
@@ -1777,11 +1788,32 @@ void stats_t::finalize_layer_timeline() {
             // Producer = the memory/compute pipeline delivering compressed weight tiles
             // (the layer's current per-tile makespan); decoder = a following stage of
             // per-tile cost; consumer = a sink. A bounded queue of depth queue_depth sits
-            // between producer and decoder.
+            // between producer and decoder, and the decoder's dense-output buffer bounds
+            // the decoder -> scratchpad boundary.
             std::vector<double> supply(dtiles, producer_latency/static_cast<double>(dtiles));
+            if(!decomp_tile_supply_fraction.empty()) {
+                // Per-tile compression variation (evaluation discussion 2026-09-03 Sec 5):
+                // the compressed stream arrives BURSTY -- each supply tile takes time in
+                // proportion to the compressed bytes it actually carries, so well-compressed
+                // tiles arrive fast (and pile into the bounded queue) while poorly
+                // compressed ones starve the decoder. Same total supply time, same DRAM
+                // bytes as the uniform model -- only the arrival pattern differs, which is
+                // exactly what a layer-mean analytical model cannot represent.
+                std::vector<double> binned(dtiles, 0.0);
+                const size_t chunks = decomp_tile_supply_fraction.size();
+                for(size_t j = 0; j < chunks; ++j) {
+                    binned[j*dtiles/chunks] += decomp_tile_supply_fraction[j];
+                }
+                for(unsigned k = 0; k < dtiles; ++k) {
+                    supply[k] = producer_latency*binned[k];
+                }
+            }
+            // Decode cost per tile stays uniform: the decoder emits DENSE bytes at a fixed
+            // throughput, and dense tile sizes are uniform regardless of compression.
             std::vector<double> decode(dtiles, decoder/static_cast<double>(dtiles));
             std::vector<double> sink(dtiles, 0.0);
-            std::vector<unsigned> depths = {decomp_queue_depth, 1};
+            std::vector<unsigned> depths = {decomp_queue_depth,
+                                            std::max(1u, decomp_output_buffer_tiles)};
             std::vector<double> dstall;
             const double piped = pipeline_timeline_cycles({supply, decode, sink}, depths,
                                                           &dstall);
@@ -1795,6 +1827,45 @@ void stats_t::finalize_layer_timeline() {
             decomp_hidden_cycle = 0.0;
             decomp_stall_cycle = decoder;   // serial: the supply waits on the decoder
         }
+    }
+
+    // KV supply scheduling (evaluation discussion 2026-09-03 Sec 7): with a non-aggregate
+    // [kvcache] kv_schedule, the KV read is a tile-level supply stage integrated against
+    // the layer window instead of extra DRAM-axis busy. The layer window stands in for the
+    // attention compute that consumes the KV tiles (attention itself is outside the modeled
+    // scope -- stated in the report, not hidden). Same KV traffic and energy in every mode;
+    // only the schedule differs:
+    //   blocking        -- the whole KV read completes before compute: fully exposed.
+    //   streaming       -- KV tiles pipeline against the window behind a bounded buffer
+    //                      (kv_buffer_tiles): the fill and any supply excess are exposed.
+    //   double_buffered -- streaming with the fill prefetched away: only the supply excess
+    //                      over the window is exposed (ideal prefetch bound).
+    if(kv_sched_pending && kv_read_cycles > 0.0) {
+        const double producer_latency = final_latency;
+        if(kv_schedule == "blocking") {
+            final_latency += kv_read_cycles;
+            kv_exposed_cycle = kv_read_cycles;
+            kv_hidden_cycle = 0.0;
+            kv_stall_cycle = kv_read_cycles;   // compute waits out the whole KV read
+        } else if(kv_schedule == "double_buffered") {
+            final_latency = std::max(producer_latency, kv_read_cycles);
+            kv_exposed_cycle = std::max(0.0, kv_read_cycles - producer_latency);
+            kv_hidden_cycle = kv_read_cycles - kv_exposed_cycle;
+            kv_stall_cycle = 0.0;
+        } else {   // streaming
+            const unsigned nt = std::max<unsigned>(1,
+                std::min<unsigned>(2048u, static_cast<unsigned>(kv_tiles)));
+            std::vector<double> supply(nt, kv_read_cycles/static_cast<double>(nt));
+            std::vector<double> consume(nt, producer_latency/static_cast<double>(nt));
+            std::vector<unsigned> depths = {std::max(1u, kv_buffer_tiles)};
+            std::vector<double> kstall;
+            const double piped = pipeline_timeline_cycles({supply, consume}, depths, &kstall);
+            final_latency = piped;
+            kv_exposed_cycle = std::max(0.0, piped - producer_latency);
+            kv_hidden_cycle = std::max(0.0, kv_read_cycles - kv_exposed_cycle);
+            kv_stall_cycle = (0 < kstall.size()) ? kstall[0] : 0.0;
+        }
+        kv_sched_pending = false;
     }
 
     // Leakage accrued linearly over the uniform-scaled pre-recompute latency;
@@ -2085,6 +2156,10 @@ void stats_t::apply_decompression(decomp_t *m_engine, size_t m_dense_weight_byte
     decomp_compressed_weight_bytes = inv.compressed_weight_bytes;
     decomp_effective_ratio = inv.effective_ratio;
     decomp_tiles = inv.tiles;
+    decomp_bypassed_tiles = inv.bypassed_tiles;
+    decomp_tile_supply_fraction = inv.tile_supply_fraction;
+    decomp_tile_ratio_cv = m_engine->get_tile_ratio_cv();
+    decomp_output_buffer_tiles = std::max(1u, m_engine->get_output_buffer_tiles());
     decomp_decoder_cycles = inv.decoder_cycles;
     decomp_queue_depth = m_engine->get_queue_depth();
     decomp_overlap = m_engine->get_overlap();
@@ -2174,7 +2249,19 @@ void stats_t::apply_kv_cache_read(kvcache_t *m_engine, size_t m_dense_weight_byt
         kv_unpriced.push_back("KV decoder ran at an undeclared (ideal) throughput --"
                               " [kvcache] kv_decoder_bytes_per_cycle is not declared");
     }
-    kv_pending = kv_read_cycles > 0.0;
+    // Timeline routing by schedule (evaluation discussion 2026-09-03 Sec 7): aggregate
+    // folds the read into the DRAM access axis; the tile-level schedules stage it for
+    // finalize_layer_timeline()'s KV supply integration instead (never both).
+    kv_schedule = m_engine->get_schedule();
+    if(kv_schedule == "aggregate") {
+        kv_pending = kv_read_cycles > 0.0;
+    } else {
+        kv_pending = false;
+        kv_sched_pending = kv_read_cycles > 0.0;
+        const size_t tile_bytes = std::max<size_t>(1, m_engine->get_tile_bytes());
+        kv_tiles = std::max<size_t>(1, (kv_dense_read_bytes + tile_bytes - 1)/tile_bytes);
+        kv_buffer_tiles = std::max(1u, m_engine->get_buffer_tiles());
+    }
 }
 
 void stats_t::update_network_stats(stats_t *m_source) {
@@ -2340,6 +2427,10 @@ void stats_t::update_network_stats(stats_t *m_source) {
     decomp_breakdown_stall += m_source->decomp_breakdown_stall;
     decomp_queue_depth = std::max(decomp_queue_depth, m_source->decomp_queue_depth);
     decomp_overlap = decomp_overlap || m_source->decomp_overlap;
+    decomp_bypassed_tiles += m_source->decomp_bypassed_tiles;
+    decomp_tile_ratio_cv = std::max(decomp_tile_ratio_cv, m_source->decomp_tile_ratio_cv);
+    decomp_output_buffer_tiles = std::max(decomp_output_buffer_tiles,
+                                          m_source->decomp_output_buffer_tiles);
     // Effective ratio at network scope: total dense / total compressed.
     if(decomp_compressed_weight_bytes > 0) {
         decomp_effective_ratio = static_cast<double>(decomp_dense_weight_bytes)/
@@ -2375,6 +2466,13 @@ void stats_t::update_network_stats(stats_t *m_source) {
     }
     kv_priced = kv_priced && m_source->kv_priced;
     kv_decoder_calibrated = kv_decoder_calibrated && m_source->kv_decoder_calibrated;
+    // Schedule is a config property (identical across layers); exposure/stall are work.
+    if(kv_schedule.empty()) kv_schedule = m_source->kv_schedule;
+    kv_tiles += m_source->kv_tiles;
+    kv_buffer_tiles = std::max(kv_buffer_tiles, m_source->kv_buffer_tiles);
+    kv_exposed_cycle += m_source->kv_exposed_cycle;
+    kv_hidden_cycle += m_source->kv_hidden_cycle;
+    kv_stall_cycle += m_source->kv_stall_cycle;
     for(unsigned i = 0; i < m_source->kv_unpriced.size(); ++i) {
         if(std::find(kv_unpriced.begin(), kv_unpriced.end(), m_source->kv_unpriced[i]) ==
            kv_unpriced.end()) {
@@ -3174,6 +3272,11 @@ void stats_t::print_results(std::ofstream &m_output_file) {
         m_output_file << "Decoder tiles / queue   :" << std::setw(11) << decomp_tiles
                       << " / " << decomp_queue_depth
                       << (decomp_overlap ? " (overlap ON)" : " (overlap OFF)") << std::endl;
+        if(decomp_tile_ratio_cv > 0.0) {
+            m_output_file << "Per-tile CR variation   :" << std::setw(11) << std::setprecision(2)
+                          << decomp_tile_ratio_cv << " +-spread, " << decomp_bypassed_tiles
+                          << " tile(s) bypassed dense (layer total pinned)" << std::endl;
+        }
         m_output_file << "Decoder cycles          :" << std::setw(11) << std::setprecision(1)
                       << decomp_decoder_cycles << " cycles" << std::endl;
         m_output_file << " * on critical path     :" << std::setw(11) << std::setprecision(1)
@@ -3208,8 +3311,28 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                       << (kv_bypassed ? "  (uncompressed)" : "") << std::endl;
         m_output_file << "KV bytes dense/comp    :" << std::setw(11) << kv_dense_read_bytes
                       << " / " << kv_read_bytes << " B" << std::endl;
+        m_output_file << "KV schedule            :" << std::setw(11)
+                      << (kv_schedule.empty() ? "aggregate" : kv_schedule);
+        if(kv_schedule == "streaming" || kv_schedule == "double_buffered") {
+            m_output_file << "  (" << kv_tiles << " tiles, buffer " << kv_buffer_tiles << ")";
+        }
+        m_output_file << std::endl;
         m_output_file << "KV supply DRAM cycles   :" << std::setw(11) << std::setprecision(1)
-                      << kv_read_cycles << " cycles (added to DRAM access axis)" << std::endl;
+                      << kv_read_cycles << " cycles ("
+                      << (kv_schedule.empty() || kv_schedule == "aggregate"
+                          ? "added to DRAM access axis"
+                          : "tile-level supply stage vs the layer window")
+                      << ")" << std::endl;
+        if(!kv_schedule.empty() && kv_schedule != "aggregate") {
+            m_output_file << " * exposed on crit path :" << std::setw(11) << std::setprecision(1)
+                          << kv_exposed_cycle << " cycles" << std::endl;
+            m_output_file << " * hidden behind layer  :" << std::setw(11) << std::setprecision(1)
+                          << kv_hidden_cycle << " cycles" << std::endl;
+            m_output_file << " * buffer-full stall    :" << std::setw(11) << std::setprecision(1)
+                          << kv_stall_cycle << " cycles" << std::endl;
+            m_output_file << " * consumer proxy       : layer window (attention compute is"
+                          << " outside the modeled scope)" << std::endl;
+        }
         m_output_file << " * compressed read      :" << std::setw(11) << std::setprecision(1)
                       << kv_dram_read_cycles << " cycles" << std::endl;
         m_output_file << " * decoder reconstitute :" << std::setw(11) << std::setprecision(1)

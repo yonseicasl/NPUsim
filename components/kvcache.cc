@@ -18,6 +18,9 @@ kvcache_t::kvcache_t(section_config_t m_section_config) :
     context_length(0),
     kv_compression_ratio(1.0),
     kv_decoder_bytes_per_cycle(0.0),
+    kv_schedule("aggregate"),
+    kv_tile_bytes(0),
+    kv_buffer_tiles(0),
     u_read_energy(0.0),
     read_energy_is_declared(false) {
 
@@ -32,6 +35,9 @@ void kvcache_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("context_length", &context_length);
     m_section_config.get_setting("kv_compression_ratio", &kv_compression_ratio);
     m_section_config.get_setting("kv_decoder_bytes_per_cycle", &kv_decoder_bytes_per_cycle);
+    m_section_config.get_setting("kv_schedule", &kv_schedule);
+    m_section_config.get_setting("kv_tile_bytes", &kv_tile_bytes);
+    m_section_config.get_setting("kv_buffer_tiles", &kv_buffer_tiles);
 
     // Fail-fast contract (evaluation.md: knob validity is stated, not defaulted). A KV read
     // that is present must describe a real read -- both the per-token footprint and the
@@ -54,6 +60,30 @@ void kvcache_t::init(section_config_t m_section_config) {
         std::cerr << "Error: [kvcache] kv_decoder_bytes_per_cycle must not be negative"
                   << std::endl;
         exit(1);
+    }
+    // Fail-fast schedule contract: a typo'd schedule silently falling back to aggregate
+    // would read as "streaming made no difference" -- the failure this section exists to
+    // avoid. streaming needs a tile granularity to pipeline over; double_buffered defaults
+    // its buffer to 2 tiles (that IS the double buffer), streaming to 1.
+    if(kv_schedule != "aggregate" && kv_schedule != "blocking" &&
+       kv_schedule != "streaming" && kv_schedule != "double_buffered") {
+        std::cerr << "Error: [kvcache] kv_schedule must be aggregate, blocking, streaming,"
+                  << " or double_buffered (got '" << kv_schedule << "')" << std::endl;
+        exit(1);
+    }
+    if((kv_schedule == "streaming" || kv_schedule == "double_buffered") && kv_tile_bytes == 0) {
+        std::cerr << "Error: [kvcache] kv_schedule = " << kv_schedule
+                  << " requires a positive kv_tile_bytes (the KV supply tile)" << std::endl;
+        exit(1);
+    }
+    if(kv_buffer_tiles == 0) {
+        // Both overlapped schedules need >= 2 tile slots to actually stream: with a single
+        // buffer the consumer must drain a tile before the next can land, which degenerates
+        // to a serial handoff (the pipeline model's depth-1 semantics -- physically, one
+        // shared buffer cannot be filled and drained at once). An explicit kv_buffer_tiles
+        // = 1 is honored as exactly that single-buffer ablation.
+        kv_buffer_tiles = (kv_schedule == "streaming" || kv_schedule == "double_buffered")
+                          ? 2 : 1;
     }
 
     read_energy_is_declared = m_section_config.get_setting("kvcache_read_energy", &u_read_energy);
@@ -111,6 +141,12 @@ void kvcache_t::print_specification() {
     std::cout << "Decoder throughput :" << std::setw(18) << std::setprecision(2)
               << kv_decoder_bytes_per_cycle << " dense B/cycle"
               << (kv_decoder_bytes_per_cycle <= 0.0 ? "  (ideal)" : "") << std::endl;
+    std::cout << "Schedule           :" << std::setw(18) << kv_schedule;
+    if(kv_schedule == "streaming" || kv_schedule == "double_buffered") {
+        std::cout << "  (tile " << kv_tile_bytes << " B, buffer " << kv_buffer_tiles
+                  << " tiles)";
+    }
+    std::cout << std::endl;
     std::cout << "Read energy        :" << std::setw(18) << std::setprecision(4)
               << u_read_energy << " /byte "
               << (read_energy_is_declared ? energy_units().label() : "(UNPRICED)")

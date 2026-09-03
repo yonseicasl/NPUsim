@@ -39,9 +39,14 @@ struct decomp_invocation_t {
     bool active;                    // a [decomp] section priced this layer's weight
     bool bypassed;                  // compressed >= dense for this layer -> stored dense
     size_t tiles;                   // weight tiles the decoder processes (queue units)
+    size_t bypassed_tiles;          // tiles whose compressed size >= dense -> stored dense
     size_t dense_weight_bytes;      // dense weight the decoder emits (runtime format)
     size_t compressed_weight_bytes; // what DRAM actually stores/fetches (dense/CR + meta)
     double effective_ratio;         // dense/compressed as realized (>= 1 or 1 if bypassed)
+    // Per-tile compressed-size profile for the timeline (tile_ratio_cv > 0): the fraction
+    // of the compressed stream each supply chunk carries (sums to 1; at most 4096 chunks of
+    // consecutive tiles). Empty = uniform arrival (the analytical-model equivalent).
+    std::vector<double> tile_supply_fraction;
 
     double decoder_cycles;          // dense_bytes / decoder throughput (+ startup)
     double dram_weight_cycles_dense;    // weight DRAM transfer cost WITHOUT compression
@@ -78,6 +83,8 @@ public:
     double get_decoder_bytes_per_cycle() const { return decoder_bytes_per_cycle; }
     double get_decoder_ratio() const { return decoder_ratio; }
     double get_startup_cycles() const { return startup_cycles; }
+    double get_tile_ratio_cv() const { return tile_ratio_cv; }
+    unsigned get_output_buffer_tiles() const { return output_buffer_tiles; }
     unsigned get_queue_depth() const { return input_queue_depth; }
     bool get_overlap() const { return overlap; }
     double get_static_energy_per_cycle() const { return u_static_energy; }
@@ -102,6 +109,17 @@ private:
     // < 1 = decoder-limited, > 1 = decoder slack.
     double decoder_ratio;
     double startup_cycles;          // decoder pipeline fill before the first dense byte
+    // Per-tile compression variation (evaluation discussion 2026-09-03 Sec 5): real
+    // compressed weights do not shrink uniformly -- tiles differ, arrival is bursty, and a
+    // bounded decoder queue turns that variance into backpressure an analytical layer-mean
+    // model cannot see. tile_ratio_cv is the +-relative spread of per-tile compressed size
+    // around the layer mean (0 = uniform = the analytical equivalent; must be < 1). The
+    // per-tile factors are DETERMINISTIC (hash of tile_ratio_seed and the tile index) so a
+    // run is exactly reproducible, and the layer TOTAL compressed bytes stays pinned to
+    // dense/CR (before per-tile bypass), so uniform-vs-varied comparisons share identical
+    // DRAM traffic and differ only in timing.
+    double tile_ratio_cv;
+    unsigned tile_ratio_seed;
     unsigned input_queue_depth;     // compressed-tile queue between DMA and decoder
     unsigned output_buffer_tiles;   // dense-tile buffer between decoder and scratchpad
     bool overlap;                   // DRAM/decoder/compute pipelining enabled

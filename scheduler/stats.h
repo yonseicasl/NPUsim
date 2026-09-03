@@ -369,6 +369,14 @@ public:
     // stage_axis_compute is known. Zero when the absolute throughput mode is used.
     double decomp_decoder_ratio;
     double decomp_startup_cycles;
+    // Per-tile compression variation (evaluation discussion 2026-09-03 Sec 5): the chunked
+    // compressed-arrival profile finalize_layer_timeline() spreads over the decoder-supply
+    // stage (empty = uniform), the number of tiles the per-tile bypass kept dense, the
+    // declared spread, and the decoder-output buffer depth (decoder -> scratchpad boundary).
+    std::vector<double> decomp_tile_supply_fraction;
+    size_t decomp_bypassed_tiles;
+    double decomp_tile_ratio_cv;
+    unsigned decomp_output_buffer_tiles;
 
     /* KV-cache read (evaluation.md Sec 4). FINAL values. Injected as extra DRAM access
        traffic by apply_kv_cache_read(), consumed by finalize_layer_timeline(). */
@@ -388,6 +396,19 @@ public:
     bool kv_priced;                      // read energy declared
     std::vector<std::string> kv_unpriced;   // active read with no declared cost
     std::string kv_profile_reference;
+    // KV supply scheduling (evaluation discussion 2026-09-03 Sec 7): how the KV read is
+    // placed on the timeline. "aggregate" folds it into the DRAM access axis (the traffic
+    // sensitivity model); blocking/streaming/double_buffered integrate it as a tile-level
+    // supply stage against the layer window in finalize_layer_timeline(), with a bounded
+    // KV buffer, and report how much of the KV latency compute hid vs sat exposed on the
+    // critical path.
+    std::string kv_schedule;
+    bool kv_sched_pending;               // a scheduled (non-aggregate) KV read is staged
+    size_t kv_tiles;                     // KV supply tiles (dense KV bytes / kv_tile_bytes)
+    unsigned kv_buffer_tiles;            // bounded KV tile buffer between DRAM and compute
+    double kv_exposed_cycle;             // KV latency on the critical path
+    double kv_hidden_cycle;              // KV latency hidden behind the layer window
+    double kv_stall_cycle;               // KV supply blocked on a full KV buffer
 
     /* Tile size */
     std::vector<std::vector<unsigned>> tile_size;

@@ -71,6 +71,9 @@ public:
     size_t get_bytes_per_token() const { return kv_bytes_per_token; }
     size_t get_context_length() const { return context_length; }
     double get_compression_ratio() const { return kv_compression_ratio; }
+    const std::string &get_schedule() const { return kv_schedule; }
+    size_t get_tile_bytes() const { return kv_tile_bytes; }
+    unsigned get_buffer_tiles() const { return kv_buffer_tiles; }
     const std::string &get_profile_reference() const { return profile_reference; }
 
     unsigned index;
@@ -80,6 +83,14 @@ private:
     size_t context_length;          // tokens already in the cache (the read length)
     double kv_compression_ratio;    // CR = dense / compressed (>= 1; 1 = no compression)
     double kv_decoder_bytes_per_cycle;  // dense-output decoder throughput (0 = ideal)
+    // KV supply scheduling (evaluation discussion 2026-09-03 Sec 7). "aggregate" (default)
+    // folds the read into the layer's DRAM access axis -- the traffic-sensitivity model.
+    // blocking / streaming / double_buffered turn the read into a tile-level supply stage
+    // against the layer window (stats_t::finalize_layer_timeline), with a bounded KV tile
+    // buffer, so the same KV traffic yields different effective performance per schedule.
+    std::string kv_schedule;        // aggregate | blocking | streaming | double_buffered
+    size_t kv_tile_bytes;           // dense KV bytes per supply tile (streaming modes)
+    unsigned kv_buffer_tiles;       // bounded KV tile buffer (default 1; double_buffered 2)
 
     double u_read_energy;           // per byte (of the COMPRESSED bytes fetched)
     bool read_energy_is_declared;

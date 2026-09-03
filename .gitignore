@@ -35,3 +35,6 @@ issue/
 # Section D decompression sweep outputs (regenerate via run_decomp_sweep.sh)
 validation/decomp/out/
 validation/decomp/results.csv
+
+# Fidelity report output (regenerate via measure_fidelity.sh)
+validation/fidelity/fidelity_report.csv
