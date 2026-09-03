@@ -356,6 +356,52 @@ void stats_t::init() {
     activation_unmodeled = false;
     activation_unmodeled_note.clear();
 
+    /* Weight decompression */
+    decomp_present = false;
+    decomp_active = false;
+    decomp_bypassed = false;
+    decomp_dense_weight_bytes = 0;
+    decomp_compressed_weight_bytes = 0;
+    decomp_effective_ratio = 1.0;
+    decomp_tiles = 0;
+    decomp_decoder_cycles = 0.0;
+    decomp_exposed_cycle = 0.0;
+    decomp_hidden_cycle = 0.0;
+    decomp_stall_cycle = 0.0;
+    decomp_dram_weight_saved_cycle = 0.0;
+    decomp_queue_depth = 0;
+    decomp_overlap = false;
+    decomp_decoder_energy = 0.0;
+    decomp_static_energy = 0.0;
+    decomp_timing_calibrated = true;
+    decomp_unpriced_events.clear();
+    decomp_profile_reference.clear();
+    decomp_breakdown_dram = 0.0;
+    decomp_breakdown_decode = 0.0;
+    decomp_breakdown_compute = 0.0;
+    decomp_breakdown_stall = 0.0;
+    decomp_pending = false;
+    decomp_pending_static_energy_per_cycle = 0.0;
+    decomp_decoder_ratio = 0.0;
+    decomp_startup_cycles = 0.0;
+
+    kv_present = false;
+    kv_pending = false;
+    kv_read_bytes = 0;
+    kv_dense_read_bytes = 0;
+    kv_bytes_per_token = 0;
+    kv_context_length = 0;
+    kv_compression_ratio = 1.0;
+    kv_bypassed = false;
+    kv_read_cycles = 0.0;
+    kv_dram_read_cycles = 0.0;
+    kv_decoder_cycles = 0.0;
+    kv_decoder_calibrated = true;
+    kv_read_energy = 0.0;
+    kv_priced = true;
+    kv_unpriced.clear();
+    kv_profile_reference.clear();
+
     // Initialize access energy of the global buffer
     access_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -1498,6 +1544,14 @@ void stats_t::finalize_layer_timeline() {
     stage_axis_access[0] = sum_types(access_cycle_dram);
     stage_axis_link[0] = sum_types(transfer_cycle_dram);
     stage_axis_overlap[0] = sum_types(cycle_chip_dram);
+    // KV-cache read (evaluation.md Sec 4): the decode step's KV-cache DRAM read is extra
+    // DRAM ACCESS traffic on this layer's device -- it serializes on the same channel as the
+    // weight/input/output reads, so it adds to the DRAM access axis. Injected here (post
+    // repetition scaling) so it is charged exactly once per decode step, and left out of the
+    // per-datatype vectors so weight decompression never touches it (KV is incompressible).
+    if(kv_pending) {
+        stage_axis_access[0] += kv_read_cycles;
+    }
     // Multi-chip: one NoP fabric.
     stage_axis_access[1] = sum_types(access_cycle_multi_chip);
     stage_axis_link[1] = sum_types(transfer_cycle_multi_chip);
@@ -1682,6 +1736,67 @@ void stats_t::finalize_layer_timeline() {
         sfu_busy_cycle = sfu_pending_invocation.busy_cycle;
     }
 
+    // Weight decompression (evaluation.md Sec 4): the decoder is a stage on the WEIGHT
+    // supply path (DRAM compressed load -> decoder -> scratchpad -> compute). The weight
+    // DRAM saving is already in the reduced DRAM busy above; here the decoder's own work
+    // is placed on the timeline. overlap OFF serializes the whole decoder window onto the
+    // critical path; overlap ON pipelines it against the producer/compute so a fast
+    // decoder hides (fill/drain only) and a slow one back-pressures and is exposed. The
+    // 3-stage pipeline (DRAM-supply -> decoder -> compute) is modeled with
+    // pipeline_timeline_cycles over per-tile costs.
+    //
+    // Relative-throughput mode (decoder_ratio): weight demand = dense weight / the on-chip
+    // COMPUTE-SIDE latency -- the time the datapath takes to process the layer if memory
+    // were free = max on-chip busy axis (PE array / PE / GLB / multi-chip), DRAM excluded.
+    // The pure MAC schedule (stage_axis_compute) is wrong here: a fill-bound array (e.g.
+    // decode M=1 reloads the whole array to produce one output row) consumes weight over
+    // its entire busy window, not just its MAC cycles. With throughput = ratio x demand the
+    // decoder window collapses to startup + T_compute / ratio, so ratio 1 just keeps pace
+    // with the datapath, < 1 exposes the decoder, > 1 leaves slack. The busy axes were
+    // recomputed just above, which is why this derivation is deferred to here.
+    if(decomp_pending && decomp_decoder_ratio > 0.0) {
+        const double compute_side =
+            std::max(std::max(busy_cycle_pe_array, busy_cycle_pe),
+                     std::max(busy_cycle_global_buffer, busy_cycle_multi_chip));
+        if(compute_side > 0.0) {
+            decomp_decoder_cycles = decomp_startup_cycles + compute_side/decomp_decoder_ratio;
+        }
+    }
+    if(decomp_pending && decomp_decoder_cycles > 0.0) {
+        const double decoder = decomp_decoder_cycles;
+        const double producer_latency = final_latency;
+        if(decomp_overlap && decomp_queue_depth >= 1) {
+            // The decoder pipelines over the WEIGHT tiles it processes (decomp_tiles), not
+            // the layer's temporal-reuse tiles: the compressed weight arrives from DRAM in
+            // decomp_tiles pieces regardless of temporal reuse, and the decoder overlaps
+            // with the producer across them. (Using `tiles` collapsed decode M=1 -- one
+            // temporal tile -- to a serial decoder that overlap could never hide.) Capped so
+            // the per-tile vectors stay small; the pipeline makespan is granularity-stable.
+            const unsigned dtiles = std::max<unsigned>(1,
+                std::min<unsigned>(2048u, static_cast<unsigned>(decomp_tiles)));
+            // Producer = the memory/compute pipeline delivering compressed weight tiles
+            // (the layer's current per-tile makespan); decoder = a following stage of
+            // per-tile cost; consumer = a sink. A bounded queue of depth queue_depth sits
+            // between producer and decoder.
+            std::vector<double> supply(dtiles, producer_latency/static_cast<double>(dtiles));
+            std::vector<double> decode(dtiles, decoder/static_cast<double>(dtiles));
+            std::vector<double> sink(dtiles, 0.0);
+            std::vector<unsigned> depths = {decomp_queue_depth, 1};
+            std::vector<double> dstall;
+            const double piped = pipeline_timeline_cycles({supply, decode, sink}, depths,
+                                                          &dstall);
+            final_latency = piped;
+            decomp_exposed_cycle = std::max(0.0, piped - producer_latency);
+            decomp_hidden_cycle = std::max(0.0, decoder - decomp_exposed_cycle);
+            decomp_stall_cycle = (0 < dstall.size()) ? dstall[0] : 0.0;
+        } else {
+            final_latency += decoder;
+            decomp_exposed_cycle = decoder;
+            decomp_hidden_cycle = 0.0;
+            decomp_stall_cycle = decoder;   // serial: the supply waits on the decoder
+        }
+    }
+
     // Leakage accrued linearly over the uniform-scaled pre-recompute latency;
     // rescale it to the final window.
     if(layer_latency > 0.0 && final_latency != layer_latency) {
@@ -1703,6 +1818,18 @@ void stats_t::finalize_layer_timeline() {
         sfu_static_energy = static_cast<double>(sfu_physical_units)*layer_latency*
                             sfu_pending_static_energy_per_cycle;
         sfu_pending = false;
+    }
+    // Decompression: cycle breakdown (evaluation.md 4.C) and always-on decoder leakage.
+    if(decomp_present) {
+        decomp_static_energy = layer_latency*decomp_pending_static_energy_per_cycle;
+        // The four buckets: memory (DRAM incl. compressed weight), decoder exposure,
+        // compute schedule, and pipeline stall. They partition the critical path.
+        decomp_breakdown_dram = busy_cycle_dram;
+        decomp_breakdown_decode = decomp_exposed_cycle;
+        decomp_breakdown_compute = stage_axis_compute;
+        decomp_breakdown_stall = std::max(0.0, layer_latency - std::max(busy_cycle_dram,
+            std::max(stage_axis_compute, decomp_exposed_cycle)));
+        decomp_pending = false;
     }
 }
 
@@ -1937,6 +2064,119 @@ void stats_t::mark_unmodeled_activation(const std::string &m_note) {
     }
 }
 
+void stats_t::apply_decompression(decomp_t *m_engine, size_t m_dense_weight_bytes,
+                                  double m_dram_bytes_per_cycle, size_t m_tile_bytes) {
+    // Called BEFORE scale_serial_repetitions(): the compression ratio is
+    // repetition-independent, so scaling the compressed weight traffic here (pre-scale)
+    // and letting scale_serial_repetitions() multiply it afterwards is exact. The
+    // compute schedule is only for the reported decoder ratio.
+    const double compute_cycles = stage_axis_compute;
+    const decomp_invocation_t inv = m_engine->decompress(m_dense_weight_bytes,
+                                                         m_dram_bytes_per_cycle,
+                                                         compute_cycles, m_tile_bytes);
+    decomp_present = true;
+    // A decoder runs whenever the layer is not bypassed and a throughput is declared --
+    // either an absolute one (inv.decoder_cycles set now) or a relative one (decoder_ratio,
+    // whose cycles finalize_layer_timeline() fills in from the final compute schedule).
+    decomp_active = inv.active && !inv.bypassed &&
+                    (inv.decoder_cycles > 0.0 || m_engine->get_decoder_ratio() > 0.0);
+    decomp_bypassed = inv.bypassed;
+    decomp_dense_weight_bytes = inv.dense_weight_bytes;
+    decomp_compressed_weight_bytes = inv.compressed_weight_bytes;
+    decomp_effective_ratio = inv.effective_ratio;
+    decomp_tiles = inv.tiles;
+    decomp_decoder_cycles = inv.decoder_cycles;
+    decomp_queue_depth = m_engine->get_queue_depth();
+    decomp_overlap = m_engine->get_overlap();
+    decomp_decoder_energy = inv.decoder_energy;
+    decomp_timing_calibrated = inv.timing_calibrated;
+    decomp_profile_reference = m_engine->get_profile_reference();
+    for(unsigned i = 0; i < inv.unpriced.size(); ++i) {
+        decomp_unpriced_events.push_back(inv.unpriced[i]);
+    }
+
+    // Effect 1: scale the WEIGHT DRAM traffic to the compressed footprint. Only the
+    // compressed bytes are fetched; the saving is what relieves a memory-bound layer.
+    // Scale cycles, energy AND the transaction/transfer counters together so the reported
+    // DRAM identity (weight transactions x line size == compressed bytes) still holds --
+    // otherwise the report shows halved DRAM cycles beside an un-reduced dense transaction
+    // count. The counters use the exact integer ratio compressed/dense to stay on a whole
+    // number of DRAM lines; the cycle/energy fields use the equivalent double ratio.
+    if(inv.dense_weight_bytes > 0 && !inv.bypassed) {
+        const size_t dense_b = inv.dense_weight_bytes;
+        const size_t comp_b  = inv.compressed_weight_bytes;
+        const double ratio = static_cast<double>(comp_b)/static_cast<double>(dense_b);
+        decomp_dram_weight_saved_cycle =
+            (access_cycle_dram[data_type_t::WEIGHT] +
+             transfer_cycle_dram[data_type_t::WEIGHT])*(1.0 - ratio);
+        access_cycle_dram[data_type_t::WEIGHT] *= ratio;
+        access_energy_dram[data_type_t::WEIGHT] *= ratio;
+        transfer_cycle_dram[data_type_t::WEIGHT] *= ratio;
+        transfer_energy_dram[data_type_t::WEIGHT] *= ratio;
+        cycle_chip_dram[data_type_t::WEIGHT] *= ratio;
+        // Volume counters: compressed weight occupies fewer DRAM lines, so fewer fills and
+        // fewer off-chip link transactions carry it. Integer-exact so the byte identity holds.
+        const data_type_t W = data_type_t::WEIGHT;
+        num_data_transfer_dram[W]        = static_cast<unsigned>(
+            static_cast<size_t>(num_data_transfer_dram[W]) * comp_b / dense_b);
+        payload_link_transactions_dram[W]  = payload_link_transactions_dram[W]  * comp_b / dense_b;
+        metadata_link_transactions_dram[W] = metadata_link_transactions_dram[W] * comp_b / dense_b;
+        storage_link_transactions_dram[W]  = storage_link_transactions_dram[W]  * comp_b / dense_b;
+    }
+
+    // Effect 2: stage the decoder for finalize_layer_timeline() (values already copied
+    // into the scalar decomp_* fields above). In relative-throughput mode the decoder
+    // cycles are computed in finalize from the final compute schedule, so carry the ratio
+    // and startup across.
+    decomp_pending = inv.active && !inv.bypassed;
+    decomp_pending_static_energy_per_cycle = m_engine->get_static_energy_per_cycle();
+    decomp_decoder_ratio = m_engine->get_decoder_ratio();
+    decomp_startup_cycles = m_engine->get_startup_cycles();
+}
+
+void stats_t::apply_kv_cache_read(kvcache_t *m_engine, size_t m_dense_weight_bytes) {
+    // Called BEFORE apply_decompression() (so the weight-DRAM reference is still dense) and
+    // BEFORE scale_serial_repetitions(); the KV read is a fixed per-decode-step cost that
+    // must NOT be repetition-scaled, so it is NOT written into the DRAM traffic vectors here
+    // -- it is staged and injected once into the DRAM axis by finalize_layer_timeline().
+    kv_present = true;
+    kv_bytes_per_token = m_engine->get_bytes_per_token();
+    kv_context_length = m_engine->get_context_length();
+    kv_dense_read_bytes = m_engine->dense_read_bytes();
+    kv_read_bytes = m_engine->compressed_read_bytes();      // what DRAM actually fetches
+    kv_bypassed = m_engine->bypassed();
+    kv_compression_ratio = kv_read_bytes > 0
+        ? static_cast<double>(kv_dense_read_bytes)/static_cast<double>(kv_read_bytes) : 1.0;
+    kv_profile_reference = m_engine->get_profile_reference();
+
+    // Per-byte DRAM cost from THIS layer's own measured (dense) weight-DRAM access: it
+    // already carries the accelerator's real DRAM model -- row activations, transfer,
+    // read_cycle -- and tracks the bandwidth knob.
+    double cost_per_byte = 0.0;
+    if(m_dense_weight_bytes > 0 && access_cycle_dram[data_type_t::WEIGHT] > 0.0) {
+        cost_per_byte = access_cycle_dram[data_type_t::WEIGHT]/
+                        static_cast<double>(m_dense_weight_bytes);
+    }
+    // Only the COMPRESSED bytes are fetched from DRAM; the decoder then reconstitutes dense
+    // KV. Both are on the KV supply path this decode step, so both fold into the DRAM axis.
+    kv_dram_read_cycles = static_cast<double>(kv_read_bytes)*cost_per_byte;
+    kv_decoder_cycles = m_engine->decoder_cycles(kv_dense_read_bytes);
+    kv_decoder_calibrated = kv_bypassed || m_engine->decoder_calibrated();
+    kv_read_cycles = kv_dram_read_cycles + kv_decoder_cycles;
+
+    // Read energy priced on the compressed bytes actually moved.
+    kv_read_energy = m_engine->read_energy(kv_read_bytes, &kv_priced);
+    if(!kv_priced) {
+        kv_unpriced.push_back("KV-cache read fired but [kvcache] kvcache_read_energy is not"
+                              " declared");
+    }
+    if(!kv_decoder_calibrated) {
+        kv_unpriced.push_back("KV decoder ran at an undeclared (ideal) throughput --"
+                              " [kvcache] kv_decoder_bytes_per_cycle is not declared");
+    }
+    kv_pending = kv_read_cycles > 0.0;
+}
+
 void stats_t::update_network_stats(stats_t *m_source) {
     // L3: mark this object as the network rollup so print_results() states the network
     // axis contract instead of the layer one (see stats_t::network_rollup). The
@@ -2078,6 +2318,71 @@ void stats_t::update_network_stats(stats_t *m_source) {
     }
     if(!m_source->sfu_contract_note.empty()) {
         merge_unique_segments(sfu_contract_note, m_source->sfu_contract_note, "; ");
+    }
+    // Decompression: counters/energy/breakdown are work and sum; contract fields are
+    // config properties (max survives the 0-default of layers with no decomp event).
+    decomp_present = decomp_present || m_source->decomp_present;
+    decomp_active = decomp_active || m_source->decomp_active;
+    decomp_bypassed = decomp_bypassed || m_source->decomp_bypassed;
+    decomp_dense_weight_bytes += m_source->decomp_dense_weight_bytes;
+    decomp_compressed_weight_bytes += m_source->decomp_compressed_weight_bytes;
+    decomp_tiles += m_source->decomp_tiles;
+    decomp_decoder_cycles += m_source->decomp_decoder_cycles;
+    decomp_exposed_cycle += m_source->decomp_exposed_cycle;
+    decomp_hidden_cycle += m_source->decomp_hidden_cycle;
+    decomp_stall_cycle += m_source->decomp_stall_cycle;
+    decomp_dram_weight_saved_cycle += m_source->decomp_dram_weight_saved_cycle;
+    decomp_decoder_energy += m_source->decomp_decoder_energy;
+    decomp_static_energy += m_source->decomp_static_energy;
+    decomp_breakdown_dram += m_source->decomp_breakdown_dram;
+    decomp_breakdown_decode += m_source->decomp_breakdown_decode;
+    decomp_breakdown_compute += m_source->decomp_breakdown_compute;
+    decomp_breakdown_stall += m_source->decomp_breakdown_stall;
+    decomp_queue_depth = std::max(decomp_queue_depth, m_source->decomp_queue_depth);
+    decomp_overlap = decomp_overlap || m_source->decomp_overlap;
+    // Effective ratio at network scope: total dense / total compressed.
+    if(decomp_compressed_weight_bytes > 0) {
+        decomp_effective_ratio = static_cast<double>(decomp_dense_weight_bytes)/
+                                 static_cast<double>(decomp_compressed_weight_bytes);
+    }
+    decomp_timing_calibrated = decomp_timing_calibrated && m_source->decomp_timing_calibrated;
+    for(unsigned i = 0; i < m_source->decomp_unpriced_events.size(); ++i) {
+        if(std::find(decomp_unpriced_events.begin(), decomp_unpriced_events.end(),
+                     m_source->decomp_unpriced_events[i]) == decomp_unpriced_events.end()) {
+            decomp_unpriced_events.push_back(m_source->decomp_unpriced_events[i]);
+        }
+    }
+    if(decomp_profile_reference.empty()) {
+        decomp_profile_reference = m_source->decomp_profile_reference;
+    }
+    // KV-cache read: bytes/cycles/energy are per-layer work and sum; the per-token footprint
+    // and context length are config properties (max survives the 0-default of layers with no
+    // KV read).
+    kv_present = kv_present || m_source->kv_present;
+    if(m_source->kv_pending) kv_pending = true;
+    kv_read_bytes += m_source->kv_read_bytes;
+    kv_dense_read_bytes += m_source->kv_dense_read_bytes;
+    kv_read_cycles += m_source->kv_read_cycles;
+    kv_dram_read_cycles += m_source->kv_dram_read_cycles;
+    kv_decoder_cycles += m_source->kv_decoder_cycles;
+    kv_read_energy += m_source->kv_read_energy;
+    kv_bytes_per_token = std::max(kv_bytes_per_token, m_source->kv_bytes_per_token);
+    kv_context_length = std::max(kv_context_length, m_source->kv_context_length);
+    kv_bypassed = kv_bypassed || m_source->kv_bypassed;
+    if(kv_read_bytes > 0) {
+        kv_compression_ratio = static_cast<double>(kv_dense_read_bytes)/
+                               static_cast<double>(kv_read_bytes);
+    }
+    kv_priced = kv_priced && m_source->kv_priced;
+    kv_decoder_calibrated = kv_decoder_calibrated && m_source->kv_decoder_calibrated;
+    for(unsigned i = 0; i < m_source->kv_unpriced.size(); ++i) {
+        if(std::find(kv_unpriced.begin(), kv_unpriced.end(), m_source->kv_unpriced[i]) ==
+           kv_unpriced.end()) {
+            kv_unpriced.push_back(m_source->kv_unpriced[i]);
+        }
+    }
+    if(kv_profile_reference.empty()) {
+        kv_profile_reference = m_source->kv_profile_reference;
     }
     if(m_source->graph_residency_applied) graph_residency_applied = true;
     if(!m_source->graph_residency_note.empty()) {
@@ -2319,8 +2624,11 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
     const double multi_chip_dynamic = sum_types(access_energy_multi_chip) +
                                       sum_types(transfer_energy_multi_chip) + output_cast_energy;
     const double multi_chip_static = sum_types(static_energy_multi_chip);
-    // DRAM: its device access energy and the off-chip link plus row activations.
-    const double dram_dynamic = sum_types(access_energy_dram) + sum_types(transfer_energy_dram);
+    // DRAM: its device access energy and the off-chip link plus row activations, plus the
+    // KV-cache read energy (zero without a [kvcache] section, so the dense baseline is
+    // unchanged). The KV read is DRAM traffic, so it belongs to the DRAM component subtotal.
+    const double dram_dynamic = sum_types(access_energy_dram) + sum_types(transfer_energy_dram)
+                                + kv_read_energy;
     // SFU: the activation operation itself plus its internal ingress/egress and setup, all
     // generated by the same invocation event (plan principle 6); leakage covers every
     // physical SFU over the final layer window. Zero -- and the row absent -- when no
@@ -2328,12 +2636,16 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
     const double sfu_dynamic = sfu_op_energy + sfu_read_energy + sfu_write_energy +
                                sfu_setup_energy;
     const double sfu_static = sfu_static_energy;
+    // Decompression: decoder dynamic energy + always-on engine leakage. Zero -- and out
+    // of the total -- when no [decomp] section is configured (dense baseline unchanged).
+    const double decomp_dynamic = decomp_decoder_energy;
+    const double decomp_static_e = decomp_static_energy;
 
     const double dynamic_total = mac_dynamic + pe_dynamic + pe_array_dynamic +
                                  global_buffer_dynamic + multi_chip_dynamic + dram_dynamic +
-                                 sfu_dynamic;
+                                 sfu_dynamic + decomp_dynamic;
     const double static_total = pe_static + pe_array_static + global_buffer_static +
-                                multi_chip_static + sfu_static;
+                                multi_chip_static + sfu_static + decomp_static_e;
 
     const std::vector<std::string> unpriced = unpriced_active_events();
     m_output_file << "============= Energy summary ============" << std::endl;
@@ -2500,6 +2812,15 @@ std::vector<std::string> stats_t::unpriced_active_events() const {
     // absolute results).
     for(unsigned i = 0; i < sfu_unpriced_events.size(); ++i) {
         out.push_back(sfu_unpriced_events[i]);
+    }
+    // Decompression decoder events fired without a declared cost key block absolute
+    // energy/power exactly like every other unpriced event.
+    for(unsigned i = 0; i < decomp_unpriced_events.size(); ++i) {
+        out.push_back(decomp_unpriced_events[i]);
+    }
+    // KV-cache read events fired without a declared cost key block absolute energy/power too.
+    for(unsigned i = 0; i < kv_unpriced.size(); ++i) {
+        out.push_back(kv_unpriced[i]);
     }
     return out;
 }
@@ -2834,6 +3155,74 @@ void stats_t::print_results(std::ofstream &m_output_file) {
             m_output_file << "Activation scope      : NOT MODELED -- "
                           << activation_unmodeled_note << std::endl;
         }
+        m_output_file << std::endl;
+    }
+
+    // Weight decompression block (evaluation.md Sec 4). Printed for runs that model a
+    // decompression engine; absent otherwise (dense baseline unchanged).
+    if(decomp_present) {
+        m_output_file << "======= Decompression (weight) ==========" << std::endl;
+        m_output_file << "Compression (dense/comp):" << std::setw(11) << std::setprecision(2)
+                      << decomp_effective_ratio << "x"
+                      << (decomp_bypassed ? "  (BYPASSED: weight did not shrink -> dense)"
+                                          : "")
+                      << std::endl;
+        m_output_file << "Weight bytes dense/comp :" << std::setw(14) << decomp_dense_weight_bytes
+                      << " / " << decomp_compressed_weight_bytes << std::endl;
+        m_output_file << "Weight DRAM saved       :" << std::setw(11) << std::setprecision(1)
+                      << decomp_dram_weight_saved_cycle << " cycles" << std::endl;
+        m_output_file << "Decoder tiles / queue   :" << std::setw(11) << decomp_tiles
+                      << " / " << decomp_queue_depth
+                      << (decomp_overlap ? " (overlap ON)" : " (overlap OFF)") << std::endl;
+        m_output_file << "Decoder cycles          :" << std::setw(11) << std::setprecision(1)
+                      << decomp_decoder_cycles << " cycles" << std::endl;
+        m_output_file << " * on critical path     :" << std::setw(11) << std::setprecision(1)
+                      << decomp_exposed_cycle << " cycles" << std::endl;
+        m_output_file << " * hidden by pipeline   :" << std::setw(11) << std::setprecision(1)
+                      << decomp_hidden_cycle << " cycles" << std::endl;
+        m_output_file << "Cycle breakdown (dram/decode/compute/stall)" << std::endl;
+        m_output_file << " * " << std::setw(12) << std::setprecision(1) << decomp_breakdown_dram
+                      << " /" << std::setw(11) << decomp_breakdown_decode
+                      << " /" << std::setw(11) << decomp_breakdown_compute
+                      << " /" << std::setw(11) << decomp_breakdown_stall << " cycles" << std::endl;
+        m_output_file << "Decoder energy/static   :" << std::setw(11) << std::setprecision(2)
+                      << decomp_decoder_energy << " / " << decomp_static_energy << " "
+                      << energy_units().label() << std::endl;
+        m_output_file << "Timing profile          : "
+                      << (decomp_timing_calibrated ? "declared decoder throughput"
+                                                   : "UNCALIBRATED (ideal/undeclared throughput)")
+                      << std::endl;
+        m_output_file << "Provenance              : "
+                      << (decomp_profile_reference.empty()
+                          ? "NOT DECLARED -- not calibration-grade"
+                          : decomp_profile_reference) << std::endl;
+        m_output_file << std::endl;
+    }
+
+    if(kv_present) {
+        m_output_file << "========= KV-cache read =========" << std::endl;
+        m_output_file << "Per-token / context    :" << std::setw(11) << kv_bytes_per_token
+                      << " B / " << kv_context_length << " tokens" << std::endl;
+        m_output_file << "KV compression         :" << std::setw(11) << std::setprecision(2)
+                      << std::fixed << kv_compression_ratio << "x"
+                      << (kv_bypassed ? "  (uncompressed)" : "") << std::endl;
+        m_output_file << "KV bytes dense/comp    :" << std::setw(11) << kv_dense_read_bytes
+                      << " / " << kv_read_bytes << " B" << std::endl;
+        m_output_file << "KV supply DRAM cycles   :" << std::setw(11) << std::setprecision(1)
+                      << kv_read_cycles << " cycles (added to DRAM access axis)" << std::endl;
+        m_output_file << " * compressed read      :" << std::setw(11) << std::setprecision(1)
+                      << kv_dram_read_cycles << " cycles" << std::endl;
+        m_output_file << " * decoder reconstitute :" << std::setw(11) << std::setprecision(1)
+                      << kv_decoder_cycles << " cycles"
+                      << (kv_decoder_calibrated ? "" : "  (UNCALIBRATED: ideal decoder)")
+                      << std::endl;
+        m_output_file << "KV read energy         :" << std::setw(11) << std::setprecision(2)
+                      << kv_read_energy << " " << energy_units().label()
+                      << (kv_priced ? "" : "  (UNPRICED)") << std::endl;
+        m_output_file << "Provenance              : "
+                      << (kv_profile_reference.empty()
+                          ? "NOT DECLARED -- not calibration-grade"
+                          : kv_profile_reference) << std::endl;
         m_output_file << std::endl;
     }
 

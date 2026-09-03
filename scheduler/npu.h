@@ -23,6 +23,7 @@
 #include "workload_graph.h"
 #include "dram.h"
 #include "sfu.h"
+#include "decomp.h"
 
 #include "mapping_table.h"
 #include "scheduler.h"
@@ -103,6 +104,13 @@ protected:
     // Standalone softmax layer executed on the SFU's multi-pass microprogram (Phase 7).
     void run_standalone_softmax(unsigned m_index, const std::string &m_accelerator_config,
                                 const std::string &m_network_config);
+    // Weight decompression (evaluation.md Sec 4): compute the layer's dense weight
+    // footprint from the mapping and hand it to the engine, BEFORE repetition scaling.
+    // No-op without a [decomp] section.
+    void apply_weight_decompression(unsigned m_stats_index);
+    // KV-cache read (evaluation.md Sec 4): inject the decode step's KV-cache DRAM read on
+    // this layer. No-op without a [kvcache] section.
+    void apply_kv_cache_read(unsigned m_stats_index);
     // Phase-7: cost of streaming the softmax operand tensor between the memory hierarchy
     // and the SFU, per [sfu] softmax_operand_residency, from the live components' unit
     // costs (dram: DRAM device + off-chip link + GLB staging/feed ports; glb: GLB
@@ -131,6 +139,8 @@ protected:
     multi_chip_t *multi_chip;                       // On-chip processors
     dram_t *dram;                                   // DRAM
     std::vector<sfu_t*> sfus;                       // Per-chip SFU (empty without [sfu])
+    decomp_t *decomp;                               // Weight-decompression engine (NULL without [decomp])
+    kvcache_t *kvcache;                              // KV-cache read-traffic model (NULL without [kvcache])
     workload_graph_t *workload;                    // Framework-neutral executable IR, if used.
     workload_lifetime_t *workload_lifetime;        // DAG tensor liveness/GLB residency state.
     bool executable_ir_mode;

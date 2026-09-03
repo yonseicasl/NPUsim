@@ -130,6 +130,12 @@ static const energy_key_schema_t g_energy_keys[] = {
     { "sfu_setup_energy",          ENERGY_KEY_SCALAR },
     { "sfu_static_energy",         ENERGY_KEY_SCALAR },
     { "sfu_op_energy_",            ENERGY_KEY_PREFIX_SCALAR },
+    // Weight decompression engine (evaluation.md Sec 4): per dense-byte decoder energy
+    // and pJ/cycle engine leakage.
+    { "decomp_decoder_energy",     ENERGY_KEY_SCALAR },
+    { "decomp_static_energy",      ENERGY_KEY_SCALAR },
+    // KV-cache read (evaluation.md Sec 4): per-byte DRAM read energy of the KV cache.
+    { "kvcache_read_energy",       ENERGY_KEY_SCALAR },
     // RE4/precision family: mac_energy_<input>_<weight>
     { "mac_energy_",               ENERGY_KEY_PREFIX_SCALAR },
 };

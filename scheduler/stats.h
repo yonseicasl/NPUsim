@@ -8,6 +8,8 @@
 
 #include "pe_array.h"
 #include "sfu.h"
+#include "decomp.h"
+#include "kvcache.h"
 
 // Phase-7: operand streaming of a standalone softmax tensor between the memory hierarchy
 // and the SFU. Filled by npu_t from the live components' unit costs and folded into the
@@ -111,6 +113,27 @@ public:
     // untouched, but the report must state that the activation is outside the modeled
     // scope instead of silently reading as free.
     void mark_unmodeled_activation(const std::string &m_note);
+
+    /* Weight decompression (evaluation.md Sec 4) */
+
+    // Apply a decompression engine to this layer's weight supply, BEFORE
+    // scale_serial_repetitions() (like set_sfu_activation): the weight DRAM traffic is
+    // scaled to the compressed footprint immediately (so finalize_layer_timeline()
+    // recomputes the memory window with the saving), and the decoder is staged into the
+    // per-tile timeline there. m_dense_weight_bytes is the layer's dense weight footprint
+    // (computed by npu from the mapping); the engine produces the compressed footprint
+    // and decoder cost. Without a [decomp] section this is never called and the numbers
+    // are the dense baseline.
+    void apply_decompression(decomp_t *m_engine, size_t m_dense_weight_bytes,
+                             double m_dram_bytes_per_cycle, size_t m_tile_bytes);
+    // KV-cache read (evaluation.md Sec 4): inject the decode step's KV-cache DRAM read as
+    // extra DRAM ACCESS traffic on this layer, so a projection sees the realistic decode
+    // memory-bound operating point. The per-byte DRAM cost is taken from THIS layer's own
+    // measured weight-DRAM cost (m_dense_weight_bytes -> access_cycle_dram[WEIGHT]) so it
+    // tracks the accelerator's real DRAM model and the bandwidth knob, rather than a
+    // hand-set rate. Called BEFORE apply_decompression() so the weight-DRAM reference is
+    // still dense (uncompressed). No-op without a [kvcache] section.
+    void apply_kv_cache_read(kvcache_t *m_engine, size_t m_dense_weight_bytes);
     // Remove the off-chip activation legs that the mapped-layer core charged when the
     // graph lifetime allocator proves the producer/consumer tensor stays in the GLB.
     // Called after update_stats() and before repetition scaling/final timeline assembly.
@@ -306,6 +329,65 @@ public:
     // Nonlinear activation executed with no [sfu] section: scope statement only.
     bool activation_unmodeled;
     std::string activation_unmodeled_note;
+
+    /* Weight decompression (evaluation.md Sec 4). FINAL values (post repetition
+       scaling). At network scope the counters/energy/breakdown sum; contract fields are
+       config properties. */
+    bool decomp_present;                 // a [decomp] section exists for this run
+    bool decomp_active;                  // a decoder actually ran (not fully bypassed)
+    bool decomp_bypassed;                // this layer's weight did not shrink -> dense
+    size_t decomp_dense_weight_bytes;
+    size_t decomp_compressed_weight_bytes;
+    double decomp_effective_ratio;       // realized dense/compressed
+    size_t decomp_tiles;
+    double decomp_decoder_cycles;        // total decoder work
+    double decomp_exposed_cycle;         // decoder cycles on the critical path
+    double decomp_hidden_cycle;          // decoder cycles hidden behind the pipeline
+    double decomp_stall_cycle;           // producer/compute stall on a full decoder queue
+    double decomp_dram_weight_saved_cycle;   // weight DRAM cycles removed by compression
+    unsigned decomp_queue_depth;
+    bool decomp_overlap;
+    double decomp_decoder_energy;
+    double decomp_static_energy;
+    bool decomp_timing_calibrated;
+    std::vector<std::string> decomp_unpriced_events;
+    std::string decomp_profile_reference;
+    // Cycle breakdown for the report (evaluation.md 4.C): the four buckets a decompressed
+    // layer's latency splits into. Computed from the final timeline.
+    double decomp_breakdown_dram;        // memory transfer (incl. compressed weight)
+    double decomp_breakdown_decode;      // decoder exposure
+    double decomp_breakdown_compute;     // compute schedule
+    double decomp_breakdown_stall;       // pipeline stall
+    // Pending event staged by apply_decompression(), consumed by finalize_layer_timeline().
+    // The decoder work is carried in the scalar fields above (decomp_decoder_cycles,
+    // decomp_tiles), not a value-copy of the invocation struct.
+    bool decomp_pending;
+    double decomp_pending_static_energy_per_cycle;
+    // Relative decoder-throughput mode (evaluation.md Sec 4 decoder_ratio): the decoder
+    // cycles depend on the FINAL compute schedule, so apply_decompression stages the ratio
+    // and startup and finalize_layer_timeline() computes decomp_decoder_cycles once
+    // stage_axis_compute is known. Zero when the absolute throughput mode is used.
+    double decomp_decoder_ratio;
+    double decomp_startup_cycles;
+
+    /* KV-cache read (evaluation.md Sec 4). FINAL values. Injected as extra DRAM access
+       traffic by apply_kv_cache_read(), consumed by finalize_layer_timeline(). */
+    bool kv_present;                     // a [kvcache] section exists for this run
+    bool kv_pending;                     // a KV read is staged for finalize_layer_timeline()
+    size_t kv_read_bytes;                // COMPRESSED KV bytes DRAM fetches this step (one layer)
+    size_t kv_dense_read_bytes;          // logical (dense) KV read = bytes_per_token * context
+    size_t kv_bytes_per_token;           // per-token KV footprint (K+V, precision)
+    size_t kv_context_length;            // tokens in the cache (the read length)
+    double kv_compression_ratio;         // realized dense/compressed (1 = uncompressed)
+    bool kv_bypassed;                    // compression did not shrink -> dense
+    double kv_read_cycles;               // total KV supply cost on the DRAM axis (read+decode)
+    double kv_dram_read_cycles;          // compressed_bytes * measured DRAM cost/byte
+    double kv_decoder_cycles;            // decoder reconstitute cost (0 if ideal/bypassed)
+    bool kv_decoder_calibrated;          // decoder throughput was declared
+    double kv_read_energy;
+    bool kv_priced;                      // read energy declared
+    std::vector<std::string> kv_unpriced;   // active read with no declared cost
+    std::string kv_profile_reference;
 
     /* Tile size */
     std::vector<std::vector<unsigned>> tile_size;

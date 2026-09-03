@@ -64,6 +64,8 @@ npu_t::npu_t() :
  num_skipped_timing_layers(0),
  multi_chip(NULL),
  dram(NULL),
+ decomp(NULL),
+ kvcache(NULL),
  workload(NULL),
  workload_lifetime(NULL),
  executable_ir_mode(false),
@@ -80,6 +82,8 @@ npu_t::~npu_t() {
     for(auto pe_array : pe_arrays) { delete pe_array; }
     for(auto global_buffer : global_buffers) { delete global_buffer; }
     for(auto sfu : sfus) { delete sfu; }
+    delete decomp;
+    delete kvcache;
 
     delete multi_chip;
     delete dram;
@@ -234,6 +238,21 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
                 sfu->index = i;
                 sfus.emplace_back(sfu);
             }
+        }
+        // Initialize the weight-decompression engine (opt-in; evaluation.md Sec 4).
+        else if(section_config.name == "decomp" || section_config.name == "DECOMP") {
+            if(decomp != NULL) {
+                std::cerr << "Error: duplicate [decomp] section" << std::endl;
+                exit(1);
+            }
+            decomp = new decomp_t(section_config);
+        }
+        else if(section_config.name == "kvcache" || section_config.name == "KVCACHE") {
+            if(kvcache != NULL) {
+                std::cerr << "Error: duplicate [kvcache] section" << std::endl;
+                exit(1);
+            }
+            kvcache = new kvcache_t(section_config);
         }
         else {
             std::cerr << "Error: unknown accelerator component " << section_config.name << std::endl;
@@ -657,6 +676,8 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 const bool halo_capacity_sufficient = !global_buffers.empty() &&
                     global_buffers[0]->can_retain_input_halo(input_halo.working_set_elements);
                 apply_fused_sfu_activation(index, stats_index);
+                apply_kv_cache_read(stats_index);
+                apply_weight_decompression(stats_index);
                 layer_stats[stats_index]->scale_serial_repetitions(
                     global_buffer_repetitions, scheduler->mapping_table->datatype_repetitions(),
                     input_halo, halo_capacity_sufficient);
@@ -796,6 +817,8 @@ void npu_t::print_accelerator_specification() {
     multi_chip->print_specification();
     dram->print_specification();
     if(!sfus.empty()) { sfus[0]->print_specification(); }
+    if(decomp != NULL) { decomp->print_specification(); }
+    if(kvcache != NULL) { kvcache->print_specification(); }
 }
 
 // Print out the network stats (e.g., tile size)
@@ -865,6 +888,8 @@ void npu_t::reset() {
         pe_arrays[i]->reset();
     }
     for(auto sfu : sfus) { sfu->reset(); }
+    if(decomp != NULL) { decomp->reset(); }
+    if(kvcache != NULL) { kvcache->reset(); }
 }
 
 void npu_t::update_tile_size() {
@@ -1004,6 +1029,48 @@ void npu_t::apply_fused_sfu_activation(unsigned m_layer_index, unsigned m_stats_
     layer_stats[m_stats_index]->set_sfu_activation(combined,
         num_processors*sfus[0]->get_num_units(), sfus[0]->get_lanes(),
         sfus[0]->get_static_energy_per_cycle(), sfus[0]->get_queue_depth());
+}
+
+void npu_t::apply_weight_decompression(unsigned m_stats_index) {
+    if(decomp == NULL) return;
+    // Dense weight footprint from the mapping: K x C x R x S (grouped conv folds the
+    // group into C already via the mapping factors), at the runtime weight precision.
+    const std::vector<unsigned> mapped =
+        scheduler->mapping_table->calculate_total_parameter_size();
+    const size_t weight_elements =
+        static_cast<size_t>(mapped[parameter_type_t::OUTPUT_CHANNEL])*
+        mapped[parameter_type_t::INPUT_CHANNEL]*
+        mapped[parameter_type_t::FILTER_HEIGHT]*
+        mapped[parameter_type_t::FILTER_WIDTH];
+    const size_t dense_weight_bytes =
+        runtime_datatypes().storage_bytes(data_type_t::WEIGHT, weight_elements);
+    // DRAM link rate (bytes/cycle) for the reported decoder ratio; the weight DRAM saving
+    // itself is applied as the compression ratio on the measured weight DRAM cycles.
+    const double dram_bytes_per_cycle = static_cast<double>(dram->get_bitwidth())/8.0;
+    // Decoder/queue granularity: the weight tile the multi-chip stages off-chip.
+    const size_t tile_elements = std::max<size_t>(1,
+        multi_chip->tile_size[data_type_t::WEIGHT]);
+    const size_t tile_bytes =
+        runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_elements);
+    layer_stats[m_stats_index]->apply_decompression(decomp, dense_weight_bytes,
+                                                    dram_bytes_per_cycle, tile_bytes);
+}
+
+void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
+    if(kvcache == NULL) return;
+    // The dense weight footprint of this layer is the per-byte DRAM cost reference used by
+    // stats_t (measured weight-DRAM cycles / dense weight bytes). Same K x C x R x S the
+    // decompression path computes.
+    const std::vector<unsigned> mapped =
+        scheduler->mapping_table->calculate_total_parameter_size();
+    const size_t weight_elements =
+        static_cast<size_t>(mapped[parameter_type_t::OUTPUT_CHANNEL])*
+        mapped[parameter_type_t::INPUT_CHANNEL]*
+        mapped[parameter_type_t::FILTER_HEIGHT]*
+        mapped[parameter_type_t::FILTER_WIDTH];
+    const size_t dense_weight_bytes =
+        runtime_datatypes().storage_bytes(data_type_t::WEIGHT, weight_elements);
+    layer_stats[m_stats_index]->apply_kv_cache_read(kvcache, dense_weight_bytes);
 }
 
 sfu_operand_stream_t npu_t::graph_operand_stream(

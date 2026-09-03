@@ -813,6 +813,53 @@ void validate_accelerator(config_t &config, const std::string &path) {
             }
         } else if(section.name == "dram") {
             dram_count++;
+        } else if(section.name == "decomp") {
+            // Weight-decompression engine (evaluation.md Sec 4): opt-in. Mirror decomp_t's
+            // fail-fast contract so a shipped config cannot violate it silently.
+            double cr = 2.0;
+            section.get_setting("compression_ratio", &cr);
+            if(cr <= 0.0) {
+                fail(path + ": [decomp] compression_ratio must be positive");
+            }
+            unsigned qd = 4;
+            section.get_setting("input_queue_depth", &qd);
+            if(qd == 0) {
+                fail(path + ": [decomp] input_queue_depth must be at least 1");
+            }
+            std::string gran = "weight_tile";
+            section.get_setting("granularity", &gran);
+            if(gran != "weight_tile") {
+                fail(path + ": [decomp] granularity must be weight_tile");
+            }
+            // decoder_ratio (relative to weight demand) and decoder_bytes_per_cycle
+            // (absolute) state the same quantity; both-or-negative is a contract error.
+            double dratio = 0.0, dbpc = 0.0;
+            section.get_setting("decoder_ratio", &dratio);
+            section.get_setting("decoder_bytes_per_cycle", &dbpc);
+            if(dratio < 0.0) {
+                fail(path + ": [decomp] decoder_ratio must not be negative");
+            }
+            if(dratio > 0.0 && dbpc > 0.0) {
+                fail(path + ": [decomp] set either decoder_ratio or"
+                            " decoder_bytes_per_cycle, not both");
+            }
+        } else if(section.name == "kvcache") {
+            // KV-cache read (evaluation.md Sec 4): opt-in. Mirror kvcache_t's fail-fast
+            // contract -- a present read must describe a real read.
+            unsigned long bpt = 0, ctx = 0;
+            section.get_setting("kv_bytes_per_token", &bpt);
+            section.get_setting("context_length", &ctx);
+            if(bpt == 0) {
+                fail(path + ": [kvcache] kv_bytes_per_token must be positive");
+            }
+            if(ctx == 0) {
+                fail(path + ": [kvcache] context_length must be positive");
+            }
+            double kvcr = 1.0;
+            section.get_setting("kv_compression_ratio", &kvcr);
+            if(kvcr < 1.0) {
+                fail(path + ": [kvcache] kv_compression_ratio must be >= 1");
+            }
         } else if(section.name == "sfu") {
             // SFU (plan/plan_sfu.md): opt-in per-chip activation unit. Mirror sfu_t's
             // fail-fast contract so a shipped config cannot violate it silently.
