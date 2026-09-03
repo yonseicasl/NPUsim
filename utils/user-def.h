@@ -9,7 +9,9 @@
     #define EXPONENT 5
 
 #else
-    #include <iostream>
-    typedef uint8_t data_t;
+    // <cstdint> is the header that actually declares uint8_t. Relying on <iostream> to
+    // pull it in transitively compiles on some libstdc++ versions and breaks on others.
+    #include <cstdint>
+    typedef std::uint8_t data_t;
 #endif
 #endif
