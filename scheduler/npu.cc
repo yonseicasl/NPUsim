@@ -1058,6 +1058,67 @@ void npu_t::apply_weight_decompression(unsigned m_stats_index) {
 
 void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
     if(kvcache == NULL) return;
+    if(kvcache->attention_enabled()) {
+        // Attention consumer mode: cost the KV read/write as a DEDICATED stream on the
+        // live DRAM component -- device accesses per line, off-chip link beats, and the
+        // open-page row activations of two contiguous sequential streams (K then V; that
+        // sequential layout is the declared address model) -- the same machinery the
+        // standalone-softmax operand stream uses. KV is activation-like, so it is priced
+        // at the OUTPUT datatype's declared unit costs, exactly like that stream.
+        const data_type_t T = data_type_t::OUTPUT;
+        const double per_activation_cycle =
+            (dram->t_ras_cycle > 0.0 && dram->t_rp_cycle > 0.0)
+                ? dram->t_ras_cycle + dram->t_rp_cycle : dram->u_row_miss_cycle;
+        kv_stream_cost_t cost;
+        // One sequential stream of m_bytes: device/link makespans overlap packet-level
+        // (max), the busiest bank's row activations serialize on top.
+        auto read_stream = [&](size_t m_bytes, double *m_energy) {
+            const size_t bits = m_bytes*8;
+            const size_t accesses = (bits + std::max(1u, dram->line_size[T]) - 1)/
+                                    std::max(1u, dram->line_size[T]);
+            const size_t beats = (bits + std::max(1u, dram->get_bitwidth()) - 1)/
+                                 std::max(1u, dram->get_bitwidth());
+            cost.link_transactions += beats;
+            double cycle = std::max(static_cast<double>(accesses)*dram->u_read_cycle[T],
+                                    static_cast<double>(beats)*dram->u_transfer_cycle);
+            *m_energy += static_cast<double>(accesses)*dram->u_read_energy[T] +
+                         static_cast<double>(beats)*dram->u_transfer_energy;
+            if(dram->row_buffer_bytes > 0) {
+                const dram_row_activation_cost_t rows = dram_row_activations(
+                    m_bytes, dram->row_buffer_bytes, dram->num_banks);
+                cost.row_activations += rows.activations;
+                cycle += static_cast<double>(rows.busiest_bank)*per_activation_cycle;
+                *m_energy += static_cast<double>(rows.activations)*dram->u_row_miss_energy;
+            }
+            return cycle;
+        };
+        // K and V passes fetch the COMPRESSED halves; the decoder reconstitutes dense at
+        // its declared throughput, half per pass.
+        const size_t comp_half = kvcache->compressed_read_bytes()/2;
+        const double decoder_half =
+            kvcache->decoder_cycles(kvcache->dense_read_bytes())/2.0;
+        cost.k_supply_cycle = read_stream(comp_half, &cost.dram_energy) + decoder_half;
+        cost.v_supply_cycle = read_stream(comp_half, &cost.dram_energy) + decoder_half;
+        // Cache append: the current token's K/V, stored at the cache's compression. One
+        // token is far below a DRAM row, so no row-activation charge for the append.
+        const size_t dense_w = kvcache->kv_write_bytes();
+        const size_t write_b = kvcache->bypassed() ? dense_w
+            : std::max<size_t>(1, static_cast<size_t>(
+                  static_cast<double>(dense_w)*kvcache->compressed_read_bytes()/
+                  std::max<size_t>(1, kvcache->dense_read_bytes())));
+        const size_t wbits = write_b*8;
+        const size_t waccesses = (wbits + std::max(1u, dram->line_size[T]) - 1)/
+                                 std::max(1u, dram->line_size[T]);
+        const size_t wbeats = (wbits + std::max(1u, dram->get_bitwidth()) - 1)/
+                              std::max(1u, dram->get_bitwidth());
+        cost.link_transactions += wbeats;
+        cost.write_cycle = std::max(static_cast<double>(waccesses)*dram->u_write_cycle[T],
+                                    static_cast<double>(wbeats)*dram->u_transfer_cycle);
+        cost.dram_energy += static_cast<double>(waccesses)*dram->u_write_energy[T] +
+                            static_cast<double>(wbeats)*dram->u_transfer_energy;
+        layer_stats[m_stats_index]->apply_attention_step(kvcache, cost);
+        return;
+    }
     // The dense weight footprint of this layer is the per-byte DRAM cost reference used by
     // stats_t (measured weight-DRAM cycles / dense weight bytes). Same K x C x R x S the
     // decompression path computes.

@@ -413,6 +413,26 @@ void stats_t::init() {
     kv_hidden_cycle = 0.0;
     kv_stall_cycle = 0.0;
 
+    attn_present = false;
+    attn_pending = false;
+    attn_algorithm.clear();
+    attn_qk_macs = 0;
+    attn_softmax_elements = 0;
+    attn_qk_cycles = 0.0;
+    attn_av_cycles = 0.0;
+    attn_softmax_cycles = 0.0;
+    attn_supply_k_cycle = 0.0;
+    attn_supply_v_cycle = 0.0;
+    attn_write_cycle = 0.0;
+    attn_step_latency = 0.0;
+    attn_exposed_cycle = 0.0;
+    attn_hidden_cycle = 0.0;
+    attn_stall_cycle = 0.0;
+    attn_compute_energy = 0.0;
+    attn_compute_calibrated = true;
+    attn_kv_occupancy_bytes = 0;
+    attn_kv_capacity_bytes = 0;
+
     // Initialize access energy of the global buffer
     access_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -1868,6 +1888,54 @@ void stats_t::finalize_layer_timeline() {
         kv_sched_pending = false;
     }
 
+    // Attention consumer step (evaluation discussion 2026-09-03 Sec 7): one decode step's
+    // QK/softmax/AV appended AFTER the mapped layer (Q depends on the projections, so the
+    // step cannot start earlier). Inside the step the KV supply carries a real tile
+    // dependency -- tile k's QK/AV cannot start before tile k arrives through the bounded
+    // KV buffer -- and the algorithm decides the softmax structure: "online" interleaves a
+    // single K/V pass with a running softmax (no barrier); "two_pass" scores every cached
+    // token first (K pass), runs the softmax BARRIER over all scores, then streams V for
+    // AV. double_buffered is the ideal-prefetch bound of each pass (the fill hides behind
+    // the mapped layer's window). The step ends with the cache append write.
+    if(attn_pending) {
+        const double supply_k = attn_supply_k_cycle;
+        const double supply_v = attn_supply_v_cycle;
+        const double compute_total = attn_qk_cycles + attn_softmax_cycles + attn_av_cycles;
+        double step = 0.0;
+        attn_stall_cycle = 0.0;
+        if(kv_schedule == "blocking") {
+            step = supply_k + supply_v + compute_total;
+        } else if(kv_schedule == "double_buffered") {
+            step = (attn_algorithm == "two_pass")
+                ? std::max(supply_k, attn_qk_cycles) + attn_softmax_cycles +
+                  std::max(supply_v, attn_av_cycles)
+                : std::max(supply_k + supply_v, compute_total);
+        } else {   // streaming
+            const unsigned nt = std::max<unsigned>(1,
+                std::min<unsigned>(2048u, static_cast<unsigned>(kv_tiles)));
+            std::vector<unsigned> depths = {std::max(1u, kv_buffer_tiles)};
+            auto piped = [&](double m_supply, double m_consume) {
+                std::vector<double> supply(nt, m_supply/static_cast<double>(nt));
+                std::vector<double> consume(nt, m_consume/static_cast<double>(nt));
+                std::vector<double> stall_v;
+                const double out = pipeline_timeline_cycles({supply, consume}, depths,
+                                                            &stall_v);
+                attn_stall_cycle += (0 < stall_v.size()) ? stall_v[0] : 0.0;
+                return out;
+            };
+            step = (attn_algorithm == "two_pass")
+                ? piped(supply_k, attn_qk_cycles) + attn_softmax_cycles +
+                  piped(supply_v, attn_av_cycles)
+                : piped(supply_k + supply_v, compute_total);
+        }
+        step += attn_write_cycle;
+        attn_step_latency = step;
+        attn_exposed_cycle = std::max(0.0, step - attn_write_cycle - compute_total);
+        attn_hidden_cycle = std::max(0.0, supply_k + supply_v - attn_exposed_cycle);
+        final_latency += step;
+        attn_pending = false;
+    }
+
     // Leakage accrued linearly over the uniform-scaled pre-recompute latency;
     // rescale it to the final window.
     if(layer_latency > 0.0 && final_latency != layer_latency) {
@@ -2264,6 +2332,72 @@ void stats_t::apply_kv_cache_read(kvcache_t *m_engine, size_t m_dense_weight_byt
     }
 }
 
+void stats_t::apply_attention_step(kvcache_t *m_engine, const kv_stream_cost_t &m_cost) {
+    // Traffic bookkeeping (shares the KV report plumbing with the proxy modes).
+    kv_present = true;
+    kv_bytes_per_token = m_engine->get_bytes_per_token();
+    kv_context_length = m_engine->get_context_length();
+    kv_dense_read_bytes = m_engine->dense_read_bytes();
+    kv_read_bytes = m_engine->compressed_read_bytes();
+    kv_bypassed = m_engine->bypassed();
+    kv_compression_ratio = kv_read_bytes > 0
+        ? static_cast<double>(kv_dense_read_bytes)/static_cast<double>(kv_read_bytes) : 1.0;
+    kv_profile_reference = m_engine->get_profile_reference();
+    kv_schedule = m_engine->get_schedule();
+    const size_t tile_bytes = std::max<size_t>(1, m_engine->get_tile_bytes());
+    // Tiles per PASS (K or V stream = half the read); blocking needs no granularity.
+    kv_tiles = std::max<size_t>(1, (kv_dense_read_bytes/2 + tile_bytes - 1)/tile_bytes);
+    kv_buffer_tiles = std::max(1u, m_engine->get_buffer_tiles());
+    kv_decoder_cycles = m_engine->decoder_cycles(kv_dense_read_bytes);
+    kv_decoder_calibrated = m_engine->bypassed() || m_engine->decoder_calibrated();
+    // The dedicated stream is priced from the DRAM component's own declared unit costs --
+    // this path never uses the weight-derived estimate or the kvcache_read_energy scalar.
+    kv_dram_read_cycles = m_cost.k_supply_cycle + m_cost.v_supply_cycle - kv_decoder_cycles;
+    kv_read_cycles = m_cost.k_supply_cycle + m_cost.v_supply_cycle;
+    kv_read_energy = m_cost.dram_energy;
+    kv_priced = true;
+    kv_pending = false;
+    kv_sched_pending = false;
+
+    // Attention consumer: compute windows from the declared geometry and rates. An
+    // undeclared (0) rate is an IDEAL unit -- zero cycles -- and must be flagged, exactly
+    // like the decoder's ideal mode.
+    attn_present = true;
+    attn_algorithm = m_engine->get_attention_algorithm();
+    attn_qk_macs = m_engine->attention_qk_macs();
+    attn_softmax_elements = m_engine->attention_softmax_elements();
+    const double mac_rate = m_engine->get_attention_macs_per_cycle();
+    const double softmax_rate = m_engine->get_softmax_cycles_per_element();
+    attn_compute_calibrated = mac_rate > 0.0 && softmax_rate > 0.0;
+    attn_qk_cycles = mac_rate > 0.0 ? static_cast<double>(attn_qk_macs)/mac_rate : 0.0;
+    attn_av_cycles = attn_qk_cycles;   // AV moves the same MAC volume as QK^T at M=1
+    attn_softmax_cycles = static_cast<double>(attn_softmax_elements)*softmax_rate;
+    if(mac_rate <= 0.0) {
+        kv_unpriced.push_back("attention QK/AV ran at an undeclared (ideal) rate --"
+                              " [kvcache] attention_macs_per_cycle is not declared");
+    }
+    if(softmax_rate <= 0.0) {
+        kv_unpriced.push_back("attention softmax ran at an undeclared (ideal) rate --"
+                              " [kvcache] softmax_cycles_per_element is not declared");
+    }
+    attn_supply_k_cycle = m_cost.k_supply_cycle;
+    attn_supply_v_cycle = m_cost.v_supply_cycle;
+    attn_write_cycle = m_cost.write_cycle;
+    bool mac_priced = true, softmax_priced = true;
+    attn_compute_energy = m_engine->attention_compute_energy(&mac_priced, &softmax_priced);
+    if(!mac_priced) {
+        kv_unpriced.push_back("attention QK/AV MACs fired but [kvcache]"
+                              " kvcache_attention_mac_energy is not declared");
+    }
+    if(!softmax_priced) {
+        kv_unpriced.push_back("attention softmax fired but [kvcache] kvcache_softmax_energy"
+                              " is not declared");
+    }
+    attn_kv_occupancy_bytes = kv_bytes_per_token*(kv_context_length + 1);
+    attn_kv_capacity_bytes = m_engine->get_kv_capacity_bytes();
+    attn_pending = true;   // integrated by finalize_layer_timeline()
+}
+
 void stats_t::update_network_stats(stats_t *m_source) {
     // L3: mark this object as the network rollup so print_results() states the network
     // axis contract instead of the layer one (see stats_t::network_rollup). The
@@ -2473,6 +2607,27 @@ void stats_t::update_network_stats(stats_t *m_source) {
     kv_exposed_cycle += m_source->kv_exposed_cycle;
     kv_hidden_cycle += m_source->kv_hidden_cycle;
     kv_stall_cycle += m_source->kv_stall_cycle;
+    // Attention consumer step: counters/cycles/energy are work and sum; the algorithm and
+    // capacity are config properties.
+    attn_present = attn_present || m_source->attn_present;
+    if(attn_algorithm.empty()) attn_algorithm = m_source->attn_algorithm;
+    attn_qk_macs += m_source->attn_qk_macs;
+    attn_softmax_elements += m_source->attn_softmax_elements;
+    attn_qk_cycles += m_source->attn_qk_cycles;
+    attn_av_cycles += m_source->attn_av_cycles;
+    attn_softmax_cycles += m_source->attn_softmax_cycles;
+    attn_supply_k_cycle += m_source->attn_supply_k_cycle;
+    attn_supply_v_cycle += m_source->attn_supply_v_cycle;
+    attn_write_cycle += m_source->attn_write_cycle;
+    attn_step_latency += m_source->attn_step_latency;
+    attn_exposed_cycle += m_source->attn_exposed_cycle;
+    attn_hidden_cycle += m_source->attn_hidden_cycle;
+    attn_stall_cycle += m_source->attn_stall_cycle;
+    attn_compute_energy += m_source->attn_compute_energy;
+    attn_compute_calibrated = attn_compute_calibrated && m_source->attn_compute_calibrated;
+    attn_kv_occupancy_bytes += m_source->attn_kv_occupancy_bytes;
+    attn_kv_capacity_bytes = std::max(attn_kv_capacity_bytes,
+                                      m_source->attn_kv_capacity_bytes);
     for(unsigned i = 0; i < m_source->kv_unpriced.size(); ++i) {
         if(std::find(kv_unpriced.begin(), kv_unpriced.end(), m_source->kv_unpriced[i]) ==
            kv_unpriced.end()) {
@@ -2739,9 +2894,12 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
     const double decomp_dynamic = decomp_decoder_energy;
     const double decomp_static_e = decomp_static_energy;
 
+    // Attention consumer step: QK/AV + softmax energy (zero -- and flagged UNPRICED --
+    // when the [kvcache] cost keys are undeclared). Its KV DRAM energy is already inside
+    // dram_dynamic via kv_read_energy.
     const double dynamic_total = mac_dynamic + pe_dynamic + pe_array_dynamic +
                                  global_buffer_dynamic + multi_chip_dynamic + dram_dynamic +
-                                 sfu_dynamic + decomp_dynamic;
+                                 sfu_dynamic + decomp_dynamic + attn_compute_energy;
     const double static_total = pe_static + pe_array_static + global_buffer_static +
                                 multi_chip_static + sfu_static + decomp_static_e;
 
@@ -3303,7 +3461,21 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     }
 
     if(kv_present) {
-        m_output_file << "========= KV-cache read =========" << std::endl;
+        if(attn_present) {
+            m_output_file << "==== KV cache + attention step ====" << std::endl;
+            m_output_file << "Model scope            : attention consumer (QK/softmax/AV, "
+                          << attn_algorithm << "), dedicated KV DRAM stream (sequential K/V"
+                          << " layout), cache append; one decode step (no multi-step growth)"
+                          << std::endl;
+        } else {
+            m_output_file << "==== KV-cache read (PROXY) ====" << std::endl;
+            // The scope statement travels with every result: this is a traffic/supply-
+            // scheduling proxy. No attention consumer (QK/softmax/AV), no KV address
+            // stream, no KV write or per-token cache state, no cross-layer state; the
+            // per-byte DRAM cost is estimated from this layer's own weight-DRAM access.
+            m_output_file << "Model scope            : traffic/supply-scheduling proxy --"
+                          << " attention execution is NOT modeled" << std::endl;
+        }
         m_output_file << "Per-token / context    :" << std::setw(11) << kv_bytes_per_token
                       << " B / " << kv_context_length << " tokens" << std::endl;
         m_output_file << "KV compression         :" << std::setw(11) << std::setprecision(2)
@@ -3323,7 +3495,15 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                           ? "added to DRAM access axis"
                           : "tile-level supply stage vs the layer window")
                       << ")" << std::endl;
-        if(!kv_schedule.empty() && kv_schedule != "aggregate") {
+        if(attn_present) {
+            m_output_file << " * cost basis           : dedicated stream on the DRAM model"
+                          << " (device read/write, link, row activations)" << std::endl;
+        } else {
+            m_output_file << " * cost/byte basis      : this layer's measured weight-DRAM"
+                          << " access (estimate; no dedicated KV stream on the DRAM model)"
+                          << std::endl;
+        }
+        if(!attn_present && !kv_schedule.empty() && kv_schedule != "aggregate") {
             m_output_file << " * exposed on crit path :" << std::setw(11) << std::setprecision(1)
                           << kv_exposed_cycle << " cycles" << std::endl;
             m_output_file << " * hidden behind layer  :" << std::setw(11) << std::setprecision(1)
@@ -3332,6 +3512,37 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                           << kv_stall_cycle << " cycles" << std::endl;
             m_output_file << " * consumer proxy       : layer window (attention compute is"
                           << " outside the modeled scope)" << std::endl;
+        }
+        if(attn_present) {
+            m_output_file << "Attention step          :" << std::setw(11) << std::setprecision(1)
+                          << attn_step_latency << " cycles appended after the layer ("
+                          << kv_schedule << ", " << attn_algorithm << ")" << std::endl;
+            m_output_file << " * QK / softmax / AV    :" << std::setw(11) << std::setprecision(1)
+                          << attn_qk_cycles << " / " << attn_softmax_cycles << " / "
+                          << attn_av_cycles << " cycles"
+                          << (attn_compute_calibrated ? ""
+                              : "  (UNCALIBRATED: ideal rate for an undeclared unit)")
+                          << std::endl;
+            m_output_file << " * K / V supply         :" << std::setw(11) << std::setprecision(1)
+                          << attn_supply_k_cycle << " / " << attn_supply_v_cycle
+                          << " cycles (" << kv_tiles << " tiles/pass, buffer "
+                          << kv_buffer_tiles << ")" << std::endl;
+            m_output_file << " * KV exposed / hidden  :" << std::setw(11) << std::setprecision(1)
+                          << attn_exposed_cycle << " / " << attn_hidden_cycle << " cycles"
+                          << std::endl;
+            m_output_file << " * buffer-full stall    :" << std::setw(11) << std::setprecision(1)
+                          << attn_stall_cycle << " cycles" << std::endl;
+            m_output_file << " * cache append write   :" << std::setw(11) << std::setprecision(1)
+                          << attn_write_cycle << " cycles" << std::endl;
+            m_output_file << " * cache occupancy      :" << std::setw(11)
+                          << attn_kv_occupancy_bytes << " B after append";
+            if(attn_kv_capacity_bytes > 0) {
+                m_output_file << " / " << attn_kv_capacity_bytes << " B capacity";
+            }
+            m_output_file << std::endl;
+            m_output_file << " * attention energy     :" << std::setw(11) << std::setprecision(2)
+                          << attn_compute_energy << " " << energy_units().label()
+                          << " (QK/AV + softmax)" << std::endl;
         }
         m_output_file << " * compressed read      :" << std::setw(11) << std::setprecision(1)
                       << kv_dram_read_cycles << " cycles" << std::endl;

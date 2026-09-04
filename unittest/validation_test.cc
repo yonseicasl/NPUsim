@@ -880,6 +880,32 @@ void validate_accelerator(config_t &config, const std::string &path) {
                 fail(path + ": [kvcache] kv_schedule = " + sched +
                      " requires a positive kv_tile_bytes");
             }
+            // Attention consumer mode: mirror kvcache_t's fail-fast contract.
+            bool attention = false;
+            section.get_setting("attention", &attention);
+            if(attention) {
+                unsigned nq = 0, nkv = 0, hd = 0;
+                section.get_setting("n_q_heads", &nq);
+                section.get_setting("n_kv_heads", &nkv);
+                section.get_setting("head_dim", &hd);
+                if(nq == 0 || nkv == 0 || hd == 0) {
+                    fail(path + ": [kvcache] attention = 1 requires positive n_q_heads,"
+                                " n_kv_heads and head_dim");
+                }
+                if(nkv != 0 && nq % nkv != 0) {
+                    fail(path + ": [kvcache] n_q_heads must be a multiple of n_kv_heads");
+                }
+                if(sched == "aggregate") {
+                    fail(path + ": [kvcache] attention = 1 requires kv_schedule ="
+                                " blocking, streaming, or double_buffered");
+                }
+                std::string algo = "online";
+                section.get_setting("attention_algorithm", &algo);
+                if(algo != "online" && algo != "two_pass") {
+                    fail(path + ": [kvcache] attention_algorithm must be online or"
+                                " two_pass");
+                }
+            }
         } else if(section.name == "sfu") {
             // SFU (plan/plan_sfu.md): opt-in per-chip activation unit. Mirror sfu_t's
             // fail-fast contract so a shipped config cannot violate it silently.

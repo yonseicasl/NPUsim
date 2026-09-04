@@ -7,20 +7,57 @@
 
 #include "config.h"
 
-// KV-cache read-traffic model (evaluation.md Sec 4, decode memory-bound realism).
+// KV-cache TRAFFIC / SUPPLY-SCHEDULING PROXY (evaluation.md Sec 4; evaluation discussion
+// 2026-09-03 Secs 6-7). Every claim built on this component must call it a proxy, not an
+// architecture-level KV-cache model.
 //
 // In autoregressive decode every step reloads the whole KV cache from DRAM to run
 // attention over the full context. That read is the dominant DRAM traffic of long-context
-// decode -- and it is what actually makes decode memory-bound. NPUsim's modeled scope is
-// projection GEMMs (attention score/context are out of scope), so the KV read is not
-// produced by any modeled layer. This OPT-IN component injects it as extra DRAM READ
-// traffic attached to a decode step, so the projection layer it runs with sees a realistic
-// memory-bound operating point WITHOUT artificially slowing the DRAM device.
+// decode. NPUsim's modeled scope is projection GEMMs (attention score/context are out of
+// scope), so the KV read is not produced by any modeled layer. This OPT-IN component
+// injects it as extra DRAM READ traffic attached to a decode step (and, in the scheduled
+// modes, as a tile-level supply stage), so the projection layer it runs with sees a
+// realistic memory-bound operating point WITHOUT artificially slowing the DRAM device.
+//
+// WHAT THE PROXY MODES DO NOT MODEL (the `attention = 1` consumer below closes most of
+// this; without it every claim stays a proxy claim):
+//   - no attention consumer: the scheduled modes pipeline KV tiles against the mapped
+//     layer's window as a stand-in; QK / softmax / AV never execute or depend on tiles;
+//   - no KV read ADDRESS stream: bytes-per-token x context is an aggregate volume, so
+//     bank/row behavior of the actual KV layout is invisible;
+//   - no KV WRITE and no per-token cache state: the append of the current token's K/V and
+//     the cache's occupancy/eviction are absent;
+//   - no layer-type awareness: the read attaches to WHATEVER mapped conv/FC layer runs, so
+//     pairing [kvcache] with a transformer projection workload (one mapped layer per
+//     decode step) is the CONFIG AUTHOR'S contract -- on a CNN it would be meaningless;
+//   - DRAM cost per byte is estimated from the layer's own measured weight-DRAM access
+//     (stats_t::apply_kv_cache_read), not from a dedicated KV stream on the link/device
+//     model, so link bandwidth is only approximately reflected;
+//   - no cross-layer state: each layer's read is independent; nothing persists.
+//
+// ATTENTION CONSUMER MODE (`attention = 1` -- evaluation discussion 2026-09-03 Sec 7):
+// runs one decode step's attention as an explicit consumer appended after the mapped
+// projection layer (Q depends on the projections, so the step cannot start earlier; K/V
+// PREFETCH during the projection window is what double_buffered captures):
+//   - QK / softmax / AV execute with declared geometry (n_q_heads, n_kv_heads, head_dim)
+//     and declared throughputs; KV tiles carry a real dependency -- tile k's QK/AV cannot
+//     start before tile k arrives (pipeline over the bounded kv buffer);
+//   - attention_algorithm: "online" (flash-style single interleaved K/V pass, no barrier)
+//     or "two_pass" (K pass -> softmax BARRIER over all scores -> V pass);
+//   - the KV read/write is costed as a DEDICATED stream on the live DRAM model (device
+//     read/write cycles, off-chip link, open-page row activations) -- not the weight
+//     estimate. Address model: two contiguous sequential streams (K, then V); irregular
+//     layouts are not modeled and the report says so;
+//   - KV WRITE of the current token's K/V (the cache append) is charged, and the cache
+//     occupancy after the append is reported (fail-fast if a declared kv_capacity_bytes
+//     is exceeded);
+//   - still one decode step at the declared context: per-layer caches are independent
+//     (transformer-correct), but token-by-token cache GROWTH across steps is out of scope.
 //
 // It is deliberately a SECOND independent component alongside the weight-decompression
 // engine (components/decomp.{h,cc}): decompression shrinks WEIGHT traffic, the KV read is a
-// separate, incompressible read. Studying them together shows the Amdahl interaction --
-// weight compression only speeds up the weight fraction of total DRAM traffic.
+// separate read stream. Studying them together shows the Amdahl interaction -- weight
+// compression only speeds up the weight fraction of total DRAM traffic.
 //
 // Read bytes = kv_bytes_per_token * context_length. kv_bytes_per_token is the per-token KV
 // footprint of ONE layer = 2 (K and V) * n_kv_heads * head_dim * precision_bytes; a GQA
@@ -76,6 +113,33 @@ public:
     unsigned get_buffer_tiles() const { return kv_buffer_tiles; }
     const std::string &get_profile_reference() const { return profile_reference; }
 
+    /* Attention consumer mode */
+    bool attention_enabled() const { return attention; }
+    unsigned get_n_q_heads() const { return n_q_heads; }
+    unsigned get_n_kv_heads() const { return n_kv_heads; }
+    unsigned get_head_dim() const { return head_dim; }
+    const std::string &get_attention_algorithm() const { return attention_algorithm; }
+    double get_attention_macs_per_cycle() const { return attention_macs_per_cycle; }
+    double get_softmax_cycles_per_element() const { return softmax_cycles_per_element; }
+    size_t get_kv_capacity_bytes() const { return kv_capacity_bytes; }
+    // The current token's K+V append (the cache write of one decode step).
+    size_t kv_write_bytes() const { return kv_bytes_per_token; }
+    // QK^T MACs of one decode step (M=1): every query head scores every cached token.
+    // AV is the same count, so total attention MACs = 2x this.
+    size_t attention_qk_macs() const {
+        return static_cast<size_t>(n_q_heads)*head_dim*context_length;
+    }
+    size_t attention_softmax_elements() const {
+        return static_cast<size_t>(n_q_heads)*context_length;
+    }
+    // Attention compute energy for one step; m_priced = both fired event classes priced.
+    double attention_compute_energy(bool *m_mac_priced, bool *m_softmax_priced) const {
+        if(m_mac_priced) *m_mac_priced = attention_mac_energy_is_declared;
+        if(m_softmax_priced) *m_softmax_priced = softmax_energy_is_declared;
+        return 2.0*static_cast<double>(attention_qk_macs())*u_attention_mac_energy +
+               static_cast<double>(attention_softmax_elements())*u_softmax_energy;
+    }
+
     unsigned index;
 
 private:
@@ -92,8 +156,25 @@ private:
     size_t kv_tile_bytes;           // dense KV bytes per supply tile (streaming modes)
     unsigned kv_buffer_tiles;       // bounded KV tile buffer (default 1; double_buffered 2)
 
+    // Attention consumer mode (attention = 1). Geometry defines both the KV footprint
+    // (kv_bytes_per_token = 2 * n_kv_heads * head_dim * kv_precision_bytes -- derived, and
+    // cross-checked against an explicit declaration) and the compute volume.
+    bool attention;
+    unsigned n_q_heads;
+    unsigned n_kv_heads;
+    unsigned head_dim;
+    size_t kv_precision_bytes;          // bytes per K/V element (int8 = 1, fp16 = 2)
+    double attention_macs_per_cycle;    // QK/AV datapath rate (0 = ideal -> UNCALIBRATED)
+    double softmax_cycles_per_element;  // per attention score (0 = ideal -> UNCALIBRATED)
+    std::string attention_algorithm;    // online (no barrier) | two_pass (softmax barrier)
+    size_t kv_capacity_bytes;           // optional cache capacity; occupancy fail-fast
+
     double u_read_energy;           // per byte (of the COMPRESSED bytes fetched)
     bool read_energy_is_declared;
+    double u_attention_mac_energy;  // per QK/AV MAC (attention mode)
+    bool attention_mac_energy_is_declared;
+    double u_softmax_energy;        // per attention score element (attention mode)
+    bool softmax_energy_is_declared;
 
     std::string profile_reference;  // provenance of the traffic/energy numbers
 };

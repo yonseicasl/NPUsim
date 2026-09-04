@@ -136,6 +136,9 @@ static const energy_key_schema_t g_energy_keys[] = {
     { "decomp_static_energy",      ENERGY_KEY_SCALAR },
     // KV-cache read (evaluation.md Sec 4): per-byte DRAM read energy of the KV cache.
     { "kvcache_read_energy",       ENERGY_KEY_SCALAR },
+    // Attention consumer mode: per QK/AV MAC and per attention-score softmax element.
+    { "kvcache_attention_mac_energy", ENERGY_KEY_SCALAR },
+    { "kvcache_softmax_energy",    ENERGY_KEY_SCALAR },
     // RE4/precision family: mac_energy_<input>_<weight>
     { "mac_energy_",               ENERGY_KEY_PREFIX_SCALAR },
 };

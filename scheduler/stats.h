@@ -43,8 +43,26 @@ struct sfu_operand_stream_t {
                              glb_access_cycle(0.0), glb_access_energy(0.0) {}
 };
 
+// Dedicated KV-cache DRAM stream costs for one decode step (attention consumer mode).
+// Computed by npu_t from the LIVE dram component's unit costs -- device read/write per
+// line, off-chip link per bitwidth beat, open-page row activations of two contiguous
+// sequential streams (K then V; that sequential layout IS the declared address model) --
+// exactly the machinery the standalone-softmax operand stream uses. This replaces the
+// weight-derived per-byte estimate the proxy modes use.
+struct kv_stream_cost_t {
+    double k_supply_cycle;      // K pass makespan: max(device, link) + rows (+ decoder/2)
+    double v_supply_cycle;      // V pass, same composition
+    double write_cycle;         // current token's K/V append (device write + link)
+    double dram_energy;         // read + write + link + row-activation energy (priced)
+    size_t link_transactions;
+    size_t row_activations;
+
+    kv_stream_cost_t() : k_supply_cycle(0.0), v_supply_cycle(0.0), write_cycle(0.0),
+                         dram_energy(0.0), link_transactions(0), row_activations(0) {}
+};
+
 class stats_t {
-	
+
 public:
     stats_t();
     ~stats_t();
@@ -134,6 +152,13 @@ public:
     // hand-set rate. Called BEFORE apply_decompression() so the weight-DRAM reference is
     // still dense (uncompressed). No-op without a [kvcache] section.
     void apply_kv_cache_read(kvcache_t *m_engine, size_t m_dense_weight_bytes);
+    // Attention consumer mode (evaluation discussion 2026-09-03 Sec 7): stage one decode
+    // step's attention -- QK/softmax/AV with declared geometry, KV tiles supplied by the
+    // schedule with a REAL dependency (tile k's QK/AV waits for tile k), the KV read/write
+    // costed as a dedicated stream on the live DRAM model (m_cost), and the cache append.
+    // finalize_layer_timeline() appends the step after the mapped layer (Q depends on the
+    // projections; K/V prefetch during the layer is what double_buffered captures).
+    void apply_attention_step(kvcache_t *m_engine, const kv_stream_cost_t &m_cost);
     // Remove the off-chip activation legs that the mapped-layer core charged when the
     // graph lifetime allocator proves the producer/consumer tensor stays in the GLB.
     // Called after update_stats() and before repetition scaling/final timeline assembly.
@@ -396,12 +421,14 @@ public:
     bool kv_priced;                      // read energy declared
     std::vector<std::string> kv_unpriced;   // active read with no declared cost
     std::string kv_profile_reference;
-    // KV supply scheduling (evaluation discussion 2026-09-03 Sec 7): how the KV read is
-    // placed on the timeline. "aggregate" folds it into the DRAM access axis (the traffic
-    // sensitivity model); blocking/streaming/double_buffered integrate it as a tile-level
-    // supply stage against the layer window in finalize_layer_timeline(), with a bounded
-    // KV buffer, and report how much of the KV latency compute hid vs sat exposed on the
-    // critical path.
+    // KV supply scheduling (evaluation discussion 2026-09-03 Sec 7) -- PROXY model, see
+    // components/kvcache.h for the full non-modeled list (no attention consumer, no KV
+    // address stream, no KV write/cache state, no cross-layer state). "aggregate" folds
+    // the read into the DRAM access axis (the traffic sensitivity model);
+    // blocking/streaming/double_buffered integrate it as a tile-level supply stage against
+    // the layer window (the attention stand-in) in finalize_layer_timeline(), with a
+    // bounded KV buffer, and report how much of the KV latency the window hid vs sat
+    // exposed on the critical path.
     std::string kv_schedule;
     bool kv_sched_pending;               // a scheduled (non-aggregate) KV read is staged
     size_t kv_tiles;                     // KV supply tiles (dense KV bytes / kv_tile_bytes)
@@ -409,6 +436,28 @@ public:
     double kv_exposed_cycle;             // KV latency on the critical path
     double kv_hidden_cycle;              // KV latency hidden behind the layer window
     double kv_stall_cycle;               // KV supply blocked on a full KV buffer
+
+    /* Attention consumer step (evaluation discussion 2026-09-03 Sec 7). One decode step's
+       QK/softmax/AV appended after the mapped layer, consuming the KV supply. */
+    bool attn_present;
+    bool attn_pending;                   // staged for finalize_layer_timeline()
+    std::string attn_algorithm;          // online | two_pass
+    size_t attn_qk_macs;                 // n_q_heads * head_dim * context (AV = same)
+    size_t attn_softmax_elements;        // n_q_heads * context
+    double attn_qk_cycles;               // QK^T window at the declared MAC rate
+    double attn_av_cycles;
+    double attn_softmax_cycles;
+    double attn_supply_k_cycle;          // K stream (dedicated DRAM cost + decoder share)
+    double attn_supply_v_cycle;
+    double attn_write_cycle;             // cache append of the current token's K/V
+    double attn_step_latency;            // integrated step latency (schedule-dependent)
+    double attn_exposed_cycle;           // KV supply beyond the attention compute window
+    double attn_hidden_cycle;
+    double attn_stall_cycle;             // supply blocked on the full KV buffer
+    double attn_compute_energy;          // QK/AV/softmax energy (0 + unpriced if undeclared)
+    bool attn_compute_calibrated;        // both attention rates declared
+    size_t attn_kv_occupancy_bytes;      // cache state after the append
+    size_t attn_kv_capacity_bytes;       // declared capacity (0 = undeclared)
 
     /* Tile size */
     std::vector<std::vector<unsigned>> tile_size;
