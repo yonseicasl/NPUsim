@@ -1052,8 +1052,21 @@ void npu_t::apply_weight_decompression(unsigned m_stats_index) {
         multi_chip->tile_size[data_type_t::WEIGHT]);
     const size_t tile_bytes =
         runtime_datatypes().storage_bytes(data_type_t::WEIGHT, tile_elements);
+    // Scratchpad absorb rate for the decoder's dense output: the GLB weight partition's
+    // write port (line bits -> bytes, per its unit write cycle). This is the sink stage of
+    // the supply -> decode -> scratchpad pipeline.
+    double sink_bytes_per_cycle = 0.0;
+    if(!global_buffers.empty()) {
+        global_buffer_t *glb = global_buffers[0];
+        const double write_cycle = glb->u_write_cycle[data_type_t::WEIGHT];
+        if(write_cycle > 0.0) {
+            sink_bytes_per_cycle =
+                static_cast<double>(glb->line_size[data_type_t::WEIGHT])/8.0/write_cycle;
+        }
+    }
     layer_stats[m_stats_index]->apply_decompression(decomp, dense_weight_bytes,
-                                                    dram_bytes_per_cycle, tile_bytes);
+                                                    dram_bytes_per_cycle, tile_bytes,
+                                                    sink_bytes_per_cycle);
 }
 
 void npu_t::apply_kv_cache_read(unsigned m_stats_index) {

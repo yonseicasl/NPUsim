@@ -47,6 +47,18 @@ stdc="-std=c++11"
 # Options for Nebula and DRAMsim3
 ccopt+=" -I$nebuladir/common -I$nebuladir/models/layers -I$nebuladir/models/networks -I$dramsim3dir/src"
 ldopt+=" -L$nebuladir/library -L$dramsim3dir"
+# Preflight: a missing pkg-config/opencv4 makes the link line silently drop the OpenCV
+# libraries and fail later with cryptic undefined references -- fail here with the cause.
+if ! command -v pkg-config >/dev/null 2>&1; then
+    echo "Error: pkg-config is not installed (needed to locate OpenCV for Nebula)." >&2
+    echo "       e.g. apt install pkg-config libopencv-dev" >&2
+    exit 1
+fi
+if ! pkg-config --exists opencv4 2>/dev/null; then
+    echo "Error: pkg-config cannot find opencv4 (Nebula links against it)." >&2
+    echo "       e.g. apt install libopencv-dev" >&2
+    exit 1
+fi
 libopt+=" -lnebula -ldramsim3 -lopenblas -lpthread -lz `pkg-config --libs opencv4`"
 
 

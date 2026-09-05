@@ -142,8 +142,13 @@ public:
     // (computed by npu from the mapping); the engine produces the compressed footprint
     // and decoder cost. Without a [decomp] section this is never called and the numbers
     // are the dense baseline.
+    // m_sink_bytes_per_cycle: the rate at which the scratchpad (GLB weight partition)
+    // absorbs the decoder's dense output -- the third pipeline stage's real cost, which is
+    // what gives output_buffer_tiles an observable effect (a zero-cost sink made the
+    // decoder->scratchpad boundary depth inert).
     void apply_decompression(decomp_t *m_engine, size_t m_dense_weight_bytes,
-                             double m_dram_bytes_per_cycle, size_t m_tile_bytes);
+                             double m_dram_bytes_per_cycle, size_t m_tile_bytes,
+                             double m_sink_bytes_per_cycle);
     // KV-cache read (evaluation.md Sec 4): inject the decode step's KV-cache DRAM read as
     // extra DRAM ACCESS traffic on this layer, so a projection sees the realistic decode
     // memory-bound operating point. The per-byte DRAM cost is taken from THIS layer's own
@@ -402,6 +407,9 @@ public:
     size_t decomp_bypassed_tiles;
     double decomp_tile_ratio_cv;
     unsigned decomp_output_buffer_tiles;
+    // Scratchpad-absorb cost of the decoder's dense output (dense bytes / GLB weight-write
+    // rate); the sink stage of the supply->decode->scratchpad pipeline.
+    double decomp_sink_cycles;
 
     /* KV-cache read (evaluation.md Sec 4). FINAL values. Injected as extra DRAM access
        traffic by apply_kv_cache_read(), consumed by finalize_layer_timeline(). */

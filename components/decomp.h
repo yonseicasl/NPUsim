@@ -94,9 +94,11 @@ public:
     unsigned index;
 
 private:
-    // Bytes the compressed weight occupies in DRAM for a dense footprint, honoring the
-    // metadata/scale overhead and the bypass rule (never larger than dense).
-    size_t compressed_bytes(size_t m_dense_bytes, bool *m_bypassed) const;
+    // Bytes the compressed weight occupies in DRAM for a dense footprint of m_tiles weight
+    // tiles, honoring the PER-TILE metadata/scale overhead (metadata_scale_bytes_per_tile
+    // is charged once per tile, as the name states) and the bypass rule (never larger than
+    // dense).
+    size_t compressed_bytes(size_t m_dense_bytes, size_t m_tiles, bool *m_bypassed) const;
 
     double compression_ratio;       // CR = dense / (compressed values + metadata + scale)
     double metadata_scale_bytes_per_tile;   // fixed per-tile overhead (metadata + scale)

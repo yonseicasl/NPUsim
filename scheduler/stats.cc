@@ -388,6 +388,7 @@ void stats_t::init() {
     decomp_bypassed_tiles = 0;
     decomp_tile_ratio_cv = 0.0;
     decomp_output_buffer_tiles = 1;
+    decomp_sink_cycles = 0.0;
 
     kv_present = false;
     kv_pending = false;
@@ -1450,6 +1451,26 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     scale_counters(&num_request_multi_chip, m_repetitions, "multi-chip request count");
     scale_counters(&num_request_dram, m_repetitions, "DRAM request count");
     scale_costs(&static_energy_multi_chip, m_repetitions);
+    // Weight decompression: the decoder decodes exactly what the weight DRAM stream
+    // delivers, so every weight REFETCH (the WEIGHT datatype's off-chip repetition factor
+    // below) is decoded again -- decoder work, decode energy, tile count, the scratchpad
+    // sink and the reported DRAM saving all carry that factor. The dense/compressed BYTE
+    // fields stay unscaled: they are the layer's storage footprint, not traffic. The
+    // relative-throughput mode (decomp_decoder_ratio) is exempt because its decoder window
+    // is derived in finalize_layer_timeline() from the already-scaled compute-side busy.
+    if(decomp_present && data_type_t::WEIGHT < m_datatype_repetitions.size()) {
+        const unsigned weight_refetch =
+            std::max(1u, m_datatype_repetitions[data_type_t::WEIGHT]);
+        if(weight_refetch > 1) {
+            if(decomp_decoder_ratio <= 0.0) {
+                decomp_decoder_cycles *= weight_refetch;
+            }
+            decomp_decoder_energy *= weight_refetch;
+            decomp_tiles *= weight_refetch;
+            decomp_sink_cycles *= weight_refetch;
+            decomp_dram_weight_saved_cycle *= weight_refetch;
+        }
+    }
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; ++i) {
         const unsigned repetitions = m_datatype_repetitions[i];
         num_data_transfer_multi_chip[i] = scale_counter(num_data_transfer_multi_chip[i], repetitions, "multi-chip transfer count");
@@ -1831,7 +1852,10 @@ void stats_t::finalize_layer_timeline() {
             // Decode cost per tile stays uniform: the decoder emits DENSE bytes at a fixed
             // throughput, and dense tile sizes are uniform regardless of compression.
             std::vector<double> decode(dtiles, decoder/static_cast<double>(dtiles));
-            std::vector<double> sink(dtiles, 0.0);
+            // Sink = the scratchpad absorbing the dense output at the GLB weight-write
+            // rate. With a real (non-zero) sink cost the decoder -> scratchpad boundary
+            // depth (output_buffer_tiles) participates in the back-pressure.
+            std::vector<double> sink(dtiles, decomp_sink_cycles/static_cast<double>(dtiles));
             std::vector<unsigned> depths = {decomp_queue_depth,
                                             std::max(1u, decomp_output_buffer_tiles)};
             std::vector<double> dstall;
@@ -2204,7 +2228,8 @@ void stats_t::mark_unmodeled_activation(const std::string &m_note) {
 }
 
 void stats_t::apply_decompression(decomp_t *m_engine, size_t m_dense_weight_bytes,
-                                  double m_dram_bytes_per_cycle, size_t m_tile_bytes) {
+                                  double m_dram_bytes_per_cycle, size_t m_tile_bytes,
+                                  double m_sink_bytes_per_cycle) {
     // Called BEFORE scale_serial_repetitions(): the compression ratio is
     // repetition-independent, so scaling the compressed weight traffic here (pre-scale)
     // and letting scale_serial_repetitions() multiply it afterwards is exact. The
@@ -2228,6 +2253,11 @@ void stats_t::apply_decompression(decomp_t *m_engine, size_t m_dense_weight_byte
     decomp_tile_supply_fraction = inv.tile_supply_fraction;
     decomp_tile_ratio_cv = m_engine->get_tile_ratio_cv();
     decomp_output_buffer_tiles = std::max(1u, m_engine->get_output_buffer_tiles());
+    // The scratchpad absorbs the decoder's DENSE output at the GLB weight-write rate; that
+    // pacing is the sink stage of the supply->decode->scratchpad pipeline (a zero-cost
+    // sink left output_buffer_tiles without any observable effect).
+    decomp_sink_cycles = (m_sink_bytes_per_cycle > 0.0 && !inv.bypassed)
+        ? static_cast<double>(inv.dense_weight_bytes)/m_sink_bytes_per_cycle : 0.0;
     decomp_decoder_cycles = inv.decoder_cycles;
     decomp_queue_depth = m_engine->get_queue_depth();
     decomp_overlap = m_engine->get_overlap();
@@ -2565,6 +2595,7 @@ void stats_t::update_network_stats(stats_t *m_source) {
     decomp_tile_ratio_cv = std::max(decomp_tile_ratio_cv, m_source->decomp_tile_ratio_cv);
     decomp_output_buffer_tiles = std::max(decomp_output_buffer_tiles,
                                           m_source->decomp_output_buffer_tiles);
+    decomp_sink_cycles += m_source->decomp_sink_cycles;
     // Effective ratio at network scope: total dense / total compressed.
     if(decomp_compressed_weight_bytes > 0) {
         decomp_effective_ratio = static_cast<double>(decomp_dense_weight_bytes)/

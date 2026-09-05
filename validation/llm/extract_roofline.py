@@ -10,7 +10,11 @@ Case Study 1 (evaluation discussion 2026-09-03 Sec 2) compares THREE lines per w
                               traffic the MAPPING actually generated (measured payload
                               transactions x line bytes) -- tiling/reuse included, temporal
                               stalls not;
-  3. effective performance -- N_MAC / (cycles / freq) from the simulated schedule.
+  3. effective performance -- N_MAC / (CRITICAL-PATH cycles / freq): the latency that
+     includes memory stalls, fill/drain, buffering and imperfect stage overlap. The pure
+     compute schedule is also extracted (P_sched) as a diagnostic upper bound of the
+     datapath alone -- using it as "effective" would hide exactly the overheads this case
+     study exists to expose.
 
 The machine-vs-mapping gap is traffic the mapping added (refetch/padding); the
 mapping-vs-effective gap is the architecture-dependent execution overhead (utilization,
@@ -18,7 +22,8 @@ fill/drain, buffering, imperfect overlap) that only the timeline sees.
 
 For each gemmini_llm_*_layer_0.txt, pull:
   N_MAC              = "# of computations"
-  cycles             = "Compute-schedule latency" (the validated metric)
+  crit cycles        = "Critical-path latency" (effective performance)
+  sched cycles       = "Compute-schedule latency" (datapath-only diagnostic)
   DRAM bytes         = (input+weight+output payload transactions) x DRAM line bytes
 GEMM shapes (M, K, N) come from gen_llm_configs.py (same directory), so the algorithmic
 traffic is derived from the same source that generated the workloads.
@@ -62,18 +67,24 @@ def parse(path):
                       r"Output data\s*:(\d+)/\d+/\d+", text, re.S)
     if not (n_mac and cycles and block):
         return None
+    if not crit:
+        return None
     in_txn, wt_txn, out_txn = (int(block.group(i)) for i in (1, 2, 3))
     dram_bytes = (in_txn + wt_txn + out_txn) * DRAM_LINE_BYTES
     n_mac = int(n_mac)
-    cycles = float(cycles)
+    sched_cycles = float(cycles)
+    crit_cycles = float(crit)
     ai = n_mac / dram_bytes if dram_bytes else float("inf")
-    p_eff = n_mac / (cycles / FREQ_HZ)
+    # Effective performance uses the CRITICAL PATH -- memory stalls, fill/drain, buffering
+    # and overlap loss included. The compute-schedule figure is a datapath-only diagnostic.
+    p_eff = n_mac / (crit_cycles / FREQ_HZ)
+    p_sched = n_mac / (sched_cycles / FREQ_HZ)
     p_bound = min(PEAK_MAC_PER_S, BW_BYTES_PER_S * ai)
     eff = p_eff / p_bound if p_bound else 0.0
     return {
-        "n_mac": n_mac, "cycles": cycles, "crit": crit,
+        "n_mac": n_mac, "cycles": crit_cycles, "sched_cycles": sched_cycles,
         "dram_bytes": dram_bytes, "ai": ai,
-        "p_eff": p_eff, "p_bound": p_bound, "eff": eff,
+        "p_eff": p_eff, "p_sched": p_sched, "p_bound": p_bound, "eff": eff,
         "in_txn": in_txn, "wt_txn": wt_txn, "out_txn": out_txn,
     }
 
@@ -135,9 +146,9 @@ def main():
     # Three lines per workload (Case Study 1): machine roofline >= mapping-aware bound >=
     # effective. gap_mapping = mapping-added traffic; gap_exec = execution overhead the
     # timeline exposes below the mapping-aware bound.
-    print("model,label,phase,N_MAC,cycles,DRAM_bytes,algo_bytes,"
+    print("model,label,phase,N_MAC,crit_cycles,sched_cycles,DRAM_bytes,algo_bytes,"
           "AI_machine,AI_mapped,P_machine_GMAC_s,P_mapbound_GMAC_s,P_eff_GMAC_s,"
-          "gap_mapping,gap_exec,efficiency")
+          "P_sched_GMAC_s,gap_mapping,gap_exec")
     for model, label, phase, d in rows:
         mb = machine_bound(model, label, phase)
         algo_bytes = mb["algo_bytes"] if mb else ""
@@ -146,13 +157,14 @@ def main():
         gap_mapping = f"{d['p_bound']/p_machine:.4f}" if p_machine else ""
         p_machine_s = f"{p_machine/1e9:.3f}" if p_machine else ""
         print(f"{model},{label},{phase},{d['n_mac']},{d['cycles']:.0f},"
-              f"{d['dram_bytes']},{algo_bytes},"
+              f"{d['sched_cycles']:.0f},{d['dram_bytes']},{algo_bytes},"
               f"{ai_machine},{d['ai']:.4f},"
               f"{p_machine_s},{d['p_bound']/1e9:.3f},{d['p_eff']/1e9:.3f},"
-              f"{gap_mapping},{d['eff']:.4f},{d['eff']:.4f}")
+              f"{d['p_sched']/1e9:.3f},{gap_mapping},{d['eff']:.4f}")
     print(f"# {len(rows)} configs; PEAK={PEAK_MAC_PER_S/1e9:.2f} GMAC/s, "
           f"BW={BW_BYTES_PER_S/1e9:.2f} GB/s", file=sys.stderr)
-    print("# columns: P_machine >= P_mapbound >= P_eff; gap_mapping = P_mapbound/P_machine"
+    print("# P_eff uses CRITICAL-PATH latency (stalls/fill/overlap included);"
+          " P_sched is the datapath-only diagnostic. gap_mapping = P_mapbound/P_machine"
           " (mapping-added traffic), gap_exec = P_eff/P_mapbound (execution overhead)",
           file=sys.stderr)
 

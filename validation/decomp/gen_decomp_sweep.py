@@ -13,11 +13,20 @@ Every point reuses the EXISTING decode network + mapping files and is launched w
 `model run-ir <accel.cfg> <net.cfg> <map.map>`. The KV footprint per token is a model
 property (2 * n_kv_heads * head_dim * precision), so it lives in each accel config.
 
-Experiments:
+Experiments (context axis -- KV interaction):
   A. Crossover           : Qwen3 FFN-up, context x {dense, weightCR4, kvCR4, bothCR4}
   B. Generality          : {Qwen3,TinyLlama,Gemma} x context x {dense, kvCR4}
   C. Weight x KV heatmap : Qwen3 at a KV-dominant context, weight_CR x kv_CR grid
   D. KV-decoder ablation : Qwen3 at a KV-dominant context, kvCR4, decoder throughput sweep
+
+Experiments (weight-decompression axis -- CS2, evaluation discussion 2026-09-03 Sec 1;
+no [kvcache], DRAM bandwidth modeled by scaling read/write/transfer_cycle, at a
+bandwidth-constrained point where the weight supply is the bottleneck):
+  W1. CR x decoder heatmap : weight CR x weight decoder_ratio (break-even + decoder wall)
+  W2. Bandwidth transition : weight CR x DRAM bandwidth (DRAM -> decoder -> compute)
+  W3. Queue x overlap      : input_queue_depth x overlap on/off
+  W4. Startup sensitivity  : decoder startup_cycles sweep
+  W5. Bypass break-even    : near-1 CR x metadata_scale_bytes_per_tile (dense bypass edge)
 
 Writes configs/accelerators/decomp_sweep/*.cfg and validation/decomp/runs.csv.
 """
@@ -55,14 +64,48 @@ def num_tag(x):
     return ("%g" % x).replace(".", "p")
 
 
-def decomp_section(weight_cr):
-    if weight_cr <= 1.0:
+def _scale_cycle_value(rhs, factor):
+    """Scale an 'a:b:c' or single-value cycle spec by factor (rounded, >= 1)."""
+    return ":".join(str(max(1, int(round(float(p)*factor)))) for p in rhs.split(":"))
+
+
+def scale_dram_bandwidth(base_text, bw_scale):
+    """Model DRAM bandwidth by the per-access cost: scale the [dram] section's read_cycle /
+    write_cycle / transfer_cycle by 1/bw_scale (the `bandwidth=` line does not drive the
+    critical path). bw_scale = 1.0 keeps the RTL-calibrated cost."""
+    if bw_scale == 1.0:
+        return base_text
+    factor = 1.0/bw_scale
+    out, section = [], None
+    for line in base_text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            section = stripped[1:-1]
+        if section == "dram":
+            key = stripped.replace(" ", "")
+            for name in ("read_cycle=", "write_cycle=", "transfer_cycle="):
+                if key.startswith(name):
+                    rhs = stripped.split("=", 1)[1].strip()
+                    line = "%s = %s\n" % (name[:-1], _scale_cycle_value(rhs, factor))
+                    break
+        out.append(line)
+    return "".join(out)
+
+
+def decomp_section(weight_cr, dr=None, queue=None, overlap=None, startup=None,
+                   metadata=0.0):
+    if weight_cr <= 1.0 and metadata <= 0.0:
         return ""
     return ("\n[decomp]\ncompression_ratio = %g\ndecoder_ratio = %g\nstartup_cycles = %d\n"
-            "input_queue_depth = %d\noverlap = %d\ngranularity = weight_tile\n"
+            "input_queue_depth = %d\noutput_buffer_tiles = 2\noverlap = %d\n"
+            "granularity = weight_tile\nmetadata_scale_bytes_per_tile = %g\n"
             "decomp_decoder_energy = %g\ndecomp_static_energy = %g\n" % (
-                weight_cr, W_DECODER_RATIO, W_STARTUP, W_QUEUE, W_OVERLAP,
-                W_DECODER_ENERGY, W_STATIC_ENERGY))
+                weight_cr,
+                W_DECODER_RATIO if dr is None else dr,
+                W_STARTUP if startup is None else startup,
+                W_QUEUE if queue is None else queue,
+                W_OVERLAP if overlap is None else overlap,
+                metadata, W_DECODER_ENERGY, W_STATIC_ENERGY))
 
 
 def kvcache_section(kv_bpt, context, kv_cr=1.0, kv_decoder=0.0):
@@ -81,6 +124,17 @@ def write_accel(name, kv_bpt, context, weight_cr=1.0, kv_cr=1.0, kv_decoder=0.0)
         f.write(text)
 
 
+def write_weight_accel(name, weight_cr, bw=1.0, dr=None, queue=None, overlap=None,
+                       startup=None, metadata=0.0):
+    """Weight-decompression-only config (no [kvcache]): base Gemmini with the DRAM cost
+    scaled to model bandwidth, plus the [decomp] section with the given knobs."""
+    base = scale_dram_bandwidth(open(BASE_ACCEL).read(), bw)
+    text = base + decomp_section(weight_cr, dr=dr, queue=queue, overlap=overlap,
+                                 startup=startup, metadata=metadata)
+    with open(os.path.join(OUT_DIR, name + ".cfg"), "w") as f:
+        f.write(text)
+
+
 def net_path(wl):  return os.path.join(NET_DIR, wl + ".cfg")
 def map_path(wl):  return os.path.join(MAP_DIR, wl, "ws.map")
 
@@ -92,7 +146,8 @@ def main():
             os.remove(os.path.join(OUT_DIR, f))
     runs = []
 
-    def add(experiment, name, workload, model, context, weight_cr, kv_cr, kv_decoder, variant):
+    def add(experiment, name, workload, model, context, weight_cr, kv_cr, kv_decoder,
+            variant, bw=1.0, dr="", queue="", overlap="", startup="", metadata=""):
         runs.append({
             "run_id": "%s__%s" % (experiment, name),
             "experiment": experiment, "variant": variant,
@@ -100,8 +155,10 @@ def main():
             "network_cfg": net_path(workload), "mapping": map_path(workload),
             "workload": workload, "model": model, "context": context,
             "weight_cr": weight_cr, "kv_cr": kv_cr, "kv_decoder": kv_decoder,
-            # "dense" here = the no-compression baseline AT this context (KV read present).
+            # "dense" here = the no-compression baseline AT this operating point.
             "is_dense": int(variant == "dense"),
+            "bw": bw, "dr": dr, "queue": queue, "overlap": overlap,
+            "startup": startup, "metadata": metadata,
         })
 
     # ---- A. Crossover: Qwen3 FFN-up, context x compressor -------------------
@@ -141,8 +198,64 @@ def main():
         write_accel(name, bpt, MEM_BOUND_CTX, kv_cr=4.0, kv_decoder=dec)
         add("D", name, wl, MAIN, MEM_BOUND_CTX, 1.0, 4.0, dec, "kv")
 
+    # ======== CS2: weight-decompression axis (no [kvcache]) ====================
+    # The weight supply must be the bottleneck for these axes to bite, so W1/W3/W4/W5 run
+    # at a bandwidth-constrained point (W_BW); W2 sweeps the bandwidth itself across the
+    # PE-fill -> DRAM transition.
+    W_BW = 0.05
+    wl, _ = MODELS[MAIN]
+
+    def w_dense(bw):
+        name = "decomp_W_dense_bw%s" % num_tag(bw)
+        if not os.path.exists(os.path.join(OUT_DIR, name + ".cfg")):
+            write_weight_accel(name, 1.0, bw=bw)
+            add("W", name, wl, MAIN, 0, 1.0, 1.0, 0.0, "dense", bw=bw)
+        return name
+
+    # ---- W1. CR x weight-decoder heatmap (@ W_BW) ----------------------------
+    w_dense(W_BW)
+    for cr in [1.25, 1.5, 2.0, 3.0, 4.0]:
+        for dr in [0.25, 0.5, 1.0, 2.0, 4.0]:
+            name = "decomp_W1_cr%s_dr%s" % (num_tag(cr), num_tag(dr))
+            write_weight_accel(name, cr, bw=W_BW, dr=dr)
+            add("W1", name, wl, MAIN, 0, cr, 1.0, 0.0, "weight", bw=W_BW, dr=dr)
+
+    # ---- W2. Bandwidth transition: CR x DRAM bandwidth -----------------------
+    for bw in [1.0, 0.5, 0.25, 0.1, 0.05, 0.025]:
+        w_dense(bw)
+        for cr in [2.0, 4.0]:
+            name = "decomp_W2_cr%s_bw%s" % (num_tag(cr), num_tag(bw))
+            write_weight_accel(name, cr, bw=bw)
+            add("W2", name, wl, MAIN, 0, cr, 1.0, 0.0, "weight", bw=bw, dr=W_DECODER_RATIO)
+
+    # ---- W3. Queue depth x overlap (@ W_BW, CR2, decoder just keeping pace) ---
+    for queue in [1, 2, 4, 8]:
+        for overlap in [0, 1]:
+            name = "decomp_W3_q%d_ov%d" % (queue, overlap)
+            write_weight_accel(name, 2.0, bw=W_BW, queue=queue, overlap=overlap)
+            add("W3", name, wl, MAIN, 0, 2.0, 1.0, 0.0, "weight", bw=W_BW,
+                dr=W_DECODER_RATIO, queue=queue, overlap=overlap)
+
+    # ---- W4. Startup-latency sensitivity (@ W_BW, CR2) ------------------------
+    for startup in [0, 32, 128, 512, 2048]:
+        name = "decomp_W4_st%d" % startup
+        write_weight_accel(name, 2.0, bw=W_BW, startup=startup)
+        add("W4", name, wl, MAIN, 0, 2.0, 1.0, 0.0, "weight", bw=W_BW,
+            dr=W_DECODER_RATIO, startup=startup)
+
+    # ---- W5. Dense-bypass break-even: near-1 CR x per-tile metadata (@ W_BW) --
+    # With metadata charged PER TILE, a low CR can compress below dense on values yet
+    # exceed it in total -> the engine bypasses to dense. This sweep walks that edge.
+    for cr in [1.02, 1.05, 1.1, 1.25, 1.5]:
+        for meta in [0.0, 8.0, 32.0]:
+            name = "decomp_W5_cr%s_m%s" % (num_tag(cr), num_tag(meta))
+            write_weight_accel(name, cr, bw=W_BW, metadata=meta)
+            add("W5", name, wl, MAIN, 0, cr, 1.0, 0.0, "weight", bw=W_BW,
+                dr=W_DECODER_RATIO, metadata=meta)
+
     cols = ["run_id", "experiment", "variant", "accel_cfg", "network_cfg", "mapping",
-            "workload", "model", "context", "weight_cr", "kv_cr", "kv_decoder", "is_dense"]
+            "workload", "model", "context", "weight_cr", "kv_cr", "kv_decoder", "is_dense",
+            "bw", "dr", "queue", "overlap", "startup", "metadata"]
     with open(MANIFEST, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()

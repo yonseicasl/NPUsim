@@ -40,6 +40,21 @@ done
 log "running Eyeriss AlexNet (silicon reference) ..."
 ./npusim.sh run eyeriss alexnet silicon >/dev/null
 
+# --- NVDLA nv_small: run every committed trace network so compare_full.py has fresh
+# NPUsim results on THIS checkout (result/ is not tracked; without this step the NVDLA
+# comparison silently used stale or missing results). FORCE=1 re-runs existing ones.
+for net_cfg in configs/networks/nvdla_dc_*.cfg; do
+    net=$(basename "$net_cfg" .cfg)
+    # Only the trace networks with an nvdla_small ws mapping belong to this comparison
+    # (e.g. nvdla_dc_1x1x8_relu is an SFU fixture with a different mapping).
+    [[ -f "configs/mappings/nvdla_small/$net/ws.map" ]] || continue
+    if [[ "${FORCE:-0}" != "1" && -f "result/nvdla_small/$net/ws/layer_0.txt" ]]; then
+        continue
+    fi
+    log "running NVDLA trace $net ..."
+    ./npusim.sh run nvdla_small "$net" ws >/dev/null
+done
+
 log "comparing against Gemmini RTL / Eyeriss silicon golden ..."
 cyc_out=$(python3 validation/check_timing.py --check-baseline 2>&1 || true)
 

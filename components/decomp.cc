@@ -139,20 +139,24 @@ void decomp_t::reset() {
     // The engine carries no cross-layer state.
 }
 
-size_t decomp_t::compressed_bytes(size_t m_dense_bytes, bool *m_bypassed) const {
+size_t decomp_t::compressed_bytes(size_t m_dense_bytes, size_t m_tiles,
+                                  bool *m_bypassed) const {
     if(m_dense_bytes == 0) {
         if(m_bypassed) *m_bypassed = false;
         return 0;
     }
-    // Compressed values plus fixed metadata/scale overhead per tile is captured in the
-    // effective compression_ratio directly (evaluation.md: CR includes metadata + scale).
-    // metadata_scale_bytes_per_tile is an OPTIONAL additional flat overhead for callers
-    // that prefer to state it separately.
+    // Compressed values plus the fixed metadata/scale overhead of EVERY tile (the knob is
+    // per-tile, so a layer of N tiles carries N overheads -- charging it once per layer
+    // understated the overhead by the tile count and pushed the break-even point of
+    // low-CR configurations the wrong way). An effective compression_ratio that already
+    // folds metadata in (evaluation.md: CR includes metadata + scale) simply leaves the
+    // knob at its 0 default.
     const double values = static_cast<double>(m_dense_bytes)/compression_ratio;
-    const double total = values + metadata_scale_bytes_per_tile;
+    const double total = values +
+                         metadata_scale_bytes_per_tile*static_cast<double>(std::max<size_t>(1, m_tiles));
     const bool bypass = total >= static_cast<double>(m_dense_bytes);
     if(m_bypassed) *m_bypassed = bypass;
-    // Bypass: a tile that does not shrink is stored dense (evaluation.md).
+    // Bypass: weight that does not shrink is stored dense (evaluation.md).
     return bypass ? m_dense_bytes : static_cast<size_t>(std::ceil(total));
 }
 
@@ -200,7 +204,8 @@ decomp_invocation_t decomp_t::decompress(size_t m_dense_weight_bytes,
             realized += comp_i;
             inv.tile_supply_fraction[i*chunks/inv.tiles] += comp_i;
         }
-        const double total = realized + metadata_scale_bytes_per_tile;
+        const double total = realized +
+            metadata_scale_bytes_per_tile*static_cast<double>(inv.tiles);
         inv.bypassed = total >= static_cast<double>(m_dense_weight_bytes);
         inv.compressed_weight_bytes = inv.bypassed
             ? m_dense_weight_bytes : static_cast<size_t>(std::ceil(total));
@@ -211,7 +216,8 @@ decomp_invocation_t decomp_t::decompress(size_t m_dense_weight_bytes,
         }
     } else {
         bool bypassed = false;
-        inv.compressed_weight_bytes = compressed_bytes(m_dense_weight_bytes, &bypassed);
+        inv.compressed_weight_bytes = compressed_bytes(m_dense_weight_bytes, inv.tiles,
+                                                       &bypassed);
         inv.bypassed = bypassed;
     }
     inv.effective_ratio = static_cast<double>(m_dense_weight_bytes)/
