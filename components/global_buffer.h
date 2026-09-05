@@ -101,6 +101,11 @@ public:
     void account_output_writeback_link();
     // Flush the data
     void flush_data(scheduler_t *m_scheduler);
+    // Functional layer-end write-back of the retained output tile from the GLB to the
+    // multi-chip buffer -- the GLB->multi-chip link of the PE-array -> GLB -> multi-chip ->
+    // DRAM output chain. Without it the last output tile stays in the GLB and never reaches
+    // the layer tensor.
+    void flush_output_writeback(scheduler_t *m_scheduler);
 
     // Print out the configuration of the Global buffer.
     virtual void print_specification() = 0;

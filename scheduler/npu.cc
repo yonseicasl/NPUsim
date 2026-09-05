@@ -652,6 +652,12 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 for(unsigned chip = 0; chip < pe_arrays.size(); chip++) {
                     pe_arrays[chip]->flush_psum_writeback(scheduler);
                 }
+                // Functional output write-back chain, in order: PE array -> GLB (above) ->
+                // multi-chip (here) -> DRAM/layer tensor (below). Each level flushes the
+                // last retained output tile the eviction loop never wrote back.
+                for(unsigned i = 0; i < global_buffers.size(); i++) {
+                    global_buffers[i]->flush_output_writeback(scheduler);
+                }
                 multi_chip->flush_output_writeback(scheduler);
                 for(unsigned chip = 0; chip < pe_arrays.size(); chip++) {
                     for(unsigned pe = 0; pe < pe_arrays[chip]->get_number_of_pes(); pe++) {
@@ -1467,9 +1473,16 @@ void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accele
 // output back into layer->output_data (raw MAC accumulation -- no bias, no activation).
 // Nebula's forward() is the single functional owner of bias + activation (see
 // components/sfu.h policy), so the comparison applies the layer's activation to the
-// accelerator snapshot and adds nothing else: any residual difference is a datapath
-// (movement/offset/accumulation) defect. The reference-nonzero count is printed so a
-// zero-weight fixture cannot masquerade as a meaningful PASS.
+// accelerator snapshot and adds nothing else: any residual difference is a datapath defect.
+// The reference-nonzero count is printed so a zero-weight fixture cannot masquerade as a
+// meaningful PASS.
+//
+// KNOWN LIMITATION (surfaced by this check): the functional data path MOVES output tiles
+// with data_copy, so it does not SUM partial sums across a reduction dimension -- a
+// reduction mapped spatially (PE_Y) or temporally (a GLB/DRAM fold) yields only a partial
+// output, so this check reports FAIL for any mapping with output reduction. Making it PASS
+// needs load-accumulate-store semantics on the output write-back, which is a separate piece
+// of work from the output write-back CHAIN (offsets + per-level flush) fixed here.
 void npu_t::verify_functional_layer(unsigned m_index, bool m_mapped) {
     nebula::layer_t *current = network->layers[m_index];
     if(!m_mapped) {

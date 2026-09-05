@@ -1529,6 +1529,24 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
 }
 
 
+void global_buffer_t::flush_output_writeback(scheduler_t *m_scheduler) {
+#ifdef FUNCTIONAL
+    // Mirror the in-loop GLB->multi-chip output store (same offsets), for the last retained
+    // tile the eviction loop never wrote back.
+    if(multi_chip != NULL && m_scheduler != NULL && !m_scheduler->output_offset_multi_chip.empty()) {
+        m_scheduler->transfer_data(multi_chip->data, data,
+                                   multi_chip->offsets[data_type_t::OUTPUT] +
+                                       m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()],
+                                   offsets[data_type_t::OUTPUT],
+                                   component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER,
+                                   data_type_t::OUTPUT, get_stationary_type(),
+                                   action_type_t::STORE);
+    }
+#else
+    (void)m_scheduler;
+#endif
+}
+
 void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
     // Case 1. Input stationary
     if(stationary_type == stationary_type_t::INPUT_STATIONARY) {
