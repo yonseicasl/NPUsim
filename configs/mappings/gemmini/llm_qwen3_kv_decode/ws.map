@@ -1,0 +1,12 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+# qwen3 kv: N(out)=1024=PE_X(16)xDRAM(64); K(in)=1024=PE_Y(16)xDRAM(64); M(batch)=1
+# BASELINE mapping (execution-guaranteed, not performance-optimal) -- see gen_llm_configs.py
+[connected]
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 16, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 16, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 64, 1, 1, 1, 64, 1, 1, 0, 0, 1, 1,

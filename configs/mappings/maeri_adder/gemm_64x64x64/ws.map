@@ -1,0 +1,13 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[connected]
+# 64, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+# MAERI: 1x168 row -- C spatial across 64 PEs so the adder tree has fan-in 64; K/B temporal
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 1, 1, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 64, 64, 1, 1, 1, 1, 1, 0, 0, 1, 1,

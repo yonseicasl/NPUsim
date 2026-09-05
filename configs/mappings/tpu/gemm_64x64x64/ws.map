@@ -1,0 +1,13 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[connected]
+# 64, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+# TPU: 256x256 systolic array with 1-deep PE buffers -- spatial K/C only, B temporal at DRAM
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 64, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 64, 1, 1, 1, 1, 1, 0, 0, 1, 1,

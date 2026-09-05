@@ -1,0 +1,14 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[connected]
+# 64, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+# E12 fixture: batch split 16/16/16/16 across a 1x4 chip row (CHIPS_X). Weight does not depend on
+# B, so it is the BROADCAST datatype here -- which is what the multicast contract applies to.
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 4, 16, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 16, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 16, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 4, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 4, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

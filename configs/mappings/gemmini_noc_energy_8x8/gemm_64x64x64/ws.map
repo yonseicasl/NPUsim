@@ -1,0 +1,17 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[connected]
+# 64, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+# E2 fixture: the same total work as configs/mappings/gemmini/gemm_64x64x64 on an 8x8 ACTIVE
+# array instead of 16x16. K moves from PE_X 16 to PE_X 8 (with PE picking up the factor 2), and
+# C from PE_Y 16 to PE_Y 8 (with GLB picking up the factor 2). Total K = 8*8 = 64 and total
+# C = 8*8 = 64 are unchanged, so only the active SHAPE differs -- which is what isolates the
+# multicast link-traversal contract.
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 8, 64, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 8, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 8, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 8, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

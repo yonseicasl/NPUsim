@@ -1,0 +1,16 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[connected]
+# 64, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+# E20-6: the chip grid carries ONLY the batch, so weight is broadcast to every chip and
+# the NoP multicast spanning tree is the path that prices it. A mapping that partitions
+# every datatype across chips never reaches that branch at all -- the first attempt at
+# these fixtures did exactly that and silently covered nothing.
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 16, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 16, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 16, 1, 1, 0, 0, 1, 1,
+GLB     = 4, 1, 1, 1, 4, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 2, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 2, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

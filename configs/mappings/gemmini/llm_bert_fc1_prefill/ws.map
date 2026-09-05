@@ -1,0 +1,12 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+# bert fc1: N(out)=3072=PE_X(16)xDRAM(192); K(in)=768=PE_Y(16)xDRAM(48); M(batch)=128
+# BASELINE mapping (execution-guaranteed, not performance-optimal) -- see gen_llm_configs.py
+[connected]
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 16, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 16, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 128, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 192, 1, 1, 1, 48, 1, 1, 0, 0, 1, 1,

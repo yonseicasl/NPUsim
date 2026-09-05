@@ -1,0 +1,13 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[connected]
+# 64, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+# Simba: 4x4 array of 8x8-lane MACs, 6x6 chips -- 4 chips active, K and B split over the NoP
+MAC     = 8, 1, 1, 1, 8, 1, 1, 0, 0, 1, 1,
+PE      = 1, 32, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 4, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 4, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 2, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 2, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 2, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,

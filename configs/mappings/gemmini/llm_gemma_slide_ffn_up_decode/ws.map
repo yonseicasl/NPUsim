@@ -1,0 +1,12 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+# gemma_slide ffn_up: N(out)=6144=PE_X(16)xDRAM(384); K(in)=1536=PE_Y(16)xDRAM(96); M(batch)=1
+# BASELINE mapping (execution-guaranteed, not performance-optimal) -- see gen_llm_configs.py
+[connected]
+MAC     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 16, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 16, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 384, 1, 1, 1, 96, 1, 1, 0, 0, 1, 1,

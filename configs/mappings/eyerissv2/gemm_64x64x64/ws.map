@@ -1,0 +1,13 @@
+# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE
+
+[connected]
+# 64, 64, 1, 1, 64, 1, 1, 0, 0, 1, 1,
+# Eyeriss v2: 4x3 array of 2-MAC PEs, K across the 8 chip columns, rest temporal at DRAM
+MAC     = 2, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE      = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_X    = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+PE_Y    = 1, 1, 1, 1, 4, 1, 1, 0, 0, 1, 1,
+GLB     = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_X = 8, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+CHIPS_Y = 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,
+DRAM    = 4, 64, 1, 1, 16, 1, 1, 0, 0, 1, 1,
