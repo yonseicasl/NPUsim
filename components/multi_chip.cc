@@ -8,6 +8,7 @@
 #include "energy_units.h"
 
 multi_chip_t::multi_chip_t(section_config_t m_section_config) :
+    layer(NULL),
     data(NULL),
     double_buffer(false),
     max_outstanding_requests(0),
@@ -632,11 +633,28 @@ void multi_chip_t::account_output_writeback_to_dram() {
 // DR6: the in-loop write-back fires on output-tile changes, so the LAST resident
 // tile of the live pass never stores. Charged once at layer end, before repetition
 // scaling, so each repetition's final tile is covered as well.
-void multi_chip_t::flush_output_writeback() {
+void multi_chip_t::flush_output_writeback(scheduler_t *m_scheduler) {
+#ifdef FUNCTIONAL
+    // The functional twin of the same rule: the last resident output tile must land in
+    // the DRAM-resident layer tensor, or the tail of every layer's output stays zero.
+    if(layer != NULL && m_scheduler != NULL) {
+        m_scheduler->transfer_data((data_t*)layer->output_data, data,
+                                   m_scheduler->output_offset_dram.front(),
+                                   offsets[data_type_t::OUTPUT],
+                                   component_type_t::DRAM, component_type_t::CHIPS_Y,
+                                   data_type_t::OUTPUT, get_stationary_type(),
+                                   action_type_t::STORE);
+    }
+#else
+    (void)m_scheduler;
+#endif
     account_output_writeback_to_dram();
 }
 
-void multi_chip_t::request_data() {
+void multi_chip_t::request_data(scheduler_t *m_scheduler) {
+#ifndef FUNCTIONAL
+    (void)m_scheduler;
+#endif
     // Request input data to the off-chip memory
     for(unsigned i = 0; i < get_number_of_active_chips(); i++) {
         if(chips[i]->request_to_multi_chip[data_type_t::INPUT]) {
@@ -674,9 +692,18 @@ void multi_chip_t::request_data() {
                 std::cout << "Write back output data from temporal buffer in Multi Chip to DRAM" << std::endl;
 #endif
 #ifdef FUNCTIONAL
-                //m_scheduler->transfer_data((data_t*)layer->output_data, data, m_scheduler->output_offset_dram.front(), multi_chip->offsets[data_type_t::OUTPUT],
-                //                           component_type_t::DRAM, component_type_t::CHIPS_Y,
-                //                           data_type_t::OUTPUT, multi_chip->get_stationary_type(), action_type_t::STORE);
+                // The output WRITE-BACK: evicted output tiles land in the DRAM-resident
+                // layer tensor. This was commented out (this class had no layer pointer),
+                // which dead-ended the whole functional datapath -- results never reached
+                // layer->output_data, so nothing could ever be verified.
+                if(layer != NULL && m_scheduler != NULL) {
+                    m_scheduler->transfer_data((data_t*)layer->output_data, data,
+                                               m_scheduler->output_offset_dram.front(),
+                                               offsets[data_type_t::OUTPUT],
+                                               component_type_t::DRAM, component_type_t::CHIPS_Y,
+                                               data_type_t::OUTPUT, get_stationary_type(),
+                                               action_type_t::STORE);
+                }
 #endif
                 // MC3: charge the DRAM write-back only when an actual write-back occurs.
                 // On the initial pass, or when the output tile already matches DRAM's (no
@@ -693,6 +720,10 @@ void multi_chip_t::request_data() {
             break;
         }
     }
+}
+
+void multi_chip_t::connect_layer(nebula::layer_t *m_layer) {
+    layer = m_layer;
 }
 
 void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {

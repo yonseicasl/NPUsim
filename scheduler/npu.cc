@@ -73,7 +73,10 @@ npu_t::npu_t() :
  layer(NULL),
  scheduler(NULL),
  network_stats(NULL) {
-
+#ifdef FUNCTIONAL
+    functional_layers_checked = 0;
+    functional_layers_failed = 0;
+#endif
 }
 
 npu_t::~npu_t() {
@@ -597,6 +600,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     ? layer_name_t::CONVOLUTIONAL_LAYER : layer_name_t::CONNECTED_LAYER;
                 layer = network->layers[index];
                 dram->connect_layer(layer);
+                multi_chip->connect_layer(layer);
                 scheduler = schedulers[stats_index];
                 const unsigned global_buffer_repetitions =
                     scheduler->mapping_table->calculate_active_component(component_type_t::GLOBAL_BUFFER);
@@ -646,9 +650,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     request_to_pe_array();
                 }
                 for(unsigned chip = 0; chip < pe_arrays.size(); chip++) {
-                    pe_arrays[chip]->flush_psum_writeback();
+                    pe_arrays[chip]->flush_psum_writeback(scheduler);
                 }
-                multi_chip->flush_output_writeback();
+                multi_chip->flush_output_writeback(scheduler);
                 for(unsigned chip = 0; chip < pe_arrays.size(); chip++) {
                     for(unsigned pe = 0; pe < pe_arrays[chip]->get_number_of_pes(); pe++) {
                         pe_arrays[chip]->pes[pe]->suppress_streaming_cycles();
@@ -695,7 +699,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                           << std::endl;
             }
 #ifdef FUNCTIONAL
-            network->layers[index]->forward();
+            verify_functional_layer(index, mapped && !executable_ir_mode);
 #endif
         }
         if(executable_ir_mode && mapping_index != schedulers.size()) {
@@ -703,6 +707,11 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
             exit(1);
         }
         print_total_result(m_accelerator_config, m_network_config);
+#ifdef FUNCTIONAL
+        std::cout << "[FUNCTIONAL] summary: " << functional_layers_checked
+                  << " mapped layer(s) verified, " << functional_layers_failed
+                  << " failed" << std::endl;
+#endif
     }
 }
 
@@ -777,7 +786,7 @@ void npu_t::transfer_data_to_multi_chip() {
 // Send a request signal from the chip-level processors to the off-chip memory
 void npu_t::request_to_dram() {
     if(!multi_chip->is_exist_request_at_buffer() && multi_chip->is_exist_request_at_global_buffer() && !multi_chip->wait_data()) {
-        multi_chip->request_data();
+        multi_chip->request_data(scheduler);
     }
 }
 
@@ -794,7 +803,7 @@ void npu_t::request_to_multi_chip() {
 void npu_t::request_to_global_buffer() {
     for(unsigned i = 0; i < multi_chip->get_number_of_active_chips(); i++) {
         if(!pe_arrays[i]->is_exist_request_at_buffer() && pe_arrays[i]->is_exist_request_at_pe() && !pe_arrays[i]->wait_data()) {
-            pe_arrays[i]->request_data();
+            pe_arrays[i]->request_data(scheduler);
         }
     }
 }
@@ -1452,6 +1461,65 @@ void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accele
 // Phase-7 (plan_sfu.md): operand-tensor streaming cost for a standalone softmax, at
 // OUTPUT precision, from the live components' declared unit costs. Nothing here mutates
 // a component counter -- the costs land in the softmax layer's own stats object.
+#ifdef FUNCTIONAL
+// Functional verification of one layer. The accelerator datapath has already moved the
+// tensors through DRAM -> multi-chip -> GLB -> PE array -> MAC and written its computed
+// output back into layer->output_data (raw MAC accumulation -- no bias, no activation).
+// Nebula's forward() is the single functional owner of bias + activation (see
+// components/sfu.h policy), so the comparison applies the layer's activation to the
+// accelerator snapshot and adds nothing else: any residual difference is a datapath
+// (movement/offset/accumulation) defect. The reference-nonzero count is printed so a
+// zero-weight fixture cannot masquerade as a meaningful PASS.
+void npu_t::verify_functional_layer(unsigned m_index, bool m_mapped) {
+    nebula::layer_t *current = network->layers[m_index];
+    if(!m_mapped) {
+        current->forward();
+        return;
+    }
+    const size_t elements = static_cast<size_t>(current->output_size)*network->batch_size;
+    std::vector<float> accelerator(current->output_data, current->output_data + elements);
+    current->forward();
+
+    bool activation_comparable = true;
+    switch(current->activation_type) {
+        case nebula::LINEAR_ACTIVATION:
+            break;
+        case nebula::RELU_ACTIVATION:
+            for(size_t i = 0; i < elements; ++i) {
+                if(accelerator[i] < 0.0f) accelerator[i] = 0.0f;
+            }
+            break;
+        default:
+            activation_comparable = false;
+            break;
+    }
+
+    size_t mismatches = 0, reference_nonzeros = 0, accelerator_nonzeros = 0;
+    double max_abs_diff = 0.0;
+    for(size_t i = 0; i < elements; ++i) {
+        const double reference = current->output_data[i];
+        if(reference != 0.0) ++reference_nonzeros;
+        if(accelerator[i] != 0.0f) ++accelerator_nonzeros;
+        const double diff = std::fabs(static_cast<double>(accelerator[i]) - reference);
+        if(diff > max_abs_diff) max_abs_diff = diff;
+        if(diff > 1.0e-4 + 1.0e-4*std::fabs(reference)) ++mismatches;
+    }
+
+    ++functional_layers_checked;
+    const bool pass = activation_comparable && mismatches == 0;
+    if(!pass) ++functional_layers_failed;
+    std::cout << "[FUNCTIONAL] layer " << m_index << ": "
+              << (activation_comparable
+                  ? (pass ? "PASS" : "FAIL")
+                  : "NOT COMPARED (unsupported activation for the functional check)")
+              << " -- " << elements << " elements, " << mismatches << " mismatch(es), "
+              << "max |diff| " << max_abs_diff << ", nonzeros ref/accel "
+              << reference_nonzeros << "/" << accelerator_nonzeros
+              << (reference_nonzeros == 0 ? "  (VACUOUS: all-zero reference)" : "")
+              << std::endl;
+}
+#endif
+
 sfu_operand_stream_t npu_t::softmax_operand_stream(size_t m_elements) {
     sfu_operand_stream_t stream;
     stream.active = true;

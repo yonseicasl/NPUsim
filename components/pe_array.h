@@ -60,7 +60,7 @@ public:
     // Exist data in PE array.
     void fill_data();
     // Request data to Global buffer.
-    void request_data();
+    void request_data(scheduler_t *m_scheduler = NULL);
     // Transfer the data each PE.
     virtual void data_transfer(scheduler_t *m_scheduler) = 0;
     // Flush data at temporal buffer in PE array.
@@ -229,7 +229,7 @@ public:
     double psum_store_access_energy;
 
     void account_psum_store_to_global_buffer();
-    void flush_psum_writeback();
+    void flush_psum_writeback(scheduler_t *m_scheduler = NULL);
 
 protected:
 

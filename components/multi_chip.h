@@ -102,11 +102,11 @@ public:
     // Exist data in PE array.
     void fill_data();
     // Request data to Global buffer.
-    void request_data();
+    void request_data(scheduler_t *m_scheduler = NULL);
     // DR6: charge the layer's final output tile write-back to DRAM (the in-loop
     // write-back only fires on tile CHANGES, so the last resident tile of the
     // live pass is otherwise never stored).
-    void flush_output_writeback();
+    void flush_output_writeback(scheduler_t *m_scheduler = NULL);
     // Shared accounting for one multi-chip -> DRAM output tile write-back.
     void account_output_writeback_to_dram();
     // Transfer the data each PE.
@@ -141,6 +141,13 @@ public:
     bool              equal_output_tile;         
 
     std::vector<unsigned> tile_size;            // Tile size of chip-level processor
+    // The layer whose tensors the functional data path stores back to (the DRAM-resident
+    // output). dram_t carries the same pointer for its side of the transfers; the output
+    // WRITE-BACK happens at this level's request path, which is why the store sat commented
+    // out until the pointer existed here.
+    void connect_layer(nebula::layer_t *m_layer);
+    nebula::layer_t *layer;
+
     std::vector<unsigned> offsets;              // Offset index of chip-level processor
     unsigned duplicated_input;
 

@@ -523,12 +523,30 @@ void pe_array_t::account_psum_store_to_global_buffer() {
 // the same gap DR6 closed one level up, at the multi-chip -> DRAM boundary. Without it the on-chip
 // output volume came out short of the off-chip volume, which is impossible: every output byte
 // reaches DRAM through this boundary.
-void pe_array_t::flush_psum_writeback() {
+void pe_array_t::flush_psum_writeback(scheduler_t *m_scheduler) {
     if(initial) return;   // the array never produced an output tile
+#ifdef FUNCTIONAL
+    // Functional twin of the accounting below: the LAST output tile the array retained
+    // (psum retention / equal-tile) must still land in the GLB, or the functional result
+    // chain ends at the array and every downstream tensor stays zero.
+    if(m_scheduler != NULL && global_buffer != NULL) {
+        m_scheduler->transfer_data(global_buffer->data, output_data,
+                                   global_buffer->offsets[data_type_t::OUTPUT] +
+                                       m_scheduler->output_offset_global_buffer.front(), 0,
+                                   component_type_t::GLOBAL_BUFFER, component_type_t::PE_Y,
+                                   data_type_t::OUTPUT, get_stationary_type(),
+                                   action_type_t::STORE);
+    }
+#else
+    (void)m_scheduler;
+#endif
     account_psum_store_to_global_buffer();
 }
 
-void pe_array_t::request_data() {
+void pe_array_t::request_data(scheduler_t *m_scheduler) {
+#ifndef FUNCTIONAL
+    (void)m_scheduler;
+#endif
     // The case when at least on PE in PE array request data.
     // Request data from temporal buffer in PE array to Global buffer.
     
@@ -560,6 +578,18 @@ void pe_array_t::request_data() {
                 std::cout << "Write back output data from temporal buffer in PE array to Global buffer" << std::endl;
 #endif
 #ifdef FUNCTIONAL
+                // The in-loop output write-back: the evicted output tile moves from the
+                // array's temporal buffer into the GLB. This block was left EMPTY, which
+                // severed the functional output chain at exactly this boundary -- every
+                // computed result died in the array while the stats charged the store.
+                if(m_scheduler != NULL) {
+                    m_scheduler->transfer_data(global_buffer->data, output_data,
+                                               global_buffer->offsets[data_type_t::OUTPUT] +
+                                                   m_scheduler->output_offset_global_buffer.front(), 0,
+                                               component_type_t::GLOBAL_BUFFER, component_type_t::PE_Y,
+                                               data_type_t::OUTPUT, get_stationary_type(),
+                                               action_type_t::STORE);
+                }
 #endif
                 is_waiting_data[data_type_t::OUTPUT] = true;
                 global_buffer->num_request[data_type_t::OUTPUT]++;

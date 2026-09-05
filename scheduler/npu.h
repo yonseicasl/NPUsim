@@ -111,6 +111,15 @@ protected:
     // KV-cache read (evaluation.md Sec 4): inject the decode step's KV-cache DRAM read on
     // this layer. No-op without a [kvcache] section.
     void apply_kv_cache_read(unsigned m_stats_index);
+#ifdef FUNCTIONAL
+    // Functional verification: snapshot the accelerator-computed output of a mapped layer,
+    // run Nebula's forward() (the single functional owner of bias + activation), and
+    // compare element-by-element. Non-mapped layers just forward(). Prints a per-layer
+    // verdict and feeds the run-level summary.
+    void verify_functional_layer(unsigned m_index, bool m_mapped);
+    size_t functional_layers_checked;
+    size_t functional_layers_failed;
+#endif
     // Phase-7: cost of streaming the softmax operand tensor between the memory hierarchy
     // and the SFU, per [sfu] softmax_operand_residency, from the live components' unit
     // costs (dram: DRAM device + off-chip link + GLB staging/feed ports; glb: GLB
