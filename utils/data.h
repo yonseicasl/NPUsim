@@ -44,6 +44,19 @@ inline void data_clear(data_t &data) {
     data = data_t{};
 }
 
+// Adder-tree / spatial-reduction accumulation: several source partial sums that
+// land on the same destination output element must SUM, not overwrite. Used at the
+// PE -> PE-array boundary where a reduction dimension (e.g. input channels) is
+// unrolled across PEs. On a zero-initialised destination, a single contribution
+// reduces to a plain copy, so non-reduction stores are unaffected.
+inline void data_accumulate(data_t &destination, const data_t &source) {
+#if defined(USER_INTEGER) || defined(USER_FLOAT)
+    destination.value += source.value;
+#else
+    destination += source;
+#endif
+}
+
 inline void data_accumulate_product(data_t &accumulator, const data_t &input, const data_t &weight) {
 #if defined(USER_INTEGER) || defined(USER_FLOAT)
     accumulator.value += input.value * weight.value;

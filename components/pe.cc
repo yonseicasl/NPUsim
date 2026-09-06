@@ -1898,7 +1898,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
             // Output data transfer
-            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
+            // OUTPUT-CHANNEL ROUTING: this PE's physical index is n*num_pe_y + c (input and
+            // weight distribution both decode it that way -- input tile = index%num_pe_y = c).
+            // The output tile is selected by the output-channel component n = index/num_pe_y,
+            // NOT index%size, which silently transposes n and c whenever a reduction dimension
+            // is unrolled across PE_Y (PE_X>1 && PE_Y>1). With PE_Y==1 this reduces to index.
+            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[(index/m_scheduler->num_active_pe_y)%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
@@ -1987,7 +1992,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
             // Write back output data
-            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
+            // OUTPUT-CHANNEL ROUTING: this PE's physical index is n*num_pe_y + c (input and
+            // weight distribution both decode it that way -- input tile = index%num_pe_y = c).
+            // The output tile is selected by the output-channel component n = index/num_pe_y,
+            // NOT index%size, which silently transposes n and c whenever a reduction dimension
+            // is unrolled across PE_Y (PE_X>1 && PE_Y>1). With PE_Y==1 this reduces to index.
+            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[(index/m_scheduler->num_active_pe_y)%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
@@ -2080,7 +2090,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
             // Write back output data
-            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
+            // OUTPUT-CHANNEL ROUTING: this PE's physical index is n*num_pe_y + c (input and
+            // weight distribution both decode it that way -- input tile = index%num_pe_y = c).
+            // The output tile is selected by the output-channel component n = index/num_pe_y,
+            // NOT index%size, which silently transposes n and c whenever a reduction dimension
+            // is unrolled across PE_Y (PE_X>1 && PE_Y>1). With PE_Y==1 this reduces to index.
+            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[(index/m_scheduler->num_active_pe_y)%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
@@ -2182,7 +2197,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             exist_data_lb[data_type_t::INPUT] = false, exist_data_lb[data_type_t::WEIGHT] = false, exist_data_lb[data_type_t::OUTPUT] = false;
 #ifdef FUNCTIONAL
             // Write back output data
-            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
+            // OUTPUT-CHANNEL ROUTING: this PE's physical index is n*num_pe_y + c (input and
+            // weight distribution both decode it that way -- input tile = index%num_pe_y = c).
+            // The output tile is selected by the output-channel component n = index/num_pe_y,
+            // NOT index%size, which silently transposes n and c whenever a reduction dimension
+            // is unrolled across PE_Y (PE_X>1 && PE_Y>1). With PE_Y==1 this reduces to index.
+            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[(index/m_scheduler->num_active_pe_y)%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2
@@ -2301,7 +2321,12 @@ void pe_t::flush_data(scheduler_t *m_scheduler) {
             exist_data_lb[data_type_t::INPUT] = false, exist_data_lb[data_type_t::WEIGHT] = false, exist_data_lb[data_type_t::OUTPUT] = false;
 #ifdef FUNCTIONAL
             // Write back output data
-            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[index%m_scheduler->output_offset_pe_array.size()], 0,
+            // OUTPUT-CHANNEL ROUTING: this PE's physical index is n*num_pe_y + c (input and
+            // weight distribution both decode it that way -- input tile = index%num_pe_y = c).
+            // The output tile is selected by the output-channel component n = index/num_pe_y,
+            // NOT index%size, which silently transposes n and c whenever a reduction dimension
+            // is unrolled across PE_Y (PE_X>1 && PE_Y>1). With PE_Y==1 this reduces to index.
+            m_scheduler->transfer_data(pe_array->output_data, output_data_lb, m_scheduler->output_offset_pe_array[(index/m_scheduler->num_active_pe_y)%m_scheduler->output_offset_pe_array.size()], 0,
                                        component_type_t::PE_Y, component_type_t::PE,
                                        data_type_t::OUTPUT, get_local_buffer_stationary_type(), action_type_t::STORE);
             // Update for NPUsim ver2

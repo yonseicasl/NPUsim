@@ -119,6 +119,20 @@ protected:
     void verify_functional_layer(unsigned m_index, bool m_mapped);
     size_t functional_layers_checked;
     size_t functional_layers_failed;
+    // Fixture-driven functional path (correctness plan Phase 1, lite): bypass nebula's
+    // OpenCV image loader and nebula-forward oracle entirely. `functional_input_buffer` is
+    // an OWNED input tensor injected as layer 0's input; `functional_golden` is the external
+    // CPU-computed reference for the final mapped layer's output. Both are raw little-endian
+    // fp32 files named by [data] functional_input / functional_golden. Empty => fall back to
+    // the legacy nebula load_data + forward() differential oracle.
+    std::vector<float> functional_input_buffer;
+    std::vector<float> functional_golden;
+    bool functional_external_golden;
+    // Index of the LAST mapped (conv/connected) layer. With an external golden the golden is
+    // the network's final output, so only this layer is compared; earlier mapped layers are
+    // still executed (their output feeds the next layer) but not verified. -1 = uncomputed.
+    int functional_last_mapped;
+    void verify_against_golden(unsigned m_index);
 #endif
     // Phase-7: cost of streaming the softmax operand tensor between the memory hierarchy
     // and the SFU, per [sfu] softmax_operand_residency, from the live components' unit

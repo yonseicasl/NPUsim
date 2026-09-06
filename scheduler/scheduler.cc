@@ -1610,13 +1610,21 @@ void scheduler_t::output_data_load(data_t *m_dest, data_t *m_source, unsigned m_
 
 void scheduler_t::output_data_store(data_t *m_dest, data_t *m_source, unsigned m_dest_offset, unsigned m_source_offset,
                                     component_type_t m_destination_type, component_type_t m_source_type) {
-
     std::vector<unsigned> dest_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
     std::vector<unsigned> source_param(parameter_type_t::NUM_PARAMETER_TYPES, 1);
 
     dest_param   = mapping_table->calculate_parameter_size(m_destination_type);
     source_param = mapping_table->calculate_parameter_size(m_source_type);
-    
+
+    // OUTPUT-REDUCTION (spatial adder tree): at the PE -> PE-array boundary a reduction
+    // dimension unrolled across PEs sends several PEs' partial sums to the SAME output
+    // element, so they must accumulate rather than overwrite. Every other output store
+    // moves a whole tile between hierarchy levels (distinct elements, one writer each) and
+    // must remain a copy. The PE-array output buffer is zero-initialised each layer, so a
+    // lone contribution (no spatial reduction) accumulates onto 0 -- identical to a copy.
+    const bool reduce_accumulate = (m_source_type == component_type_t::PE &&
+                                    m_destination_type == component_type_t::PE_Y);
+
     for(unsigned b = 0; b < source_param[parameter_type_t::BATCH_SIZE]; b++) {
         for(unsigned g = 0; g < source_param[parameter_type_t::GROUP]; g++) {
             for(unsigned k = 0; k < source_param[parameter_type_t::OUTPUT_CHANNEL]/source_param[parameter_type_t::GROUP]; k++) {
@@ -1636,7 +1644,8 @@ void scheduler_t::output_data_store(data_t *m_dest, data_t *m_source, unsigned m
                                               + k*dest_param[parameter_type_t::OUTPUT_HEIGHT]*dest_param[parameter_type_t::OUTPUT_WIDTH]
                                               + p*dest_param[parameter_type_t::OUTPUT_WIDTH] + q;
 
-                        data_copy(m_dest[dest_index], m_source[source_index]);
+                        if(reduce_accumulate) data_accumulate(m_dest[dest_index], m_source[source_index]);
+                        else                  data_copy(m_dest[dest_index], m_source[source_index]);
                     }
                 }
             }
