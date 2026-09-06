@@ -328,6 +328,33 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
     } else {
         network->init(m_network_config);
     }
+#ifdef FUNCTIONAL
+    // Functional simulation needs REAL parameters: nebula's network init leaves
+    // init_weight()/init_data() commented out, so layer->weight/bias stay zero and both the
+    // accelerator datapath (which reads layer->weight) and the reference forward() would
+    // compute all-zero. Load them here for the legacy path. init_weight() takes the WEIGHT
+    // FILE path (not the network config), so parse [data] weight from the config and resolve
+    // it relative to the config directory (nebula opens it via the same relative convention).
+    // (The executable-IR path will instead receive parameters through the tensor artifact --
+    // see the correctness plan.)
+    if(!executable_ir_mode) {
+        config_t functional_config;
+        functional_config.parse(m_network_config);
+        std::string weight_path;
+        for(unsigned i = 0; i < functional_config.sections.size(); i++) {
+            if(functional_config.sections[i].get_setting("weight", &weight_path) &&
+               !weight_path.empty()) {
+                break;
+            }
+        }
+        if(weight_path.empty()) {
+            std::cerr << "Error: FUNCTIONAL build requires a [data] weight file in "
+                      << m_network_config << std::endl;
+            exit(1);
+        }
+        network->init_weight(weight_path);
+    }
+#endif
     std::cout << "  Done!" << std::endl;
 
 	/* Initialize the mapping table. */
@@ -582,6 +609,22 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
             if(!executable_ir_mode) {
                 network->layers[index]->input_data = index > 0
                     ? network->layers[index-1]->output_data : network->input_data;
+#ifdef FUNCTIONAL
+                // Controlled functional input for the FIRST layer: the OpenCV image loader
+                // makes the network input non-deterministic and drifts from any external
+                // golden (correctness plan P1). Overwrite the live input buffer the layer
+                // will actually read (and that the reference forward() shares) with a
+                // DETERMINISTIC signed pattern so accelerator and reference consume the same
+                // values. Lightweight stand-in for the plan's tensor-artifact input.
+                if(index == 0 && network->layers[0]->input_data != NULL) {
+                    const size_t n = static_cast<size_t>(network->layers[0]->input_size)*
+                                     network->batch_size;
+                    for(size_t e = 0; e < n; ++e) {
+                        network->layers[0]->input_data[e] =
+                            static_cast<float>(((e*2654435761ULL + 40503ULL) % 2001) - 1000)/1000.0f;
+                    }
+                }
+#endif
             }
             const bool mapped = executable_ir_mode
                 ? operation->mapping_required
