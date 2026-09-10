@@ -1,0 +1,429 @@
+<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NPUsim · Figure drafts 2–4</title><style>
+*{box-sizing:border-box}body{margin:0;background:#eee;color:#161616;font:16px/1.55 system-ui,sans-serif}header{max-width:1260px;margin:32px auto 22px;padding:0 24px}h1{font-size:27px;margin:0 0 9px}header p{margin:6px 0;color:#444}nav{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:20px}button,a{color:inherit}button{font:inherit;border:1px solid #888;padding:7px 14px;background:white;cursor:pointer}button[aria-pressed=true]{background:#222;color:white}nav a{margin-left:8px}main{max-width:1260px;margin:auto;padding:0 24px 50px}article{background:white;border:1px solid #aaa;margin:24px 0;padding:24px}h2{font-size:20px;margin:0 0 4px}.note{margin:0 0 20px;color:#555}.meta{float:right;font-size:14px;font-weight:400}.viewport{overflow:auto;padding:12px 0}.art{width:100%;margin:auto}.art svg{display:block;width:100%;height:auto}.single{max-width:680px}body.paper .art{width:7in;max-width:none}body.paper .single{width:3.5in}.caption{font:17px/1.45 Georgia,'Times New Roman',serif;max-width:1080px;margin:16px auto}.files{border-top:1px solid #ddd;margin-top:20px;padding-top:12px;display:flex;gap:20px;flex-wrap:wrap;font-size:14px}footer{font-size:14px;color:#555;margin-top:22px}@media print{body{background:white}header,nav,.note,.meta,.files,footer{display:none}main{padding:0}article{border:0;margin:0;break-after:page}h2{font-size:12pt}.art{width:7in;max-width:100%}.single{width:3.5in}.caption{font-size:10pt}}
+</style><header><h1>NPUsim — Fig. 2–4 초안</h1><p>Abstract–Section 4의 현재 본문을 바탕으로 작성한 흑백 벡터 도식입니다.</p><p>SVG는 개별 도형과 텍스트를 편집할 수 있고, PDF는 LaTeX 삽입용 벡터 파일입니다.</p><nav><button id="large" aria-pressed="true">크게 보기</button><button id="paper" aria-pressed="false">논문 폭으로 보기</button><a href="README.md">설계 메모</a><a href="latex_snippets.tex">LaTeX 삽입 예시</a><a href="generate_figures.py">생성 코드</a></nav></header><main><article id="fig2"><h2>Fig. 2. NPUsim overview<span class="meta">두 단 · 7 in</span></h2><p class="note">입력–메인–출력의 흐름과 스케줄러·하드웨어의 역할 분리.</p><div class="viewport"><div class="art "><svg xmlns="http://www.w3.org/2000/svg" width="1220" height="500" viewBox="0 0 1220 500" role="img" aria-labelledby="fig2-title fig2-desc">
+<title id="fig2-title">Fig. 2. NPUsim overview</title><desc id="fig2-desc">Separate hardware specifications, scheduling schemes and DNN workloads drive decoupled execution schedulers and modular hardware models. Component activities determine timing, utilization and energy; functional execution is optional.</desc>
+<defs>
+<marker id="fig2-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#111"/></marker>
+<pattern id="fig2-stall" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="white"/><path d="M-2 2 L2 -2 M0 7 L7 0 M5 9 L9 5" stroke="#777" stroke-width="1"/></pattern>
+</defs>
+<g font-family="Arial, Helvetica, Liberation Sans, sans-serif" font-size="18" fill="#111" stroke-linejoin="miter">
+<rect width="1220" height="500" fill="white"/>
+<rect x="12" y="24" width="277" height="459" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="22" y="12" width="145.60000000000002" height="22" fill="white"/>
+<text x="28" y="29" font-size="20" text-anchor="start" font-weight="bold" fill="#111">Input module</text>
+<rect x="344" y="24" width="607" height="459" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="354" y="12" width="134.8" height="22" fill="white"/>
+<text x="360" y="29" font-size="20" text-anchor="start" font-weight="bold" fill="#111">Main module</text>
+<rect x="999" y="24" width="209" height="459" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="1009" y="12" width="156.4" height="22" fill="white"/>
+<text x="1015" y="29" font-size="20" text-anchor="start" font-weight="bold" fill="#111">Output module</text>
+<rect x="26" y="55" width="248" height="100" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="80" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Hardware specification</text>
+<text x="38" y="104" font-size="17" text-anchor="start" fill="#111">PEs, buffers, links, DRAM</text>
+<text x="38" y="127" font-size="17" text-anchor="start" fill="#111">Structure, precision, format</text>
+<rect x="26" y="188" width="248" height="79" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="213" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Scheduling scheme</text>
+<text x="38" y="237" font-size="17" text-anchor="start" fill="#111">Dataflow &amp; mapping</text>
+<rect x="26" y="310" width="248" height="105" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="335" font-size="18" text-anchor="start" font-weight="bold" fill="#111">DNN workload / PyTorch</text>
+<text x="38" y="359" font-size="17" text-anchor="start" fill="#111">Layer dimensions</text>
+<text x="38" y="382" font-size="17" text-anchor="start" fill="#111">Tensor values (optional)</text>
+<rect x="26" y="434" width="248" height="35" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="459" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Accelergy / CACTI</text>
+<rect x="365" y="188" width="230" height="128" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="377" y="213" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Execution schedulers</text>
+<text x="377" y="237" font-size="17" text-anchor="start" fill="#111">Per-boundary tile schedules</text>
+<text x="377" y="260" font-size="17" text-anchor="start" fill="#111">Tile offsets &amp; reuse counts</text>
+<text x="377" y="283" font-size="17" text-anchor="start" fill="#111">Transfer &amp; compute order</text>
+<rect x="684" y="52" width="250" height="347" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="694" y="40" width="190.42000000000002" height="22" fill="white"/>
+<text x="700" y="57" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Simulation engine</text>
+<rect x="698" y="81" width="222" height="83" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="710" y="106" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Component models</text>
+<text x="710" y="130" font-size="17" text-anchor="start" fill="#111">Instantiate &amp; connect</text>
+<text x="710" y="153" font-size="17" text-anchor="start" fill="#111">PE / buffer / link / DRAM</text>
+<rect x="698" y="196" width="222" height="98" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="710" y="221" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Cycle-level timing</text>
+<text x="710" y="245" font-size="17" text-anchor="start" fill="#111">Dependencies / contention</text>
+<text x="710" y="268" font-size="17" text-anchor="start" fill="#111">Buffering / overlap</text>
+<rect x="698" y="327" width="222" height="54" fill="white" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="710" y="352" font-size="17" text-anchor="start" font-weight="bold" fill="#111">Functional execution</text>
+<text x="710" y="376" font-size="16" text-anchor="start" fill="#111">Actual tensor arithmetic</text>
+<rect x="365" y="431" width="230" height="37" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="377" y="456" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Component cost model</text>
+<rect x="698" y="431" width="222" height="37" fill="#ddd" stroke="#111" stroke-width="1.3"/>
+<text x="710" y="456" font-size="17" text-anchor="start" font-weight="bold" fill="#111">Activity / cost accounting</text>
+<path d="M274,107 L698,107" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<path d="M274,227 L365,227" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<path d="M274,346 L319,346 L319,284 L365,284" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<text x="295" y="302" font-size="16" text-anchor="start" fill="#111">Layers</text>
+<path d="M274,388 L609,388" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4"/>
+<path d="M621,388 L657,388 L657,355 L698,355" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig2-arrow)"/>
+<text x="450" y="379" font-size="17" text-anchor="middle" fill="#111">Tensor values (optional)</text>
+<path d="M595,217 L698,217" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<text x="646" y="207" font-size="16" text-anchor="middle" fill="#111">Tiles / order</text>
+<path d="M698,278 L595,278" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig2-arrow)"/>
+<text x="646" y="266" font-size="16" text-anchor="middle" fill="#111">Requests</text>
+<path d="M809,164 L809,196" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<path d="M809,294 L809,327" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig2-arrow)"/>
+<path d="M920,246 L941,246 L941,411 L809,411 L809,431" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<path d="M809,381 L809,411" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4"/>
+<path d="M274,451 L365,451" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<path d="M595,448 L698,448" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<text x="646" y="436" font-size="16" text-anchor="middle" fill="#111">Unit costs</text>
+<path d="M615,448 L615,306 L698,306 L698,294" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<path d="M920,450 L973,450 L973,223 L1013,223" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig2-arrow)"/>
+<rect x="1013" y="64" width="181" height="304" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="1025" y="89" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Runtime statistics</text>
+<text x="1025" y="119" font-size="18" text-anchor="start" fill="#111">Execution cycles</text>
+<text x="1025" y="155" font-size="18" text-anchor="start" fill="#111">Energy</text>
+<text x="1025" y="191" font-size="18" text-anchor="start" fill="#111">PE utilization</text>
+<text x="1025" y="227" font-size="18" text-anchor="start" fill="#111">Buffer occupancy</text>
+<text x="1025" y="263" font-size="18" text-anchor="start" fill="#111">Operation count</text>
+<text x="1025" y="299" font-size="18" text-anchor="start" fill="#111">OPS / intensity</text>
+<rect x="1013" y="391" width="181" height="77" fill="white" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="1025" y="416" font-size="18" text-anchor="start" font-weight="bold" fill="#111">DNN output</text>
+<text x="1025" y="440" font-size="17" text-anchor="start" fill="#111">Inference accuracy</text>
+<text x="1103" y="458" font-size="16" text-anchor="middle" font-style="italic" fill="#111">(functional mode)</text>
+<path d="M973,429 L1013,429" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig2-arrow)"/>
+<text x="365" y="345" font-size="17" text-anchor="start" font-style="italic" fill="#111">What moves, and in what order</text>
+</g></svg></div></div><p class="caption"><b>Fig. 2.</b> Overview of NPUsim. Separate hardware specifications, scheduling schemes, and DNN workloads drive modular hardware models and execution schedulers. Schedulers determine tile transfers and execution order, while hardware models determine cycle costs and component availability. Traced activities and component cost models produce runtime statistics; functional execution optionally evaluates actual tensor values.</p><div class="files"><a href="fig2_npusim_overview.svg" download>SVG 원본</a><a href="fig2_npusim_overview.pdf">벡터 PDF</a><a href="fig2_npusim_overview.png">PNG 미리보기</a></div></article><article id="fig3"><h2>Fig. 3. Configurable architecture modeling<span class="meta">한 단 · 3.5 in</span></h2><p class="note">설정 블록으로 공통 모델을 선택하고 세 가지 아키텍처를 조립하는 과정.</p><div class="viewport"><div class="art single"><svg xmlns="http://www.w3.org/2000/svg" width="620" height="797" viewBox="0 0 620 797" role="img" aria-labelledby="fig3-title fig3-desc">
+<title id="fig3-title">Fig. 3. Configurable architecture modeling</title><desc id="fig3-desc">Hardware configuration blocks select and parameterize a shared component library. The same library composes spatial, systolic and multi-chip designs, and supports optional optimization modules.</desc>
+<defs>
+<marker id="fig3-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#111"/></marker>
+<pattern id="fig3-stall" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="white"/><path d="M-2 2 L2 -2 M0 7 L7 0 M5 9 L9 5" stroke="#777" stroke-width="1"/></pattern>
+</defs>
+<g font-family="Arial, Helvetica, Liberation Sans, sans-serif" font-size="18" fill="#111" stroke-linejoin="miter">
+<rect width="620" height="797" fill="white"/>
+<rect x="12" y="24" width="209" height="235" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="24" y="49" font-size="17.5" text-anchor="start" font-weight="bold" fill="#111">Hardware specification</text>
+<text x="25" y="80" font-size="17" text-anchor="start" fill="#111">Component blocks</text>
+<text x="25" y="109" font-size="17" text-anchor="start" fill="#111">• Type / organization</text>
+<text x="25" y="138" font-size="17" text-anchor="start" fill="#111">• Dimensions / capacity</text>
+<text x="25" y="167" font-size="17" text-anchor="start" fill="#111">• Bandwidth / clock</text>
+<text x="25" y="196" font-size="17" text-anchor="start" fill="#111">• Access cycles / energy</text>
+<text x="25" y="225" font-size="17" text-anchor="start" fill="#111">• Precision / format</text>
+<path d="M221,140 L262,140" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<text x="241" y="119" font-size="15" text-anchor="middle" font-style="italic" fill="#111">select</text>
+<rect x="266" y="24" width="342" height="394" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="276" y="12" width="190.42000000000002" height="22" fill="white"/>
+<text x="282" y="29" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Component library</text>
+<text x="281" y="64" font-size="18" text-anchor="start" font-weight="bold" fill="#111">PE</text>
+<text x="281" y="89" font-size="16.5" text-anchor="start" fill="#111">MAC lanes + I / W / O local buffers</text>
+<path d="M280,107 L593,107" fill="none" stroke="#111" stroke-width="0.7"/>
+<text x="281" y="127" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Array / interconnect</text>
+<text x="281" y="152" font-size="16.5" text-anchor="start" fill="#111">Spatial / systolic / tree; bus / mesh</text>
+<path d="M280,170 L593,170" fill="none" stroke="#111" stroke-width="0.7"/>
+<text x="281" y="190" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Global buffer</text>
+<text x="281" y="215" font-size="16.5" text-anchor="start" fill="#111">Shared / partitioned; double / bypass</text>
+<path d="M280,233 L593,233" fill="none" stroke="#111" stroke-width="0.7"/>
+<text x="281" y="253" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Package network</text>
+<text x="281" y="278" font-size="16.5" text-anchor="start" fill="#111">Chip grid + multicast delivery</text>
+<path d="M280,296 L593,296" fill="none" stroke="#111" stroke-width="0.7"/>
+<text x="281" y="316" font-size="18" text-anchor="start" font-weight="bold" fill="#111">DRAM</text>
+<text x="281" y="341" font-size="16.5" text-anchor="start" fill="#111">Analytical model / DRAMsim3</text>
+<rect x="279" y="365" width="315" height="39" fill="#ededed" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="436" y="390" font-size="17" text-anchor="middle" font-weight="bold" fill="#111">Optimization modules</text>
+<rect x="12" y="290" width="209" height="128" fill="white" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="24" y="315" font-size="17" text-anchor="start" font-weight="bold" fill="#111">Optional module blocks</text>
+<text x="24" y="339" font-size="16" text-anchor="start" fill="#111">Weight decompressor</text>
+<text x="24" y="362" font-size="16" text-anchor="start" fill="#111">SFU / KV-cache unit</text>
+<path d="M221,385 L279,385" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig3-arrow)"/>
+<path d="M437,418 L437,429 L310,429" fill="none" stroke="#111" stroke-width="1.3"/>
+<text x="310" y="450" font-size="18" text-anchor="middle" font-weight="bold" fill="#111">Instantiate &amp; connect at initialization</text>
+<path d="M310,456 L310,468 L102,468 L102,494" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M310,468 L310,494" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M310,468 L518,468 L518,494" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="12" y="494" width="180" height="278" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="102" y="519" font-size="18" text-anchor="middle" font-weight="bold" fill="#111">(a) Spatial</text>
+<text x="102" y="542" font-size="17" text-anchor="middle" font-style="italic" fill="#111">Eyeriss-like</text>
+<rect x="29" y="558" width="146" height="28" fill="#ddd" stroke="#111" stroke-width="1.3"/>
+<text x="102" y="578" font-size="17" text-anchor="middle" fill="#111">DRAM</text>
+<path d="M102,586 L102,606" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)" marker-start="url(#fig3-arrow)"/>
+<rect x="220" y="494" width="180" height="278" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="310" y="519" font-size="18" text-anchor="middle" font-weight="bold" fill="#111">(b) Systolic</text>
+<text x="310" y="542" font-size="17" text-anchor="middle" font-style="italic" fill="#111">TPU-like</text>
+<rect x="237" y="558" width="146" height="28" fill="#ddd" stroke="#111" stroke-width="1.3"/>
+<text x="310" y="578" font-size="17" text-anchor="middle" fill="#111">HBM</text>
+<path d="M310,586 L310,606" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)" marker-start="url(#fig3-arrow)"/>
+<rect x="428" y="494" width="180" height="278" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="518" y="519" font-size="18" text-anchor="middle" font-weight="bold" fill="#111">(c) Multi-chip</text>
+<text x="518" y="542" font-size="17" text-anchor="middle" font-style="italic" fill="#111">Simba-like</text>
+<rect x="445" y="558" width="146" height="28" fill="#ddd" stroke="#111" stroke-width="1.3"/>
+<text x="518" y="578" font-size="17" text-anchor="middle" fill="#111">DRAM</text>
+<path d="M518,586 L518,606" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)" marker-start="url(#fig3-arrow)"/>
+<rect x="29" y="607" width="48" height="28" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="53" y="627" font-size="16" text-anchor="middle" fill="#111">I</text>
+<rect x="78" y="607" width="48" height="28" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="102" y="627" font-size="16" text-anchor="middle" fill="#111">W</text>
+<rect x="127" y="607" width="48" height="28" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="151" y="627" font-size="16" text-anchor="middle" fill="#111">O</text>
+<text x="102" y="654" font-size="16" text-anchor="middle" fill="#111">Partitioned buffer</text>
+<path d="M102,657 L102,671" fill="none" stroke="#111" stroke-width="1.5"/>
+<path d="M36,671 L168,671" fill="none" stroke="#111" stroke-width="2"/>
+<path d="M53,671 L53,690" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="40" y="690" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="53.5" y="708.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M53,717 L53,731" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="40" y="731" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="53.5" y="749.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M102,671 L102,690" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="89" y="690" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="102.5" y="708.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M102,717 L102,731" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="89" y="731" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="102.5" y="749.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M151,671 L151,690" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="138" y="690" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="151.5" y="708.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M151,717 L151,731" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="138" y="731" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="151.5" y="749.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<text x="186" y="687" font-size="14" text-anchor="end" fill="#111">Bus</text>
+<rect x="237" y="607" width="146" height="28" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="310" y="627" font-size="16" text-anchor="middle" fill="#111">Shared buffer</text>
+<path d="M264,635 L264,654" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M278,667 L298,667" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M264,681 L264,690" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="251" y="654" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="264.5" y="672.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M311,635 L311,654" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M325,667 L345,667" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M311,681 L311,690" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="298" y="654" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="311.5" y="672.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M358,635 L358,654" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M358,681 L358,690" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="345" y="654" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="358.5" y="672.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M278,703 L298,703" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M264,717 L264,726" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="251" y="690" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="264.5" y="708.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M325,703 L345,703" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<path d="M311,717 L311,726" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="298" y="690" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="311.5" y="708.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M358,717 L358,726" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="345" y="690" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="358.5" y="708.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M278,739 L298,739" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="251" y="726" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="264.5" y="744.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<path d="M325,739 L345,739" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)"/>
+<rect x="298" y="726" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="311.5" y="744.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<rect x="345" y="726" width="27" height="27" fill="white" stroke="#111" stroke-width="1"/>
+<text x="358.5" y="744.26" font-size="14" text-anchor="middle" fill="#111">PE</text>
+<rect x="440" y="608" width="156" height="149" fill="white" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="518" y="630" font-size="16" text-anchor="middle" fill="#111">Package network</text>
+<rect x="450" y="643" width="59" height="44" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="479" y="661" font-size="16" text-anchor="middle" fill="#111">Chip</text>
+<rect x="457" y="668" width="15" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="477" y="668" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="485" y="668" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="493" y="668" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<path d="M509,665 L527,665" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)" marker-start="url(#fig3-arrow)"/>
+<path d="M479,687 L479,702" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)" marker-start="url(#fig3-arrow)"/>
+<rect x="527" y="643" width="59" height="44" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="556" y="661" font-size="16" text-anchor="middle" fill="#111">Chip</text>
+<rect x="534" y="668" width="15" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="554" y="668" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="562" y="668" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="570" y="668" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<path d="M556,687 L556,702" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)" marker-start="url(#fig3-arrow)"/>
+<rect x="450" y="702" width="59" height="44" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="479" y="720" font-size="16" text-anchor="middle" fill="#111">Chip</text>
+<rect x="457" y="727" width="15" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="477" y="727" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="485" y="727" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="493" y="727" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<path d="M509,724 L527,724" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig3-arrow)" marker-start="url(#fig3-arrow)"/>
+<rect x="527" y="702" width="59" height="44" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="556" y="720" font-size="16" text-anchor="middle" fill="#111">Chip</text>
+<rect x="534" y="727" width="15" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="554" y="727" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="562" y="727" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<rect x="570" y="727" width="6" height="12" fill="white" stroke="#111" stroke-width="0.7"/>
+<text x="310" y="791" font-size="15.5" text-anchor="middle" fill="#111">I / W / O: input / weight / output     SFU: special function unit</text>
+</g></svg></div></div><p class="caption"><b>Fig. 3.</b> Configurable architecture modeling in NPUsim. Hardware configuration blocks select and parameterize a shared component library, which is instantiated and connected at initialization to compose spatial (Eyeriss-like), systolic (TPU-like), and multi-chip (Simba-like) architectures. Optional configuration blocks enable specialized optimization modules. The depicted array and chip counts are illustrative.</p><div class="files"><a href="fig3_configurable_architecture.svg" download>SVG 원본</a><a href="fig3_configurable_architecture.pdf">벡터 PDF</a><a href="fig3_configurable_architecture.png">PNG 미리보기</a></div></article><article id="fig4"><h2>Fig. 4. Decoupled execution scheduling<span class="meta">두 단 · 7 in</span></h2><p class="note">타일 순서와 재사용을 정하는 스케줄러, 그리고 실제 시간·stall을 결정하는 하드웨어.</p><div class="viewport"><div class="art "><svg xmlns="http://www.w3.org/2000/svg" width="1220" height="678" viewBox="0 0 1220 678" role="img" aria-labelledby="fig4-title fig4-desc">
+<title id="fig4-title">Fig. 4. Decoupled scheduling and cycle-level execution</title><desc id="fig4-desc">Panel a derives tile schedules and illustrates demand-driven hardware execution. Panel b composes component costs into a buffered pipeline, exposing overlap, stalls and energy activities. Timings are illustrative, not measured.</desc>
+<defs>
+<marker id="fig4-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#111"/></marker>
+<pattern id="fig4-stall" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="white"/><path d="M-2 2 L2 -2 M0 7 L7 0 M5 9 L9 5" stroke="#777" stroke-width="1"/></pattern>
+</defs>
+<g font-family="Arial, Helvetica, Liberation Sans, sans-serif" font-size="18" fill="#111" stroke-linejoin="miter">
+<rect width="1220" height="678" fill="white"/>
+<text x="12" y="24" font-size="21" text-anchor="start" font-weight="bold" fill="#111">(a) Decoupled execution scheduling</text>
+<rect x="12" y="43" width="273" height="64" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="24" y="68" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Scheduling scheme</text>
+<text x="24" y="92" font-size="17" text-anchor="start" fill="#111">Dataflow + mapping at each level</text>
+<rect x="318" y="43" width="270" height="64" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="330" y="68" font-size="18" text-anchor="start" font-weight="bold" fill="#111">DNN layer dimensions</text>
+<path d="M149,107 L149,125 L300,125 L300,143" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<path d="M453,107 L453,125 L300,125" fill="none" stroke="#111" stroke-width="1.5"/>
+<rect x="12" y="143" width="576" height="151" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="24" y="168" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Per-boundary tile schedules</text>
+<path d="M24,181 L576,181" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M24,208 L576,208" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M24,235 L576,235" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M24,262 L576,262" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M143,181 L143,285" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M395,181 L395,285" fill="none" stroke="#111" stroke-width="0.65"/>
+<text x="32" y="201" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Tensor</text>
+<text x="159" y="201" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Tile offsets (ordered)</text>
+<text x="409" y="201" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Reuse counts</text>
+<text x="32" y="228" font-size="18" text-anchor="start" fill="#111">Weight</text>
+<text x="159" y="228" font-size="18" text-anchor="start" fill="#111">w₀, w₁, …</text>
+<text x="409" y="228" font-size="18" text-anchor="start" fill="#111">4, 4, …</text>
+<text x="32" y="255" font-size="18" text-anchor="start" fill="#111">Input</text>
+<text x="159" y="255" font-size="18" text-anchor="start" fill="#111">i₀, i₁, …</text>
+<text x="409" y="255" font-size="18" text-anchor="start" fill="#111">1, 1, …</text>
+<text x="32" y="282" font-size="18" text-anchor="start" fill="#111">Output</text>
+<text x="159" y="282" font-size="18" text-anchor="start" fill="#111">o₀, o₁, …</text>
+<text x="409" y="282" font-size="18" text-anchor="start" fill="#111">1, 1, …</text>
+<text x="12" y="324" font-size="19" text-anchor="start" font-weight="bold" fill="#111">WS example at the local buffer</text>
+<text x="12" y="346" font-size="17" text-anchor="start" fill="#111">One weight tile is reused across four input tiles.</text>
+<text x="16" y="379" font-size="18" text-anchor="start" fill="#111">Weight</text>
+<text x="16" y="417" font-size="18" text-anchor="start" fill="#111">Input</text>
+<rect x="121" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="166" y="416" font-size="18" text-anchor="middle" fill="#111">i₀</text>
+<rect x="211" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="256" y="416" font-size="18" text-anchor="middle" fill="#111">i₁</text>
+<rect x="301" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="346" y="416" font-size="18" text-anchor="middle" fill="#111">i₂</text>
+<rect x="391" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="436" y="416" font-size="18" text-anchor="middle" fill="#111">i₃</text>
+<rect x="121" y="357" width="360" height="30" fill="#ccc" stroke="#111" stroke-width="1.3"/>
+<text x="301" y="379" font-size="18" text-anchor="middle" fill="#111">w₀ held in place (reuse = 4)</text>
+<rect x="504" y="357" width="70" height="30" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="539" y="379" font-size="18" text-anchor="middle" fill="#111">w₁</text>
+<path d="M481,372 L504,372" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<text x="539" y="416" font-size="22" text-anchor="middle" fill="#111">…</text>
+<path d="M121,440 L574,440" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<text x="346" y="462" font-size="16" text-anchor="middle" font-style="italic" fill="#111">Logical order (not elapsed cycles)</text>
+<text x="12" y="497" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Demand-driven execution on hardware</text>
+<rect x="12" y="555" width="96" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="60.0" y="580" font-size="18" text-anchor="middle" fill="#111">DRAM</text>
+<rect x="132" y="555" width="104" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="184.0" y="580" font-size="18" text-anchor="middle" fill="#111">Package</text>
+<rect x="260" y="555" width="86" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="303.0" y="580" font-size="18" text-anchor="middle" fill="#111">GB</text>
+<rect x="370" y="555" width="86" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="413.0" y="580" font-size="18" text-anchor="middle" fill="#111">LB</text>
+<rect x="480" y="555" width="108" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="534.0" y="580" font-size="18" text-anchor="middle" fill="#111">MAC / RF</text>
+<path d="M108,574 L132,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<rect x="101.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="120.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₀</text>
+<path d="M120.0,607 L120.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<path d="M236,574 L260,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<rect x="229.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="248.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₁</text>
+<path d="M248.0,607 L248.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<path d="M346,574 L370,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<rect x="339.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="358.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₂</text>
+<path d="M358.0,607 L358.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<path d="M456,574 L480,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<rect x="449.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="468.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₃</text>
+<path d="M468.0,607 L468.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<path d="M184.0,552 L184.0,533 L60.0,533 L60.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig4-arrow)"/>
+<path d="M303.0,552 L303.0,533 L184.0,533 L184.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig4-arrow)"/>
+<path d="M413.0,552 L413.0,533 L303.0,533 L303.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig4-arrow)"/>
+<path d="M534.0,552 L534.0,533 L413.0,533 L413.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#fig4-arrow)"/>
+<text x="299" y="525" font-size="16" text-anchor="middle" fill="#111">Request escalates if the upstream level is exhausted</text>
+<text x="300" y="657" font-size="16" text-anchor="middle" fill="#111">S₀–S₃: scheduler at each memory boundary; solid arrows: delivery</text>
+<path d="M610,12 L610,665" fill="none" stroke="#111" stroke-width="0.7" stroke-dasharray="6 4"/>
+<g transform="translate(620 0)">
+<text x="12" y="24" font-size="21" text-anchor="start" font-weight="bold" fill="#111">(b) Cycle-level timing and energy</text>
+<rect x="12" y="43" width="576" height="64" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="24" y="68" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Hardware determines elapsed time</text>
+<text x="24" y="92" font-size="18" text-anchor="start" fill="#111">Access latency, link bandwidth, resource availability</text>
+<text x="12" y="139" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Illustrative pipeline: two buffer slots per boundary</text>
+<rect x="12" y="160" width="105" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="64.5" y="185" font-size="17" text-anchor="middle" fill="#111">DRAM</text>
+<rect x="242" y="160" width="92" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="288.0" y="185" font-size="17" text-anchor="middle" fill="#111">GB</text>
+<rect x="469" y="160" width="119" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="528.5" y="185" font-size="17" text-anchor="middle" fill="#111">LB / MACs</text>
+<path d="M117,179 L242,179" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<rect x="153.5" y="167" width="23" height="24" fill="white" stroke="#111" stroke-width="1.3"/>
+<rect x="180.5" y="167" width="23" height="24" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="179.5" y="220" font-size="16" text-anchor="middle" fill="#111">2 slots</text>
+<path d="M334,179 L469,179" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#fig4-arrow)"/>
+<rect x="375.5" y="167" width="23" height="24" fill="white" stroke="#111" stroke-width="1.3"/>
+<rect x="402.5" y="167" width="23" height="24" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="401.5" y="220" font-size="16" text-anchor="middle" fill="#111">2 slots</text>
+<path d="M157,271 L580.0,271" fill="none" stroke="#111" stroke-width="1" marker-end="url(#fig4-arrow)"/>
+<path d="M157.0,271 L157.0,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="157.0" y="258" font-size="16" text-anchor="middle" fill="#111">0</text>
+<path d="M198.2,271 L198.2,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="198.2" y="258" font-size="16" text-anchor="middle" fill="#111">2</text>
+<path d="M239.4,271 L239.4,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="239.4" y="258" font-size="16" text-anchor="middle" fill="#111">4</text>
+<path d="M280.6,271 L280.6,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="280.6" y="258" font-size="16" text-anchor="middle" fill="#111">6</text>
+<path d="M321.8,271 L321.8,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="321.8" y="258" font-size="16" text-anchor="middle" fill="#111">8</text>
+<path d="M363.0,271 L363.0,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="363.0" y="258" font-size="16" text-anchor="middle" fill="#111">10</text>
+<path d="M404.20000000000005,271 L404.20000000000005,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="404.20000000000005" y="258" font-size="16" text-anchor="middle" fill="#111">12</text>
+<path d="M445.40000000000003,271 L445.40000000000003,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="445.40000000000003" y="258" font-size="16" text-anchor="middle" fill="#111">14</text>
+<path d="M486.6,271 L486.6,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="486.6" y="258" font-size="16" text-anchor="middle" fill="#111">16</text>
+<path d="M527.8,271 L527.8,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="527.8" y="258" font-size="16" text-anchor="middle" fill="#111">18</text>
+<path d="M569.0,271 L569.0,462" fill="none" stroke="#111" stroke-width="0.45" stroke-dasharray="6 4"/>
+<text x="569.0" y="258" font-size="16" text-anchor="middle" fill="#111">20</text>
+<text x="368" y="241" font-size="16" text-anchor="middle" fill="#111">Example cycles</text>
+<text x="12" y="323" font-size="17" text-anchor="start" fill="#111">DRAM → GB</text>
+<path d="M157,334 L569.0,334" fill="none" stroke="#111" stroke-width="0.7"/>
+<rect x="157.0" y="300" width="41.2" height="34" fill="white" stroke="#111" stroke-width="1"/>
+<text x="177.6" y="323" font-size="17" text-anchor="middle" fill="#111">T0</text>
+<rect x="198.2" y="300" width="41.2" height="34" fill="#ddd" stroke="#111" stroke-width="1"/>
+<text x="218.8" y="323" font-size="17" text-anchor="middle" fill="#111">T1</text>
+<rect x="239.4" y="300" width="41.2" height="34" fill="#aaa" stroke="#111" stroke-width="1"/>
+<text x="260.0" y="323" font-size="17" text-anchor="middle" fill="#111">T2</text>
+<rect x="280.6" y="300" width="41.2" height="34" fill="#707070" stroke="#111" stroke-width="1"/>
+<text x="301.20000000000005" y="323" font-size="17" text-anchor="middle" fill="white">T3</text>
+<text x="12" y="380" font-size="17" text-anchor="start" fill="#111">GB → LB</text>
+<path d="M157,391 L569.0,391" fill="none" stroke="#111" stroke-width="0.7"/>
+<rect x="198.2" y="357" width="41.2" height="34" fill="white" stroke="#111" stroke-width="1"/>
+<text x="218.8" y="380" font-size="17" text-anchor="middle" fill="#111">T0</text>
+<rect x="239.4" y="357" width="41.2" height="34" fill="#ddd" stroke="#111" stroke-width="1"/>
+<text x="260.0" y="380" font-size="17" text-anchor="middle" fill="#111">T1</text>
+<rect x="321.8" y="357" width="41.2" height="34" fill="#aaa" stroke="#111" stroke-width="1"/>
+<text x="342.4" y="380" font-size="17" text-anchor="middle" fill="#111">T2</text>
+<rect x="404.20000000000005" y="357" width="41.2" height="34" fill="#707070" stroke="#111" stroke-width="1"/>
+<text x="424.8" y="380" font-size="17" text-anchor="middle" fill="white">T3</text>
+<text x="12" y="437" font-size="17" text-anchor="start" fill="#111">MAC compute</text>
+<path d="M157,448 L569.0,448" fill="none" stroke="#111" stroke-width="0.7"/>
+<rect x="239.4" y="414" width="82.4" height="34" fill="white" stroke="#111" stroke-width="1"/>
+<text x="280.6" y="437" font-size="17" text-anchor="middle" fill="#111">T0</text>
+<rect x="321.8" y="414" width="82.4" height="34" fill="#ddd" stroke="#111" stroke-width="1"/>
+<text x="363.0" y="437" font-size="17" text-anchor="middle" fill="#111">T1</text>
+<rect x="404.20000000000005" y="414" width="82.4" height="34" fill="#aaa" stroke="#111" stroke-width="1"/>
+<text x="445.40000000000003" y="437" font-size="17" text-anchor="middle" fill="#111">T2</text>
+<rect x="486.6" y="414" width="82.4" height="34" fill="#707070" stroke="#111" stroke-width="1"/>
+<text x="527.8" y="437" font-size="17" text-anchor="middle" fill="white">T3</text>
+<rect x="280.6" y="357" width="41.2" height="34" fill="url(#fig4-stall)" stroke="#111" stroke-width="1"/>
+<rect x="363.0" y="357" width="41.2" height="34" fill="url(#fig4-stall)" stroke="#111" stroke-width="1"/>
+<text x="379" y="492" font-size="17" text-anchor="middle" font-weight="bold" fill="#111">Compute runs back-to-back after startup</text>
+<path d="M239.4,462 L239.4,470 L569.0,470 L569.0,462" fill="none" stroke="#111" stroke-width="1"/>
+<rect x="12" y="515" width="25" height="22" fill="url(#fig4-stall)" stroke="#111" stroke-width="1.3"/>
+<text x="47" y="533" font-size="17" text-anchor="start" fill="#111">Stall: downstream buffer still occupied</text>
+<text x="12" y="562" font-size="17" text-anchor="start" fill="#111">T0–T3: work tiles; 2 / 2 / 4 cycles per stage.</text>
+<text x="12" y="585" font-size="17" text-anchor="start" fill="#111">Slot released after its consumer finishes.</text>
+<rect x="12" y="605" width="576" height="58" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="24" y="629" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Energy from the same traced activities</text>
+<text x="24" y="652" font-size="17" text-anchor="start" fill="#111">Access / operation counts × unit costs + leakage × time</text>
+</g>
+</g></svg></div></div><p class="caption"><b>Fig. 4.</b> Decoupled scheduling and cycle-level execution in NPUsim. (a) Per-boundary schedulers derive tensor tile offsets and reuse counts from the commanded dataflow and mapping. A weight-stationary example holds one weight tile across four input tiles; runtime requests propagate up the memory hierarchy as needed. (b) Hardware costs and buffering compose scheduled work into a cycle-level pipeline. In this illustrative double-buffered example, the compute stage is the bottleneck and upstream transfers stall while local buffer slots remain occupied. The same activities determine energy consumption.</p><div class="files"><a href="fig4_decoupled_scheduling.svg" download>SVG 원본</a><a href="fig4_decoupled_scheduling.pdf">벡터 PDF</a><a href="fig4_decoupled_scheduling.png">PNG 미리보기</a><a href="fig4a_execution_scheduling.svg">(a) SVG</a><a href="fig4b_timing_energy.svg">(b) SVG</a></div></article><footer>Fig. 3의 배열·칩 개수와 Fig. 4의 타임라인 수치는 설명용 예시입니다. 기존 논문 파일은 변경하지 않았습니다.</footer></main><script>
+const large=document.getElementById('large'), paper=document.getElementById('paper');
+function mode(p){document.body.classList.toggle('paper',p);large.setAttribute('aria-pressed',String(!p));paper.setAttribute('aria-pressed',String(p));}
+large.addEventListener('click',()=>mode(false));paper.addEventListener('click',()=>mode(true));
+</script></html>

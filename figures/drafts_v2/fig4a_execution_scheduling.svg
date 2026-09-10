@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="678" viewBox="0 0 600 678" role="img" aria-labelledby="title desc">
+<title id="title">Fig. 4(a). Decoupled execution scheduling</title><desc id="desc">Schedulers select tile offsets and reuse counts independently of hardware timing. A weight-stationary example holds one weight tile for four input tiles. Requests propagate up the hierarchy and per-boundary schedulers select tile deliveries.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#111"/></marker>
+<pattern id="stall" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="white"/><path d="M-2 2 L2 -2 M0 7 L7 0 M5 9 L9 5" stroke="#777" stroke-width="1"/></pattern>
+</defs>
+<g font-family="Arial, Helvetica, Liberation Sans, sans-serif" font-size="18" fill="#111" stroke-linejoin="miter">
+<rect width="600" height="678" fill="white"/>
+<text x="12" y="24" font-size="21" text-anchor="start" font-weight="bold" fill="#111">(a) Decoupled execution scheduling</text>
+<rect x="12" y="43" width="273" height="64" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="24" y="68" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Scheduling scheme</text>
+<text x="24" y="92" font-size="17" text-anchor="start" fill="#111">Dataflow + mapping at each level</text>
+<rect x="318" y="43" width="270" height="64" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="330" y="68" font-size="18" text-anchor="start" font-weight="bold" fill="#111">DNN layer dimensions</text>
+<path d="M149,107 L149,125 L300,125 L300,143" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M453,107 L453,125 L300,125" fill="none" stroke="#111" stroke-width="1.5"/>
+<rect x="12" y="143" width="576" height="151" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="24" y="168" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Per-boundary tile schedules</text>
+<path d="M24,181 L576,181" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M24,208 L576,208" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M24,235 L576,235" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M24,262 L576,262" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M143,181 L143,285" fill="none" stroke="#111" stroke-width="0.65"/>
+<path d="M395,181 L395,285" fill="none" stroke="#111" stroke-width="0.65"/>
+<text x="32" y="201" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Tensor</text>
+<text x="159" y="201" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Tile offsets (ordered)</text>
+<text x="409" y="201" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Reuse counts</text>
+<text x="32" y="228" font-size="18" text-anchor="start" fill="#111">Weight</text>
+<text x="159" y="228" font-size="18" text-anchor="start" fill="#111">w₀, w₁, …</text>
+<text x="409" y="228" font-size="18" text-anchor="start" fill="#111">4, 4, …</text>
+<text x="32" y="255" font-size="18" text-anchor="start" fill="#111">Input</text>
+<text x="159" y="255" font-size="18" text-anchor="start" fill="#111">i₀, i₁, …</text>
+<text x="409" y="255" font-size="18" text-anchor="start" fill="#111">1, 1, …</text>
+<text x="32" y="282" font-size="18" text-anchor="start" fill="#111">Output</text>
+<text x="159" y="282" font-size="18" text-anchor="start" fill="#111">o₀, o₁, …</text>
+<text x="409" y="282" font-size="18" text-anchor="start" fill="#111">1, 1, …</text>
+<text x="12" y="324" font-size="19" text-anchor="start" font-weight="bold" fill="#111">WS example at the local buffer</text>
+<text x="12" y="346" font-size="17" text-anchor="start" fill="#111">One weight tile is reused across four input tiles.</text>
+<text x="16" y="379" font-size="18" text-anchor="start" fill="#111">Weight</text>
+<text x="16" y="417" font-size="18" text-anchor="start" fill="#111">Input</text>
+<rect x="121" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="166" y="416" font-size="18" text-anchor="middle" fill="#111">i₀</text>
+<rect x="211" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="256" y="416" font-size="18" text-anchor="middle" fill="#111">i₁</text>
+<rect x="301" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="346" y="416" font-size="18" text-anchor="middle" fill="#111">i₂</text>
+<rect x="391" y="393" width="90" height="33" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="436" y="416" font-size="18" text-anchor="middle" fill="#111">i₃</text>
+<rect x="121" y="357" width="360" height="30" fill="#ccc" stroke="#111" stroke-width="1.3"/>
+<text x="301" y="379" font-size="18" text-anchor="middle" fill="#111">w₀ held in place (reuse = 4)</text>
+<rect x="504" y="357" width="70" height="30" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="539" y="379" font-size="18" text-anchor="middle" fill="#111">w₁</text>
+<path d="M481,372 L504,372" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="539" y="416" font-size="22" text-anchor="middle" fill="#111">…</text>
+<path d="M121,440 L574,440" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="346" y="462" font-size="16" text-anchor="middle" font-style="italic" fill="#111">Logical order (not elapsed cycles)</text>
+<text x="12" y="497" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Demand-driven execution on hardware</text>
+<rect x="12" y="555" width="96" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="60.0" y="580" font-size="18" text-anchor="middle" fill="#111">DRAM</text>
+<rect x="132" y="555" width="104" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="184.0" y="580" font-size="18" text-anchor="middle" fill="#111">Package</text>
+<rect x="260" y="555" width="86" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="303.0" y="580" font-size="18" text-anchor="middle" fill="#111">GB</text>
+<rect x="370" y="555" width="86" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="413.0" y="580" font-size="18" text-anchor="middle" fill="#111">LB</text>
+<rect x="480" y="555" width="108" height="38" fill="#eee" stroke="#111" stroke-width="1.3"/>
+<text x="534.0" y="580" font-size="18" text-anchor="middle" fill="#111">MAC / RF</text>
+<path d="M108,574 L132,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="101.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="120.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₀</text>
+<path d="M120.0,607 L120.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M236,574 L260,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="229.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="248.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₁</text>
+<path d="M248.0,607 L248.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M346,574 L370,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="339.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="358.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₂</text>
+<path d="M358.0,607 L358.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M456,574 L480,574" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="449.0" y="607" width="38" height="27" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="468.0" y="627" font-size="17" text-anchor="middle" fill="#111">S₃</text>
+<path d="M468.0,607 L468.0,585" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M184.0,552 L184.0,533 L60.0,533 L60.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<path d="M303.0,552 L303.0,533 L184.0,533 L184.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<path d="M413.0,552 L413.0,533 L303.0,533 L303.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<path d="M534.0,552 L534.0,533 L413.0,533 L413.0,552" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<text x="299" y="525" font-size="16" text-anchor="middle" fill="#111">Request escalates if the upstream level is exhausted</text>
+<text x="300" y="657" font-size="16" text-anchor="middle" fill="#111">S₀–S₃: scheduler at each memory boundary; solid arrows: delivery</text>
+</g></svg>

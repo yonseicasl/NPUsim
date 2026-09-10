@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1220" height="500" viewBox="0 0 1220 500" role="img" aria-labelledby="title desc">
+<title id="title">Fig. 2. NPUsim overview</title><desc id="desc">Separate hardware specifications, scheduling schemes and DNN workloads drive decoupled execution schedulers and modular hardware models. Component activities determine timing, utilization and energy; functional execution is optional.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#111"/></marker>
+<pattern id="stall" width="7" height="7" patternUnits="userSpaceOnUse"><rect width="7" height="7" fill="white"/><path d="M-2 2 L2 -2 M0 7 L7 0 M5 9 L9 5" stroke="#777" stroke-width="1"/></pattern>
+</defs>
+<g font-family="Arial, Helvetica, Liberation Sans, sans-serif" font-size="18" fill="#111" stroke-linejoin="miter">
+<rect width="1220" height="500" fill="white"/>
+<rect x="12" y="24" width="277" height="459" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="22" y="12" width="145.60000000000002" height="22" fill="white"/>
+<text x="28" y="29" font-size="20" text-anchor="start" font-weight="bold" fill="#111">Input module</text>
+<rect x="344" y="24" width="607" height="459" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="354" y="12" width="134.8" height="22" fill="white"/>
+<text x="360" y="29" font-size="20" text-anchor="start" font-weight="bold" fill="#111">Main module</text>
+<rect x="999" y="24" width="209" height="459" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="1009" y="12" width="156.4" height="22" fill="white"/>
+<text x="1015" y="29" font-size="20" text-anchor="start" font-weight="bold" fill="#111">Output module</text>
+<rect x="26" y="55" width="248" height="100" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="80" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Hardware specification</text>
+<text x="38" y="104" font-size="17" text-anchor="start" fill="#111">PEs, buffers, links, DRAM</text>
+<text x="38" y="127" font-size="17" text-anchor="start" fill="#111">Structure, precision, format</text>
+<rect x="26" y="188" width="248" height="79" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="213" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Scheduling scheme</text>
+<text x="38" y="237" font-size="17" text-anchor="start" fill="#111">Dataflow &amp; mapping</text>
+<rect x="26" y="310" width="248" height="105" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="335" font-size="18" text-anchor="start" font-weight="bold" fill="#111">DNN workload / PyTorch</text>
+<text x="38" y="359" font-size="17" text-anchor="start" fill="#111">Layer dimensions</text>
+<text x="38" y="382" font-size="17" text-anchor="start" fill="#111">Tensor values (optional)</text>
+<rect x="26" y="434" width="248" height="35" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="38" y="459" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Accelergy / CACTI</text>
+<rect x="365" y="188" width="230" height="128" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="377" y="213" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Execution schedulers</text>
+<text x="377" y="237" font-size="17" text-anchor="start" fill="#111">Per-boundary tile schedules</text>
+<text x="377" y="260" font-size="17" text-anchor="start" fill="#111">Tile offsets &amp; reuse counts</text>
+<text x="377" y="283" font-size="17" text-anchor="start" fill="#111">Transfer &amp; compute order</text>
+<rect x="684" y="52" width="250" height="347" fill="none" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<rect x="694" y="40" width="190.42000000000002" height="22" fill="white"/>
+<text x="700" y="57" font-size="19" text-anchor="start" font-weight="bold" fill="#111">Simulation engine</text>
+<rect x="698" y="81" width="222" height="83" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="710" y="106" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Component models</text>
+<text x="710" y="130" font-size="17" text-anchor="start" fill="#111">Instantiate &amp; connect</text>
+<text x="710" y="153" font-size="17" text-anchor="start" fill="#111">PE / buffer / link / DRAM</text>
+<rect x="698" y="196" width="222" height="98" fill="#ededed" stroke="#111" stroke-width="1.3"/>
+<text x="710" y="221" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Cycle-level timing</text>
+<text x="710" y="245" font-size="17" text-anchor="start" fill="#111">Dependencies / contention</text>
+<text x="710" y="268" font-size="17" text-anchor="start" fill="#111">Buffering / overlap</text>
+<rect x="698" y="327" width="222" height="54" fill="white" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="710" y="352" font-size="17" text-anchor="start" font-weight="bold" fill="#111">Functional execution</text>
+<text x="710" y="376" font-size="16" text-anchor="start" fill="#111">Actual tensor arithmetic</text>
+<rect x="365" y="431" width="230" height="37" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="377" y="456" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Component cost model</text>
+<rect x="698" y="431" width="222" height="37" fill="#ddd" stroke="#111" stroke-width="1.3"/>
+<text x="710" y="456" font-size="17" text-anchor="start" font-weight="bold" fill="#111">Activity / cost accounting</text>
+<path d="M274,107 L698,107" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M274,227 L365,227" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M274,346 L319,346 L319,284 L365,284" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="295" y="302" font-size="16" text-anchor="start" fill="#111">Layers</text>
+<path d="M274,388 L609,388" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4"/>
+<path d="M621,388 L657,388 L657,355 L698,355" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<text x="450" y="379" font-size="17" text-anchor="middle" fill="#111">Tensor values (optional)</text>
+<path d="M595,217 L698,217" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="646" y="207" font-size="16" text-anchor="middle" fill="#111">Tiles / order</text>
+<path d="M698,278 L595,278" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<text x="646" y="266" font-size="16" text-anchor="middle" fill="#111">Requests</text>
+<path d="M809,164 L809,196" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M809,294 L809,327" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<path d="M920,246 L941,246 L941,411 L809,411 L809,431" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M809,381 L809,411" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4"/>
+<path d="M274,451 L365,451" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M595,448 L698,448" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="646" y="436" font-size="16" text-anchor="middle" fill="#111">Unit costs</text>
+<path d="M615,448 L615,306 L698,306 L698,294" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M920,450 L973,450 L973,223 L1013,223" fill="none" stroke="#111" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="1013" y="64" width="181" height="304" fill="white" stroke="#111" stroke-width="1.3"/>
+<text x="1025" y="89" font-size="18" text-anchor="start" font-weight="bold" fill="#111">Runtime statistics</text>
+<text x="1025" y="119" font-size="18" text-anchor="start" fill="#111">Execution cycles</text>
+<text x="1025" y="155" font-size="18" text-anchor="start" fill="#111">Energy</text>
+<text x="1025" y="191" font-size="18" text-anchor="start" fill="#111">PE utilization</text>
+<text x="1025" y="227" font-size="18" text-anchor="start" fill="#111">Buffer occupancy</text>
+<text x="1025" y="263" font-size="18" text-anchor="start" fill="#111">Operation count</text>
+<text x="1025" y="299" font-size="18" text-anchor="start" fill="#111">OPS / intensity</text>
+<rect x="1013" y="391" width="181" height="77" fill="white" stroke="#111" stroke-width="1.3" stroke-dasharray="6 4"/>
+<text x="1025" y="416" font-size="18" text-anchor="start" font-weight="bold" fill="#111">DNN output</text>
+<text x="1025" y="440" font-size="17" text-anchor="start" fill="#111">Inference accuracy</text>
+<text x="1103" y="458" font-size="16" text-anchor="middle" font-style="italic" fill="#111">(functional mode)</text>
+<path d="M973,429 L1013,429" fill="none" stroke="#111" stroke-width="1.5" stroke-dasharray="6 4" marker-end="url(#arrow)"/>
+<text x="365" y="345" font-size="17" text-anchor="start" font-style="italic" fill="#111">What moves, and in what order</text>
+</g></svg>
