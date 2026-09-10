@@ -13,6 +13,11 @@ from .executable_ir import (
     load_executable_ir,
 )
 from .export import export_to_file, load_callable
+from .functional_artifact import (
+    FunctionalArtifactError,
+    export_functional_artifact,
+    synthesize_artifact,
+)
 from .graph_ir import GraphIRError, graph_sha256, load_graph_ir
 from .lowering import LoweringError, lower_graph
 
@@ -80,6 +85,26 @@ def main(argv: list[str] | None = None) -> int:
         "validate-executable", help="validate an NPUsim executable IR artifact"
     )
     validate_executable.add_argument("executable", help="path to executable JSON")
+    synthesize = commands.add_parser(
+        "synthesize-functional",
+        help="write an npusim.tensor.v1 artifact with seeded deterministic values and"
+             " reference-interpreter goldens (no torch required)",
+    )
+    synthesize.add_argument("--executable", required=True, help="npusim.exec.v1 JSON")
+    synthesize.add_argument("--output-dir", required=True, help="artifact directory")
+    synthesize.add_argument("--seed", type=int, default=7, help="deterministic value seed")
+    export_functional = commands.add_parser(
+        "export-functional",
+        help="export a torch module factory to an executable + npusim.tensor.v1 artifact"
+             " with the model's REAL parameter/input values (requires torch)",
+    )
+    export_functional.add_argument("--factory", required=True,
+                                   help="module:callable returning model and example inputs")
+    export_functional.add_argument("--executable-output", required=True,
+                                   help="destination executable JSON")
+    export_functional.add_argument("--output-dir", required=True, help="artifact directory")
+    export_functional.add_argument("--model-name", default=None,
+                                   help="stable model name for result provenance")
     arguments = parser.parse_args(argv)
     try:
         if arguments.command == "validate":
@@ -88,9 +113,21 @@ def main(argv: list[str] | None = None) -> int:
             return _compile_command(arguments)
         if arguments.command == "validate-executable":
             return _validate_executable_command(arguments.executable)
+        if arguments.command == "synthesize-functional":
+            manifest = synthesize_artifact(arguments.executable, arguments.output_dir,
+                                           arguments.seed)
+            print(json.dumps({"manifest": manifest, "seed": arguments.seed}, sort_keys=True))
+            return 0
+        if arguments.command == "export-functional":
+            result = export_functional_artifact(
+                arguments.factory, arguments.executable_output, arguments.output_dir,
+                model_name=arguments.model_name)
+            print(json.dumps(result, sort_keys=True))
+            return 0
         return _export_command(arguments)
     except (
         ExecutableIRError,
+        FunctionalArtifactError,
         GraphIRError,
         LoweringError,
         RuntimeError,

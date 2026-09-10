@@ -63,19 +63,21 @@ libopt+=" -lnebula -ldramsim3 -lopenblas -lpthread -lz `pkg-config --libs opencv
 
 
 ##### NPUsim build options ###
+# Every toggle is environment-overridable (e.g. `FUNCTIONAL=1 ./npusim.sh build npusim`)
+# so scripts can select a build profile without editing this file.
 
 # Print out the operations sequence
-PRINT=0
+PRINT=${PRINT:-0}
 # Debug.
-DEBUG=0
+DEBUG=${DEBUG:-0}
 # Functional simulation
-FUNCTIONAL=0
+FUNCTIONAL=${FUNCTIONAL:-0}
 # Using integer
-USER_INTEGER=0
-# Using float 
-USER_FLOAT=0
+USER_INTEGER=${USER_INTEGER:-0}
+# Using float
+USER_FLOAT=${USER_FLOAT:-0}
 # DRAMsim
-DRAMSIM3=0
+DRAMSIM3=${DRAMSIM3:-0}
 
 ##### Append Makefile options #####
 
@@ -109,6 +111,15 @@ if [[ $DRAMSIM3 -eq 1 ]]; then
     ccopt+=" -DDRAMSIM3"
 fi
 
+
+# Build profile (functional-sim plan G8): -DFUNCTIONAL changes data_t, so timing and
+# functional objects compile into separate obj/<profile>/ trees (see library/Makefile).
+# Toggling FUNCTIONAL now relinks from cached objects -- no clean or *.o purge needed.
+profile="timing"
+if [[ $FUNCTIONAL -eq 1 ]]; then
+    profile="functional"
+fi
+mopt+=" PROFILE=$profile"
 
 # Makefile MFLAG
 mflag="$mopt LC=$lc"

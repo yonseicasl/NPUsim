@@ -106,6 +106,13 @@ public:
     // DRAM output chain. Without it the last output tile stays in the GLB and never reaches
     // the layer tensor.
     void flush_output_writeback(scheduler_t *m_scheduler);
+#ifdef FUNCTIONAL
+    // G7: offset of THIS chip's output tile inside the multi-chip output region. With a
+    // CHIPS_Y reduction split, chips differing only in their Y coordinate hold partials
+    // of the SAME output tile, so the offset is keyed by the output-bearing (X) part of
+    // the chip index (chip index convention: X-major, Y innermost -- same as the PE grid).
+    unsigned functional_output_writeback_offset(scheduler_t *m_scheduler) const;
+#endif
 
     // Print out the configuration of the Global buffer.
     virtual void print_specification() = 0;

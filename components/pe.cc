@@ -782,7 +782,6 @@ void pe_t::account_descriptor_dense_mac_transfer(data_type_t type, size_t elemen
 // suppression point (rather than gating each of the dozen accrual sites) keeps the dense,
 // sparse, and descriptor paths from drifting apart on this semantic.
 void pe_t::suppress_streaming_cycles() {
-    { static int d=0; if(d<2) std::cerr << "[SSP] flag=" << operand_streams_pipelined << std::endl; d++; }
     if(!operand_streams_pipelined) return;
     for(unsigned i = 0; i < data_type_t::NUM_DATA_TYPES; i++) {
         access_cycle_mac[i] = 0.0;

@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <limits>
 #include <cstdio>
+#include <sstream>
+#include <cstdlib>
+#include <cmath>
+#include <cstring>
 #include <map>
 #include <set>
 #include <stdexcept>
@@ -16,6 +20,26 @@
 #include "interconnect_timing.h"
 
 namespace {
+
+#ifdef FUNCTIONAL
+// Round an fp32 value to the bf16 grid (round-to-nearest-even): keep the top 16 bits with a
+// rounding bias. Matches the Python golden's identical bit manipulation.
+inline float round_bf16(float f) {
+    uint32_t x; std::memcpy(&x, &f, sizeof(x));
+    if((x & 0x7fffffffu) > 0x7f800000u) return f;                 // NaN: leave as-is
+    x += 0x7fffu + ((x >> 16) & 1u);                              // round-to-nearest-even
+    x &= 0xffff0000u;
+    float r; std::memcpy(&r, &x, sizeof(r)); return r;
+}
+// Round to the IEEE fp16 grid (round-to-nearest-even) via the compiler half type; matches
+// Python struct 'e'. _Float16 arithmetic type is available on the x86-64 GCC used here.
+inline float round_fp16(float f) { return static_cast<float>(static_cast<_Float16>(f)); }
+inline float round_lowp(const std::string &fmt, float f) {
+    if(fmt == "bf16") return round_bf16(f);
+    if(fmt == "fp16") return round_fp16(f);
+    return f;
+}
+#endif
 
 size_t pool_reduction_operations(const workload_geometry_t &geometry,
                                  size_t output_begin, size_t output_count) {
@@ -78,6 +102,11 @@ npu_t::npu_t() :
     functional_layers_failed = 0;
     functional_external_golden = false;
     functional_last_mapped = -1;
+    functional_requant_shift = 0;
+    functional_requant_min = -127;
+    functional_requant_max = 127;
+    functional_input_zero_point = 0;
+    functional_weight_zero_point = 0;
 #endif
 }
 
@@ -327,6 +356,32 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             std::cerr << "Error: " << error.what() << std::endl;
             exit(1);
         }
+#ifdef FUNCTIONAL
+        // G1: a FUNCTIONAL executable-IR run needs the npusim.tensor.v1 value artifact.
+        // Load + validate it (hash-bound to this executable), seed the tensor store with
+        // the graph inputs and parameters, and arm the acceptance gate.
+        if(!functional_artifact_path.empty()) {
+            // G2 for executable runs: the artifact carries float32 values, so the
+            // accelerator must declare fp32 tensors (no override channel here -- pick an
+            // fp32 accelerator config for functional executable runs).
+            const bool fp32_formats =
+                runtime_datatypes().format(data_type_t::INPUT).kind  == data_format_kind_t::FP32 &&
+                runtime_datatypes().format(data_type_t::WEIGHT).kind == data_format_kind_t::FP32 &&
+                runtime_datatypes().format(data_type_t::OUTPUT).kind == data_format_kind_t::FP32;
+            if(!fp32_formats) {
+                std::cerr << "Error: functional executable runs carry float32 values; the"
+                          << " accelerator config must declare input/weight/output_format ="
+                          << " fp32" << std::endl;
+                exit(1);
+            }
+            functional_artifact.load(functional_artifact_path, *workload);
+            for(const auto &entry : functional_artifact.tensors) {
+                functional_store(entry.first) = entry.second;
+            }
+            functional_semantics = "fp32";
+            functional_external_golden = true;
+        }
+#endif
     } else {
         network->init(m_network_config);
     }
@@ -360,10 +415,19 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         // [data] functional_input / functional_golden name raw fp32 files, load them and
         // bypass the nebula image loader + forward() oracle. A helper reads a whole file of
         // little-endian float32.
-        std::string finput_path, fgolden_path;
+        std::string finput_path, fgolden_path, rmult_path;
         for(unsigned i = 0; i < functional_config.sections.size(); i++) {
             functional_config.sections[i].get_setting("functional_input", &finput_path);
             functional_config.sections[i].get_setting("functional_golden", &fgolden_path);
+            // INT8 requantization parameters (optional, [data] section).
+            functional_config.sections[i].get_setting("requant_shift", &functional_requant_shift);
+            functional_config.sections[i].get_setting("requant_min",   &functional_requant_min);
+            functional_config.sections[i].get_setting("requant_max",   &functional_requant_max);
+            functional_config.sections[i].get_setting("input_zero_point", &functional_input_zero_point);
+            functional_config.sections[i].get_setting("weight_zero_point", &functional_weight_zero_point);
+            functional_config.sections[i].get_setting("requant_mult", &rmult_path);   // per-channel
+            functional_config.sections[i].get_setting("output_format", &functional_output_format); // fp16/bf16
+            functional_config.sections[i].get_setting("weight_layout", &functional_weight_layout); // ""|ktile
         }
         auto read_fp32 = [](const std::string &m_path, std::vector<float> *m_out) {
             std::ifstream in(m_path.c_str(), std::ios::binary | std::ios::ate);
@@ -385,6 +449,92 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             read_fp32(finput_path, &functional_input_buffer);
             read_fp32(fgolden_path, &functional_golden);
             functional_external_golden = true;
+        }
+        if(!rmult_path.empty()) read_fp32(rmult_path, &functional_requant_mult);  // per-channel
+
+        // G4 (gaps plan Step 3): optional per-layer goldens -- [data] functional_golden<i>
+        // (post-finalize) and functional_golden_raw<i> (raw accumulator, pre-finalize) --
+        // localize the first mismatching operation of a multi-layer DAG.
+        if(functional_external_golden) {
+            for(unsigned l = 0; l < network->num_layers; ++l) {
+                std::string layer_path, raw_path;
+                for(unsigned i = 0; i < functional_config.sections.size(); i++) {
+                    functional_config.sections[i].get_setting(
+                        "functional_golden" + std::to_string(l), &layer_path);
+                    functional_config.sections[i].get_setting(
+                        "functional_golden_raw" + std::to_string(l), &raw_path);
+                }
+                if(!layer_path.empty()) read_fp32(layer_path, &functional_layer_golden[l]);
+                if(!raw_path.empty())   read_fp32(raw_path, &functional_layer_golden_raw[l]);
+            }
+        }
+
+        // G2 (gaps plan Step 2): bind the accelerator config's declared tensor formats to
+        // the functional arithmetic. The fixture states its semantics ([data]
+        // functional_semantics, or inferred from its quantization/rounding knobs); the
+        // accelerator states its formats (input/weight/output_format, parsed into
+        // runtime_datatypes() during init). A disagreement -- e.g. an int8-declared config
+        // computing fp32 values -- is refused before simulation, unless the fixture
+        // explicitly opts into an fp32 reference run with functional_semantics =
+        // fp32_reference (recorded as such in the report).
+        {
+            std::string declared;
+            for(unsigned i = 0; i < functional_config.sections.size(); i++) {
+                functional_config.sections[i].get_setting("functional_semantics", &declared);
+            }
+            if(declared.empty()) {
+                if(functional_output_format == "fp16" || functional_output_format == "bf16")
+                    declared = functional_output_format;
+                else if(functional_requant_shift > 0 || functional_input_zero_point != 0 ||
+                        functional_weight_zero_point != 0 || !functional_requant_mult.empty())
+                    declared = "int8";
+                else
+                    declared = "fp32";
+            }
+            auto semantics_of = [](const tensor_format_t &f) -> std::string {
+                switch(f.kind) {
+                    case data_format_kind_t::INT:
+                    case data_format_kind_t::UINT: return f.payload_bits == 8 ? "int8" : "unsupported";
+                    case data_format_kind_t::FP16: return "fp16";
+                    case data_format_kind_t::BF16: return "bf16";
+                    case data_format_kind_t::FP32: return "fp32";
+                    default:                       return "unsupported";
+                }
+            };
+            const std::string in_sem  = semantics_of(runtime_datatypes().format(data_type_t::INPUT));
+            const std::string wt_sem  = semantics_of(runtime_datatypes().format(data_type_t::WEIGHT));
+            const std::string out_sem = semantics_of(runtime_datatypes().format(data_type_t::OUTPUT));
+            if(declared == "fp32_reference") {
+                functional_semantics = "fp32_reference(" + out_sem + ")";
+            } else {
+                if(in_sem != out_sem || wt_sem != out_sem) {
+                    std::cerr << "Error: functional simulation needs matching input/weight/"
+                              << "output_format declarations (got " << in_sem << "/" << wt_sem
+                              << "/" << out_sem << "); declare [data] functional_semantics = "
+                              << "fp32_reference to run an fp32 reference anyway" << std::endl;
+                    exit(1);
+                }
+                if(out_sem == "unsupported") {
+                    std::cerr << "Error: the accelerator's declared tensor format has no "
+                              << "functional arithmetic yet; declare [data] "
+                              << "functional_semantics = fp32_reference for an fp32 reference run"
+                              << std::endl;
+                    exit(1);
+                }
+                if(declared != out_sem) {
+                    std::cerr << "Error: accelerator declares " << out_sem << " tensors "
+                              << "(input/weight/output_format) but the fixture's functional "
+                              << "semantics is '" << declared << "'; run it on a matching "
+                              << "accelerator config or declare [data] functional_semantics = "
+                              << "fp32_reference for an explicit fp32 reference run" << std::endl;
+                    exit(1);
+                }
+                functional_semantics = declared;
+                // Config-driven binding: an fp16/bf16 accelerator rounds the finalized
+                // output to its grid even when the fixture omits output_format.
+                if((out_sem == "fp16" || out_sem == "bf16") && functional_output_format.empty())
+                    functional_output_format = out_sem;
+            }
         }
     }
 #endif
@@ -624,13 +774,23 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
     const unsigned num_iteration = 1;
     for(unsigned iteration = 0; iteration < num_iteration; iteration++) {
 #ifdef FUNCTIONAL
-        if(executable_ir_mode) {
-            std::cerr << "Error: executable IR currently supports timing-only builds; "
-                      << "functional mode requires a tensor artifact" << std::endl;
+        if(executable_ir_mode && functional_artifact_path.empty()) {
+            std::cerr << "Error: a FUNCTIONAL executable-IR run requires the npusim.tensor.v1"
+                      << " value artifact; use run-ir-functional <accelerator> <executable>"
+                      << " <mapping> <tensors.json>" << std::endl;
             exit(1);
         }
 #endif
-        if(!executable_ir_mode) network->load_data(iteration);
+#ifdef FUNCTIONAL
+        // With an external-golden fixture the image loader's output is fully replaced by
+        // functional_input_buffer, so skip it: it would only constrain fixtures to image-
+        // shaped inputs (e.g. it exits on channel counts other than 1/3) and fill accuracy
+        // bookkeeping this run never reads.
+        const bool skip_image_loader = functional_external_golden;
+#else
+        const bool skip_image_loader = false;
+#endif
+        if(!executable_ir_mode && !skip_image_loader) network->load_data(iteration);
         num_skipped_timing_layers = 0;
         unsigned mapping_index = 0;
 
@@ -713,6 +873,10 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     }
                 }
 
+#ifdef FUNCTIONAL
+                if(executable_ir_mode) functional_bind_executable_operation(index, *operation);
+                functional_reject_unsupported_mapping(index);
+#endif
                 print_network_configuration(index, stats_index);
                 reset();
                 update_tile_size();
@@ -744,6 +908,13 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 }
                 layer_stats[stats_index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
 #ifdef FUNCTIONAL
+                // G3: a convolution with P/Q > 1 gets its VALUES from the in-simulator
+                // im2col kernel (the datapath above already produced this layer's timing);
+                // the temporal-fold replay below is GEMM machinery and is skipped for it.
+                const bool conv_value_kernel =
+                    scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER &&
+                    (layer->output_height > 1 || layer->output_width > 1);
+                if(conv_value_kernel) functional_conv_im2col(index);
                 // TEMPORAL-FOLD FUNCTIONAL REPLAY (batch): the analytical engine simulates ONE
                 // representative tile and scales timing by repetitions, so only the first
                 // batch's VALUES were just computed. Timing is already captured (update_stats
@@ -753,7 +924,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 // write-back chain, so every batch's outputs land in their own tensor region.
                 // Restricted to a pure-batch temporal fold (weight reused; no other GLB/DRAM
                 // output fold); other folds fall through unreplayed (see functional-sim plan).
-                {
+                if(!conv_value_kernel) {
                     // Per-dimension GLB TEMPORAL-REPETITION fold count. The GLB row is stored as
                     // "legacy GLB temporal-repetition factors" SEPARATE from the mapping-table
                     // cumulative product, so calculate_parameter_size() misses it. The full
@@ -873,6 +1044,100 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                         layer->output_data = out_base;
                     }
                 }
+                // G4 raw-stage checkpoint (plan §5.3): the datapath + replay just produced the
+                // RAW reduction accumulators and the finalize has not run yet -- compare them
+                // here when the fixture supplies functional_golden_raw<i>.
+                if(functional_external_golden && functional_layer_golden_raw.count(index))
+                    verify_buffer_against(index, functional_layer_golden_raw[index], "raw");
+                // FINALIZE (plan §5.3): the datapath produced the RAW accumulators; now apply
+                // bias then activation EXACTLY ONCE per output element, after its reduction is
+                // complete. bias is per-output-channel (layer->output_channel); the channel is
+                // the innermost axis of the functional POSITION-MAJOR output ([B][P][Q][N] for
+                // conv, [B][N] for connected), so channel = i % output_channel. Activation
+                // formulas mirror Nebula's so the accelerator agrees with the external golden,
+                // and the finalized values feed the next layer (activation-correct chaining).
+                // (Executable-IR mapped ops finalize here too: their transitional layer
+                // carries the fused activation and the artifact-copied bias; BN/requant/
+                // zero-point knobs are legacy-fixture settings and stay at their defaults.)
+                if(mapped && layer->output_channel > 0) {
+                    const size_t elems = static_cast<size_t>(layer->output_size)*network->batch_size;
+                    const unsigned Nch = layer->output_channel;
+                    // Channel index per element: the GEMM datapath writes POSITION-MAJOR
+                    // ([B][P][Q][N] / [B][N]) so channel = i % N; the conv im2col kernel
+                    // writes nebula's CHANNEL-MAJOR [B][N][P][Q] so channel = (i/(P*Q)) % N.
+                    // For P=Q=1 the two coincide.
+                    const size_t spatial = conv_value_kernel
+                        ? static_cast<size_t>(layer->output_height)*layer->output_width : 1;
+                    float *od = layer->output_data;
+                    const float *bias = layer->get_bias();   // NULL if this layer has no bias
+                    // Inference BatchNorm (fused, applied ONCE before bias/activation, Nebula
+                    // semantics): v = scale*(raw - rolling_mean)/(sqrt(rolling_variance)+1e-5).
+                    const bool   bn  = layer->has_batchnorm();
+                    const float *bsc = bn ? layer->get_bn_scale()    : NULL;
+                    const float *bmu = bn ? layer->get_bn_mean()     : NULL;
+                    const float *bvar= bn ? layer->get_bn_variance() : NULL;
+                    // Asymmetric int8 zero-point correction. Full expansion:
+                    //   Sum((qi-zp_i)(qw-zp_w)) = Sum(qi*qw) - zp_i*colsum_w[n]
+                    //                             - zp_w*rowsum_i[m] + Kdim*zp_i*zp_w.
+                    // colsum_w[n] (per output channel) folds like bias; rowsum_i[m] (per output
+                    // ROW) does NOT, so the simulator computes it from the injected input rows.
+                    const int zp_i = functional_input_zero_point;
+                    const int zp_w = functional_weight_zero_point;
+                    const size_t Kdim = Nch ? static_cast<size_t>(layer->weight_size)/Nch : 0;   // reduction len
+                    std::vector<double> colsum;   // per output channel n (weight column sum)
+                    if(zp_i != 0 && layer->weight != NULL && layer->weight_size > 0) {
+                        colsum.assign(Nch, 0.0);
+                        for(unsigned n = 0; n < Nch; ++n) {
+                            double s = 0.0;
+                            for(size_t k = 0; k < Kdim; ++k) s += layer->weight[static_cast<size_t>(n)*Kdim + k];
+                            colsum[n] = s;
+                        }
+                    }
+                    std::vector<double> rowsum;   // per output row m (input row sum)
+                    const size_t rows = Nch ? elems / Nch : 0;
+                    if(zp_w != 0 && layer->input_data != NULL && layer->input_size > 0) {
+                        rowsum.assign(rows, 0.0);
+                        for(size_t m = 0; m < rows; ++m) {
+                            double s = 0.0;
+                            for(size_t k = 0; k < static_cast<size_t>(layer->input_size); ++k)
+                                s += layer->input_data[m*static_cast<size_t>(layer->input_size) + k];
+                            rowsum[m] = s;
+                        }
+                    }
+                    const double zp_const = static_cast<double>(Kdim)*zp_i*zp_w;
+                    for(size_t i = 0; i < elems; ++i) {
+                        const unsigned c = spatial > 1 ? (i/spatial) % Nch : i % Nch;
+                        const size_t   m = Nch ? i / Nch : 0;
+                        float v = od[i];
+                        if(bn) v = bsc[c]*(v - bmu[c])/(std::sqrt(bvar[c]) + 0.00001f);
+                        if(!colsum.empty()) v += static_cast<float>(-static_cast<double>(zp_i)*colsum[c]);
+                        if(!rowsum.empty()) v += static_cast<float>(-static_cast<double>(zp_w)*rowsum[m]);
+                        if(zp_i != 0 && zp_w != 0) v += static_cast<float>(zp_const);
+                        v += (bias ? bias[c] : 0.0f);
+                        switch(layer->activation_type) {
+                            case nebula::RELU_ACTIVATION:  v = v > 0.0f ? v : 0.0f;        break;
+                            case nebula::LEAKY_ACTIVATION: v = v > 0.0f ? v : 0.1f*v;      break;
+                            case nebula::LINEAR_ACTIVATION: default:                       break;
+                        }
+                        if(functional_requant_shift > 0) {
+                            // INT8 requantization: (acc*mult + round) >> shift, then clamp. Done
+                            // in int64 (v is an exact integer; per-channel mult can push the
+                            // product beyond float's 2^24). mult[c] per output channel, or 1.
+                            long long a = llroundf(v);
+                            const long long mult = functional_requant_mult.empty()
+                                ? 1LL : static_cast<long long>(llroundf(functional_requant_mult[c]));
+                            a = (a*mult + (1LL << (functional_requant_shift - 1))) >> functional_requant_shift;
+                            if(a < functional_requant_min) a = functional_requant_min;
+                            if(a > functional_requant_max) a = functional_requant_max;
+                            v = static_cast<float>(a);
+                        }
+                        // Low-precision OUTPUT rounding (fp16/bf16); no-op when format is fp32.
+                        od[i] = round_lowp(functional_output_format, v);
+                    }
+                }
+                // G1: publish the finalized executable-op values into the tensor store
+                // (the DAG's value medium) and compare against the artifact golden.
+                if(executable_ir_mode) functional_commit_executable_operation(index, *operation);
 #endif
                 if(executable_ir_mode) {
                     workload_lifetime->commit(index, &residency);
@@ -905,6 +1170,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
             } else if(executable_ir_mode) {
                 run_standalone_graph_operation(index, residency,
                     m_accelerator_config, m_network_config);
+#ifdef FUNCTIONAL
+                functional_execute_graph_operation(index, *operation);
+#endif
             } else if(network->layers[index]->layer_type == nebula::SOFTMAX_LAYER && !sfus.empty()) {
                 run_standalone_softmax(index, m_accelerator_config, m_network_config);
             } else {
@@ -914,6 +1182,30 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                           << std::endl;
             }
 #ifdef FUNCTIONAL
+            // Non-MAC functional kernels (plan §5, "elementwise add"): layers with no MAC
+            // datapath still carry values in a functional run. Compute them with the layer's own
+            // kernel, which READS the accelerator's prior-layer output_data (already finalized
+            // with bias+activation) and writes this layer's output_data for the next layer.
+            // Residual/shortcut add: output = activation(prev_layer_output + skip_source_output).
+            // Pooling (max/avg): output = pool(prev_layer_output over the filter window).
+            // MAC layers are never forwarded here -- that would overwrite the accelerator result.
+            if(!mapped && !executable_ir_mode) {
+                nebula::layer_t *fl = network->layers[index];
+                const nebula::layer_type_t lt = fl->layer_type;
+                if(lt == nebula::SHORTCUT_LAYER ||
+                   lt == nebula::MAXPOOL_LAYER  ||
+                   lt == nebula::AVGPOOL_LAYER  ||
+                   lt == nebula::SOFTMAX_LAYER) {
+                    fl->forward();                        // softmax: per-(batch,group) exp/normalize
+                } else if(lt == nebula::CONCAT_LAYER) {
+                    // Concat copies each source layer's output into this layer's buffer along the
+                    // channel axis. Nebula's forward() ADVANCES output_data as it copies, leaving
+                    // the member pointer past the end; save/restore so verify reads the buffer base.
+                    float *saved = fl->output_data;
+                    fl->forward();
+                    fl->output_data = saved;
+                }
+            }
             verify_functional_layer(index, mapped && !executable_ir_mode);
 #endif
         }
@@ -924,8 +1216,12 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
         print_total_result(m_accelerator_config, m_network_config);
 #ifdef FUNCTIONAL
         std::cout << "[FUNCTIONAL] summary: " << functional_layers_checked
-                  << " mapped layer(s) verified, " << functional_layers_failed
-                  << " failed" << std::endl;
+                  << " layer(s) verified, " << functional_layers_failed
+                  << " failed"
+                  << (functional_external_golden && functional_layers_checked == 0
+                      ? "  (NO LAYER COMPARED -- gate fails)" : "")
+                  << std::endl;
+        if(functional_external_golden) write_functional_report(m_network_config);
 #endif
     }
 }
@@ -1677,6 +1973,387 @@ void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accele
 // OUTPUT precision, from the live components' declared unit costs. Nothing here mutates
 // a component counter -- the costs land in the softmax layer's own stats object.
 #ifdef FUNCTIONAL
+// G5 (gaps plan Step 1): refuse mappings whose values the functional path cannot compute
+// correctly. Each rejected class would otherwise surface as a confusing value-mismatch FAIL
+// (or a silently-unreplayed fold): the DRAM-queue mechanism iterates tiles without
+// re-initializing accumulators, chip-boundary reduction still moves psums with data_copy
+// (accumulate exists only at the PE->PE_Y adder-tree boundary, scheduler.cc), filter folds
+// have no replay ownership, and the native-conv on-chip offset network derives the
+// per-channel input stride from the PE tile's extent instead of the full input whenever
+// P/Q > 1. The supported envelope is documented in validation/functional/README.md.
+void npu_t::functional_reject_unsupported_mapping(unsigned m_index) {
+    auto reject = [&](const std::string &m_reason) {
+        std::cerr << "Error: unsupported functional mapping for layer " << m_index
+                  << ": " << m_reason
+                  << " (see validation/functional/README.md for the supported envelope)"
+                  << std::endl;
+        exit(1);
+    };
+    // G3: a convolution with P/Q > 1 is computed by the in-simulator im2col value kernel
+    // (functional_conv_im2col), which is mapping-independent -- the mapping then only
+    // shapes timing, so the value-path mapping checks below do not apply. The kernel's
+    // finalize supports bias/BN/activation/requant but not the GEMM-row zero-point
+    // corrections, which assume a [M][K] input layout.
+    if(scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER &&
+       (network->layers[m_index]->output_height > 1 ||
+        network->layers[m_index]->output_width  > 1)) {
+        if(functional_input_zero_point != 0 || functional_weight_zero_point != 0) {
+            reject("zero-point correction on a convolution computed by the im2col value "
+                   "kernel; asymmetric quantization is GEMM-only for now");
+        }
+        return;
+    }
+    if(scheduler->input_offset_dram.size()  != 1 ||
+       scheduler->weight_offset_dram.size() != 1 ||
+       scheduler->output_offset_dram.size() != 1) {
+        reject("DRAM-level temporal fold (offset queue size > 1); "
+               "express the fold as GLB repetitions instead");
+    }
+    mapping_table_t *mt = scheduler->mapping_table;
+    const std::vector<unsigned> full    = mt->calculate_total_parameter_size();
+    const std::vector<unsigned> spatial = mt->calculate_parameter_size(component_type_t::DRAM);
+    // G7: a CHIPS_Y reduction split is supported (GLB->multi-chip accumulate); CHIPS_X
+    // has no accumulate convention (the chip index keys outputs by its X part).
+    if(scheduler->chip_reduction_x) {
+        reject("reduction dimension (C/R/S) split across CHIPS_X; "
+               "map chip-level reduction onto CHIPS_Y");
+    }
+    auto fold = [&](parameter_type_t d) -> unsigned {
+        return spatial[d] ? full[d]/spatial[d] : 1;
+    };
+    if(fold(parameter_type_t::FILTER_HEIGHT) != 1 ||
+       fold(parameter_type_t::FILTER_WIDTH)  != 1) {
+        reject("filter (R/S) temporal fold; no replay ownership for filter tiles");
+    }
+    // An INPUT_CHANNEL temporal fold is replayed assuming the reduction-tile-major
+    // [Kf][N][sK] weight layout; a standard [N][K] fixture would be read with the wrong
+    // strides and fail as a value mismatch. The fixture must declare the layout.
+    if(fold(parameter_type_t::INPUT_CHANNEL) > 1 && functional_weight_layout != "ktile") {
+        reject("INPUT_CHANNEL temporal fold with a standard [N][K] weight; regenerate the "
+               "fixture with the reduction-tile-major layout and declare "
+               "[data] weight_layout = ktile, or keep the reduction spatial (PE_Y)");
+    }
+    // The zero-point finalize corrections read layer->weight as [N][K]; the ktile layout
+    // would produce wrong per-channel column sums.
+    if((functional_input_zero_point != 0 || functional_weight_zero_point != 0) &&
+       functional_weight_layout == "ktile") {
+        reject("zero-point correction with the reduction-tile-major weight layout; "
+               "use a spatial-reduction mapping for asymmetric quantization");
+    }
+}
+
+// G1 (gaps plan Step 4): executable-IR functional execution over a tensor store keyed by
+// executable tensor id. Aliases resolve to their storage tensor, so a consumer reading
+// through an elided reshape sees the producer's values.
+std::vector<float> &npu_t::functional_store(const std::string &m_tensor_id) {
+    return functional_tensor_store[workload->storage_tensor(m_tensor_id).id];
+}
+
+namespace {
+// Does this operation produce a graph output? (labels its golden comparison "final")
+bool produces_graph_output(const workload_graph_t *m_graph,
+                           const workload_operation_t &m_operation) {
+    for(const std::string &out : m_operation.outputs) {
+        for(const std::string &graph_out : m_graph->outputs) {
+            if(out == graph_out || out == m_graph->storage_tensor(graph_out).id) return true;
+        }
+    }
+    return false;
+}
+} // namespace
+
+// Bind one mapped executable operation (linear/conv2d) to its transitional nebula layer
+// BEFORE the datapath runs: point input_data at the store, copy the artifact weight into
+// the layer's own weight buffer (re-laid reduction-tile-major when the mapping folds
+// INPUT_CHANNEL, which also satisfies the G5 layout contract), zero-then-copy the bias,
+// and allocate the operation's output in the store. Pointer ownership note: only
+// input_data is re-pointed (it is a borrowed pointer by nebula's contract); weight, bias
+// and output_data keep nebula's own allocations.
+void npu_t::functional_bind_executable_operation(unsigned m_index,
+                                                 const workload_operation_t &m_operation) {
+    nebula::layer_t *current = network->layers[m_index];
+    auto bind_fail = [&](const std::string &m_message) {
+        std::cerr << "Error: executable operation " << m_operation.id << ": " << m_message
+                  << std::endl;
+        exit(1);
+    };
+    // Data input from the store (a graph input from the artifact, or a prior op's output).
+    const workload_tensor_t &in_decl = workload->tensor(m_operation.inputs.front());
+    std::vector<float> &in = functional_store(m_operation.inputs.front());
+    if(in.size() != in_decl.elements())
+        bind_fail("input tensor " + in_decl.id + " has not been produced yet");
+    current->input_data = in.data();
+
+    // Output store allocation; the nebula buffer must agree on the element count.
+    const workload_tensor_t &out_decl = workload->tensor(m_operation.outputs.front());
+    functional_store(m_operation.outputs.front()).assign(out_decl.elements(), 0.0f);
+    const size_t layer_elements =
+        static_cast<size_t>(current->output_size)*network->batch_size;
+    if(layer_elements != out_decl.elements())
+        bind_fail("transitional layer holds " + std::to_string(layer_elements) +
+                  " output elements, executable declares " +
+                  std::to_string(out_decl.elements()));
+    std::memset(current->output_data, 0, layer_elements*sizeof(float));
+
+    if(m_operation.inputs.size() < 2) bind_fail("missing weight tensor");
+    std::vector<float> &wt = functional_store(m_operation.inputs[1]);
+    if(current->weight == NULL || current->weight_size != wt.size())
+        bind_fail("weight buffer holds " + std::to_string(current->weight_size) +
+                  " elements, artifact supplies " + std::to_string(wt.size()));
+    functional_weight_layout.clear();
+    bool relaid = false;
+    if(m_operation.kind == WORKLOAD_LINEAR) {
+        // The GEMM replay consumes an INPUT_CHANNEL temporal fold in reduction-tile-major
+        // [Kf][N][sK] order; the artifact weight is the model's [N][K]. Re-lay here when
+        // the mapping declares such a fold, which also satisfies the G5 layout contract.
+        mapping_table_t *mt = scheduler->mapping_table;
+        const std::vector<unsigned> full    = mt->calculate_total_parameter_size();
+        const std::vector<unsigned> spatial = mt->calculate_parameter_size(component_type_t::DRAM);
+        const unsigned sK = spatial[parameter_type_t::INPUT_CHANNEL];
+        const unsigned Kf = sK ? full[parameter_type_t::INPUT_CHANNEL]/sK : 1;
+        const unsigned N  = current->output_channel;
+        const size_t   K  = N ? wt.size()/N : 0;
+        if(Kf > 1 && K == static_cast<size_t>(Kf)*sK) {
+            for(unsigned kt = 0; kt < Kf; ++kt)
+                for(unsigned n = 0; n < N; ++n)
+                    for(unsigned kk = 0; kk < sK; ++kk)
+                        current->weight[(static_cast<size_t>(kt)*N + n)*sK + kk] =
+                            wt[static_cast<size_t>(n)*K + kt*sK + kk];
+            functional_weight_layout = "ktile";
+            relaid = true;
+        }
+    }
+    if(!relaid) std::memcpy(current->weight, wt.data(), wt.size()*sizeof(float));
+
+    float *bias = current->get_bias();
+    if(bias == NULL) {
+        if(m_operation.inputs.size() >= 3) bind_fail("layer has no bias storage");
+    } else {
+        std::memset(bias, 0, sizeof(float)*current->output_channel);
+        if(m_operation.inputs.size() >= 3) {
+            std::vector<float> &bv = functional_store(m_operation.inputs[2]);
+            if(bv.size() != current->output_channel)
+                bind_fail("bias tensor holds " + std::to_string(bv.size()) +
+                          " elements, layer has " + std::to_string(current->output_channel) +
+                          " channels");
+            std::memcpy(bias, bv.data(), bv.size()*sizeof(float));
+        }
+    }
+}
+
+// After the datapath + replay/kernel + finalize: publish the finalized values into the
+// tensor store (the DAG's value medium) and compare against the artifact golden.
+void npu_t::functional_commit_executable_operation(unsigned m_index,
+                                                   const workload_operation_t &m_operation) {
+    nebula::layer_t *current = network->layers[m_index];
+    std::vector<float> &out = functional_store(m_operation.outputs.front());
+    std::memcpy(out.data(), current->output_data, out.size()*sizeof(float));
+    const auto golden = functional_artifact.golden.find(m_operation.id);
+    if(golden != functional_artifact.golden.end()) {
+        verify_buffer_against(m_index, out.data(), out.size(), golden->second,
+                              produces_graph_output(workload, m_operation) ? "final" : "op");
+    }
+}
+
+// Non-MAC executable operations carry values through dedicated kernels over the tensor
+// store: softmax, max/average pool, elementwise add/multiply, concat, inference
+// BatchNorm. Branch inputs are fetched by tensor ID, so DAG fan-in reads the correct
+// producer regardless of operation order.
+void npu_t::functional_execute_graph_operation(unsigned m_index,
+                                               const workload_operation_t &m_operation) {
+    auto op_fail = [&](const std::string &m_message) {
+        std::cerr << "Error: executable operation " << m_operation.id << ": " << m_message
+                  << std::endl;
+        exit(1);
+    };
+    auto fetch = [&](const std::string &m_id) -> std::vector<float>& {
+        std::vector<float> &values = functional_store(m_id);
+        if(values.size() != workload->tensor(m_id).elements())
+            op_fail("input tensor " + m_id + " has not been produced yet");
+        return values;
+    };
+    const workload_tensor_t &out_decl = workload->tensor(m_operation.outputs.front());
+    std::vector<float> &out = functional_store(m_operation.outputs.front());
+    out.assign(out_decl.elements(), 0.0f);
+    const workload_geometry_t &g = m_operation.geometry;
+
+    switch(m_operation.kind) {
+        case WORKLOAD_SOFTMAX: {
+            std::vector<float> &in = fetch(m_operation.inputs.front());
+            const size_t rows = g.rows, len = g.row_length;
+            if(rows*len != in.size()) op_fail("softmax geometry disagrees with input");
+            for(size_t r = 0; r < rows; ++r) {
+                const float *x = in.data() + r*len;
+                float *y = out.data() + r*len;
+                float peak = x[0];
+                for(size_t i = 1; i < len; ++i) peak = std::max(peak, x[i]);
+                float sum = 0.0f;
+                for(size_t i = 0; i < len; ++i) { y[i] = std::exp(x[i] - peak); sum += y[i]; }
+                for(size_t i = 0; i < len; ++i) y[i] /= sum;
+            }
+            break;
+        }
+        case WORKLOAD_POOL2D: {
+            std::vector<float> &in = fetch(m_operation.inputs.front());
+            const unsigned B = g.batch, C = g.input_channels;
+            const unsigned H = g.input_height, W = g.input_width;
+            const unsigned P = g.output_height, Q = g.output_width;
+            const bool max_mode = g.mode == "max";
+            for(unsigned b = 0; b < B; ++b)
+            for(unsigned c = 0; c < C; ++c)
+            for(unsigned p = 0; p < P; ++p)
+            for(unsigned q = 0; q < Q; ++q) {
+                float best = -std::numeric_limits<float>::infinity();
+                double sum = 0.0;
+                unsigned valid = 0;
+                for(unsigned kh = 0; kh < g.kernel_height; ++kh) {
+                    const long ih = static_cast<long>(p)*g.stride_height - g.padding_height +
+                                    static_cast<long>(kh)*g.dilation_height;
+                    if(ih < 0 || ih >= static_cast<long>(H)) continue;
+                    for(unsigned kw = 0; kw < g.kernel_width; ++kw) {
+                        const long iw = static_cast<long>(q)*g.stride_width - g.padding_width +
+                                        static_cast<long>(kw)*g.dilation_width;
+                        if(iw < 0 || iw >= static_cast<long>(W)) continue;
+                        const float v = in[((static_cast<size_t>(b)*C + c)*H + ih)*W + iw];
+                        best = std::max(best, v);
+                        sum += v;
+                        ++valid;
+                    }
+                }
+                const unsigned window = g.kernel_height*g.kernel_width;
+                const unsigned samples = (!max_mode && g.count_include_pad) ? window : valid;
+                out[((static_cast<size_t>(b)*C + c)*P + p)*Q + q] = max_mode
+                    ? best : (samples ? static_cast<float>(sum/samples) : 0.0f);
+            }
+            break;
+        }
+        case WORKLOAD_ELEMENTWISE: {
+            if(m_operation.inputs.size() != 2) op_fail("elementwise needs two inputs");
+            std::vector<float> &a = fetch(m_operation.inputs[0]);
+            std::vector<float> &b = fetch(m_operation.inputs[1]);
+            if(a.size() != out.size() || b.size() != out.size())
+                op_fail("elementwise shapes disagree");
+            const bool multiply = g.elementwise_operator == "multiply";
+            for(size_t i = 0; i < out.size(); ++i)
+                out[i] = multiply ? a[i]*b[i] : a[i] + b[i];
+            break;
+        }
+        case WORKLOAD_CONCAT: {
+            // Copy each input's [axis:] block per outer row, in declared input order.
+            const std::vector<size_t> &out_shape = out_decl.shape;
+            if(g.axis >= out_shape.size()) op_fail("concat axis out of range");
+            size_t outer = 1;
+            for(size_t d = 0; d < g.axis; ++d) outer *= out_shape[d];
+            std::vector<size_t> inner(m_operation.inputs.size());
+            size_t inner_total = 0;
+            for(size_t i = 0; i < m_operation.inputs.size(); ++i) {
+                const workload_tensor_t &decl = workload->tensor(m_operation.inputs[i]);
+                inner[i] = 1;
+                for(size_t d = g.axis; d < decl.shape.size(); ++d) inner[i] *= decl.shape[d];
+                inner_total += inner[i];
+            }
+            if(outer*inner_total != out.size()) op_fail("concat geometry disagrees");
+            for(size_t o = 0; o < outer; ++o) {
+                size_t cursor = o*inner_total;
+                for(size_t i = 0; i < m_operation.inputs.size(); ++i) {
+                    std::vector<float> &in = fetch(m_operation.inputs[i]);
+                    std::memcpy(out.data() + cursor, in.data() + o*inner[i],
+                                inner[i]*sizeof(float));
+                    cursor += inner[i];
+                }
+            }
+            break;
+        }
+        case WORKLOAD_BATCH_NORM: {
+            // Torch aten order: (input, weight, bias, running_mean, running_var).
+            if(m_operation.inputs.size() != 5)
+                op_fail("batch_norm functional execution requires the full affine form "
+                        "(input, weight, bias, running_mean, running_var)");
+            std::vector<float> &in    = fetch(m_operation.inputs[0]);
+            std::vector<float> &scale = fetch(m_operation.inputs[1]);
+            std::vector<float> &shift = fetch(m_operation.inputs[2]);
+            std::vector<float> &mean  = fetch(m_operation.inputs[3]);
+            std::vector<float> &var   = fetch(m_operation.inputs[4]);
+            const unsigned C = g.output_channels;
+            if(in.size() != out.size() || in.size() % C != 0)
+                op_fail("batch_norm geometry disagrees");
+            const size_t spatial = in.size()/workload->tensor(m_operation.inputs[0]).shape[0]/C;
+            for(size_t i = 0; i < in.size(); ++i) {
+                const unsigned c = (i/spatial) % C;
+                out[i] = scale[c]*(in[i] - mean[c])/
+                         std::sqrt(var[c] + static_cast<float>(g.epsilon)) + shift[c];
+            }
+            break;
+        }
+        default:
+            op_fail("no functional kernel for this operation kind");
+    }
+
+    // Fused activation (exec IR: linear/relu/leaky).
+    if(m_operation.activation == "relu") {
+        for(size_t i = 0; i < out.size(); ++i) out[i] = out[i] > 0.0f ? out[i] : 0.0f;
+    } else if(m_operation.activation == "leaky") {
+        for(size_t i = 0; i < out.size(); ++i) out[i] = out[i] > 0.0f ? out[i] : 0.1f*out[i];
+    }
+
+    const auto golden = functional_artifact.golden.find(m_operation.id);
+    if(golden != functional_artifact.golden.end()) {
+        verify_buffer_against(m_index, out.data(), out.size(), golden->second,
+                              produces_graph_output(workload, m_operation) ? "final" : "op");
+    }
+}
+
+// G3 (gaps plan Step 5): in-simulator conv value kernel. Lowers the mapped convolution to
+// the im2col GEMM a GEMM accelerator actually executes -- zero padding (no OOB source
+// reads), stride, and grouped/depthwise -- and writes the RAW accumulators (no bias, no
+// activation; the shared FINALIZE applies those once). Output is CHANNEL-MAJOR
+// [B][N][P][Q], nebula's tensor layout, so the result chains into nebula's non-MAC
+// kernels (pool/shortcut/...) and matches a channel-major golden. Accumulation order is
+// (c,r,s), the same as the PE mac_operation loop, so fp32 rounding matches the scalar
+// CPU reference. Timing is untouched: the mapped datapath already ran for this layer.
+void npu_t::functional_conv_im2col(unsigned m_index) {
+    nebula::layer_t *l = network->layers[m_index];
+    const unsigned batch  = network->batch_size;
+    const unsigned C = l->input_channel,  H = l->input_height,  W = l->input_width;
+    const unsigned N = l->output_channel, P = l->output_height, Q = l->output_width;
+    const unsigned R = l->filter_height,  S = l->filter_width;
+    const unsigned stride = l->stride ? l->stride : 1;
+    const unsigned groups = l->group ? l->group : 1;
+    if(N % groups != 0 || C % groups != 0) {
+        std::cerr << "Error: layer " << m_index << " groups=" << groups
+                  << " does not divide channels C=" << C << " N=" << N << std::endl;
+        exit(1);
+    }
+    const unsigned Cg = C/groups, Ng = N/groups;
+    const float *in = l->input_data;
+    const float *wt = l->weight;                     // [N][Cg][R][S]
+    float *out = l->output_data;
+    for(unsigned b = 0; b < batch; ++b) {
+        for(unsigned n = 0; n < N; ++n) {
+            const unsigned g = n/Ng;
+            for(unsigned p = 0; p < P; ++p) {
+                for(unsigned q = 0; q < Q; ++q) {
+                    float acc = 0.0f;
+                    for(unsigned c = 0; c < Cg; ++c) {
+                        for(unsigned r = 0; r < R; ++r) {
+                            const long ih = static_cast<long>(p)*stride + r - l->padding_h;
+                            if(ih < 0 || ih >= static_cast<long>(H)) continue;   // zero pad
+                            for(unsigned s = 0; s < S; ++s) {
+                                const long iw = static_cast<long>(q)*stride + s - l->padding_w;
+                                if(iw < 0 || iw >= static_cast<long>(W)) continue;
+                                acc += in[((static_cast<size_t>(b)*C + g*Cg + c)*H + ih)*W + iw]*
+                                       wt[((static_cast<size_t>(n)*Cg + c)*R + r)*S + s];
+                            }
+                        }
+                    }
+                    out[((static_cast<size_t>(b)*N + n)*P + p)*Q + q] = acc;
+                }
+            }
+        }
+    }
+    functional_kernel_layers.insert(m_index);
+}
+
 // Functional verification of one layer. The accelerator datapath has already moved the
 // tensors through DRAM -> multi-chip -> GLB -> PE array -> MAC and written its computed
 // output back into layer->output_data (raw MAC accumulation -- no bias, no activation).
@@ -1698,27 +2375,39 @@ void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accele
 // bias/activation stages join once Phase 5 wires post-op ownership. Any element outside
 // tolerance, or an all-zero golden, is a failure.
 void npu_t::verify_against_golden(unsigned m_index) {
+    verify_buffer_against(m_index, functional_golden, "final");
+}
+
+void npu_t::verify_buffer_against(unsigned m_index, const std::vector<float> &m_golden,
+                                  const char *m_stage) {
     nebula::layer_t *current = network->layers[m_index];
     const size_t elements = static_cast<size_t>(current->output_size)*network->batch_size;
+    verify_buffer_against(m_index, current->output_data, elements, m_golden, m_stage);
+}
+
+void npu_t::verify_buffer_against(unsigned m_index, const float *m_actual, size_t m_elements,
+                                  const std::vector<float> &m_golden, const char *m_stage) {
+    nebula::layer_t *current = network->layers[m_index];
+    const size_t elements = m_elements;
     ++functional_layers_checked;
-    if(functional_golden.size() != elements) {
-        std::cout << "[FUNCTIONAL] layer " << m_index << ": FAIL -- golden has "
-                  << functional_golden.size() << " floats, output has " << elements
-                  << std::endl;
+    if(m_golden.size() != elements) {
+        std::cout << "[FUNCTIONAL] layer " << m_index << " (stage " << m_stage
+                  << "): FAIL -- golden has " << m_golden.size()
+                  << " floats, output has " << elements << std::endl;
         ++functional_layers_failed;
         return;
     }
     if(getenv("FVERIFY")) {
         for(size_t i = 0; i < elements; ++i)
-            fprintf(stderr, "[V] i=%zu golden=%.6f accel=%.6f\n",
-                    i, (double)functional_golden[i], (double)current->output_data[i]);
+            fprintf(stderr, "[V] L%u %s i=%zu golden=%.6f accel=%.6f\n",
+                    m_index, m_stage, i, (double)m_golden[i], (double)m_actual[i]);
     }
     size_t mismatches = 0, golden_nonzeros = 0, accel_nonzeros = 0;
     double max_abs_diff = 0.0;
     int first_bad = -1;
     for(size_t i = 0; i < elements; ++i) {
-        const double ref = functional_golden[i];
-        const double got = current->output_data[i];
+        const double ref = m_golden[i];
+        const double got = m_actual[i];
         if(ref != 0.0) ++golden_nonzeros;
         if(got != 0.0) ++accel_nonzeros;
         const double diff = std::fabs(got - ref);
@@ -1731,36 +2420,111 @@ void npu_t::verify_against_golden(unsigned m_index) {
     const bool pass = mismatches == 0 && golden_nonzeros > 0;
     if(!pass) ++functional_layers_failed;
     std::cout << std::setprecision(6) << std::defaultfloat
-              << "[FUNCTIONAL] layer " << m_index << " (external golden): "
+              << "[FUNCTIONAL] layer " << m_index << " (external golden, stage "
+              << m_stage << "): "
               << (pass ? "PASS" : "FAIL") << " -- " << elements << " elements, "
               << mismatches << " mismatch(es), max |diff| " << max_abs_diff
               << ", nonzeros golden/accel " << golden_nonzeros << "/" << accel_nonzeros
               << (golden_nonzeros == 0 ? "  (VACUOUS: all-zero golden)" : "");
     if(first_bad >= 0) {
         std::cout << "; first mismatch @" << first_bad << " golden="
-                  << functional_golden[first_bad] << " accel="
-                  << current->output_data[first_bad];
+                  << m_golden[first_bad] << " accel="
+                  << m_actual[first_bad];
     }
     std::cout << std::endl;
+
+    // G6 (pruning masked-dense): input/weight zero statistics, so a masked run documents
+    // the sparsity it actually consumed (value-impact reporting only -- no speedup claim).
+    // In executable-IR mode only MAPPED operations have live layer operand pointers (the
+    // store-bound input and the artifact-copied weight); a non-MAC operation's transitional
+    // layer keeps stale placeholder pointers, which must not be scanned.
+    const bool layer_operands_valid = !executable_ir_mode ||
+        (workload != NULL && m_index < workload->operations.size() &&
+         workload->operations[m_index].mapping_required);
+    size_t weight_zeros = 0, weight_elems = 0, input_zeros = 0, input_elems = 0;
+    if(layer_operands_valid && current->weight != NULL && current->weight_size > 0) {
+        weight_elems = current->weight_size;
+        for(size_t i = 0; i < weight_elems; ++i)
+            if(current->weight[i] == 0.0f) ++weight_zeros;
+    }
+    if(layer_operands_valid && current->input_data != NULL && current->input_size > 0) {
+        input_elems = static_cast<size_t>(current->input_size)*network->batch_size;
+        for(size_t i = 0; i < input_elems; ++i)
+            if(current->input_data[i] == 0.0f) ++input_zeros;
+    }
+
+    // Machine-readable record for the per-op report (plan §5.2).
+    std::ostringstream row;
+    row << std::setprecision(9) << std::defaultfloat
+        << "{\"layer\":" << m_index
+        << ",\"stage\":\"" << m_stage << "\""
+        << (functional_kernel_layers.count(m_index) ? ",\"kernel\":\"im2col\"" : "")
+        << ",\"pass\":" << (pass ? "true" : "false")
+        << ",\"elements\":" << elements
+        << ",\"mismatches\":" << mismatches
+        << ",\"max_abs_diff\":" << max_abs_diff
+        << ",\"golden_nonzeros\":" << golden_nonzeros
+        << ",\"accel_nonzeros\":" << accel_nonzeros
+        << ",\"weight_zeros\":" << weight_zeros
+        << ",\"weight_elements\":" << weight_elems
+        << ",\"input_zeros\":" << input_zeros
+        << ",\"input_elements\":" << input_elems
+        << ",\"vacuous\":" << (golden_nonzeros == 0 ? "true" : "false")
+        << ",\"first_mismatch\":" << first_bad << "}";
+    functional_report.push_back(row.str());
+}
+
+void npu_t::write_functional_report(const std::string &m_network_label) const {
+    const std::string dir = "result/functional/" + m_network_label;
+    // result/ and result/functional/ are created by the build; make the leaf best-effort.
+    std::string cmd = "mkdir -p '" + dir + "'";
+    if(system(cmd.c_str()) != 0) { /* fall through; ofstream failure is reported below */ }
+    const std::string path = dir + "/report.json";
+    std::ofstream out(path.c_str());
+    if(!out.good()) {
+        std::cerr << "Warning: could not write functional report to " << path << std::endl;
+        return;
+    }
+    out << "{\"network\":\"" << m_network_label << "\""
+        << ",\"semantics\":\"" << functional_semantics << "\""
+        << ",\"layers_checked\":" << functional_layers_checked
+        << ",\"layers_failed\":" << functional_layers_failed
+        << ",\"gate_pass\":" << (functional_failed() ? "false" : "true")
+        << ",\"per_layer\":[";
+    for(size_t i = 0; i < functional_report.size(); ++i)
+        out << (i ? "," : "") << functional_report[i];
+    out << "]}" << std::endl;
+    std::cout << "[FUNCTIONAL] report -> " << path << std::endl;
 }
 
 void npu_t::verify_functional_layer(unsigned m_index, bool m_mapped) {
+    // Executable-IR verification happens per operation against the artifact goldens
+    // (functional_commit/execute); the legacy per-layer machinery does not apply.
+    if(executable_ir_mode) return;
     nebula::layer_t *current = network->layers[m_index];
     // Fixture path: compare the accelerator's raw output against an EXTERNAL golden and do
     // NOT run nebula forward() (no shared-oracle, no output_data overwrite). Only the mapped
     // op carries a golden in this single-op milestone.
     if(functional_external_golden) {
-        // The external golden is the network's FINAL output. Compare only the last mapped
-        // layer; earlier mapped layers were already executed and their output_data feeds the
-        // next layer (chaining), so they need no per-layer golden.
+        // The external golden is the network's FINAL output. Compare only the last
+        // VALUE-BEARING layer (conv/connected MAC layers plus non-MAC functional kernels such
+        // as the residual/shortcut add). Earlier layers were already executed and their
+        // output_data feeds the next layer (chaining), so they need no per-layer golden.
         if(functional_last_mapped < 0) {
             for(unsigned i = 0; i < network->layers.size(); ++i) {
                 const nebula::layer_type_t t = network->layers[i]->layer_type;
-                if(t == nebula::CONNECTED_LAYER || t == nebula::CONVOLUTIONAL_LAYER)
+                if(t == nebula::CONNECTED_LAYER || t == nebula::CONVOLUTIONAL_LAYER ||
+                   t == nebula::SHORTCUT_LAYER  || t == nebula::MAXPOOL_LAYER ||
+                   t == nebula::AVGPOOL_LAYER   || t == nebula::SOFTMAX_LAYER ||
+                   t == nebula::CONCAT_LAYER)
                     functional_last_mapped = static_cast<int>(i);
             }
         }
-        if(m_mapped && static_cast<int>(m_index) == functional_last_mapped)
+        // G4: a per-layer golden (functional_golden<i>) verifies this layer's finalized
+        // output wherever it sits in the DAG, localizing the first mismatching operation.
+        if(functional_layer_golden.count(m_index))
+            verify_buffer_against(m_index, functional_layer_golden[m_index], "layer");
+        if(static_cast<int>(m_index) == functional_last_mapped)
             verify_against_golden(m_index);
         return;
     }

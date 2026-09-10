@@ -124,6 +124,12 @@ public:
     unsigned num_active_pe_y;                                                           // The number of active PEs in Y dimension
     unsigned num_active_chips_x;                                                        // The number of active chips in X dimension
     unsigned num_active_chips_y;                                                        // The number of active chips in Y dimension
+    // G7 (functional gaps plan Step 8): reduction dimension (C/R/S) spatially split at
+    // the chip level. CHIPS_Y reduction accumulates at the GLB->multi-chip output
+    // boundary (chips differing only in their Y coordinate hold partials of the SAME
+    // outputs); CHIPS_X reduction has no accumulate convention and is rejected.
+    bool chip_reduction_y;
+    bool chip_reduction_x;
     layer_name_t layer_name;
 
 private:

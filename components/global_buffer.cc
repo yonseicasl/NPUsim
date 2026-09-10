@@ -1536,7 +1536,7 @@ void global_buffer_t::flush_output_writeback(scheduler_t *m_scheduler) {
     if(multi_chip != NULL && m_scheduler != NULL && !m_scheduler->output_offset_multi_chip.empty()) {
         m_scheduler->transfer_data(multi_chip->data, data,
                                    multi_chip->offsets[data_type_t::OUTPUT] +
-                                       m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()],
+                                       functional_output_writeback_offset(m_scheduler),
                                    offsets[data_type_t::OUTPUT],
                                    component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER,
                                    data_type_t::OUTPUT, get_stationary_type(),
@@ -1546,6 +1546,15 @@ void global_buffer_t::flush_output_writeback(scheduler_t *m_scheduler) {
     (void)m_scheduler;
 #endif
 }
+
+#ifdef FUNCTIONAL
+unsigned global_buffer_t::functional_output_writeback_offset(scheduler_t *m_scheduler) const {
+    const size_t size = m_scheduler->output_offset_multi_chip.size();
+    const unsigned key = (m_scheduler->chip_reduction_y && m_scheduler->num_active_chips_y > 0)
+        ? index/m_scheduler->num_active_chips_y : index;
+    return m_scheduler->output_offset_multi_chip[key%size];
+}
+#endif
 
 void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
     // Case 1. Input stationary
@@ -1558,7 +1567,7 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
             // Write back Output data 
-            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()], offsets[data_type_t::OUTPUT],
+            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + functional_output_writeback_offset(m_scheduler), offsets[data_type_t::OUTPUT],
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
@@ -1580,7 +1589,7 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
             // Write back Output data 
-            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()], offsets[data_type_t::OUTPUT],
+            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + functional_output_writeback_offset(m_scheduler), offsets[data_type_t::OUTPUT],
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
@@ -1605,7 +1614,7 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
             exist_data[data_type_t::INPUT] = false, exist_data[data_type_t::OUTPUT] = false;
 #ifdef FUNCTIONAL
             // Write back Output data 
-            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()], offsets[data_type_t::OUTPUT],
+            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + functional_output_writeback_offset(m_scheduler), offsets[data_type_t::OUTPUT],
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
@@ -1627,7 +1636,7 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
 
 #ifdef FUNCTIONAL
             // Write back Output data 
-            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()], offsets[data_type_t::OUTPUT],
+            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + functional_output_writeback_offset(m_scheduler), offsets[data_type_t::OUTPUT],
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif
@@ -1664,7 +1673,7 @@ void global_buffer_t::flush_data(scheduler_t *m_scheduler) {
             exist_data[data_type_t::INPUT] = false, exist_data[data_type_t::WEIGHT] = false, exist_data[data_type_t::OUTPUT] = false;
 #ifdef FUNCTIONAL
             // Write back Output data 
-            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + m_scheduler->output_offset_multi_chip[index%m_scheduler->output_offset_multi_chip.size()], offsets[data_type_t::OUTPUT],
+            m_scheduler->transfer_data(multi_chip->data, data, multi_chip->offsets[data_type_t::OUTPUT] + functional_output_writeback_offset(m_scheduler), offsets[data_type_t::OUTPUT],
                                        component_type_t::CHIPS_Y, component_type_t::GLOBAL_BUFFER, 
                                        data_type_t::OUTPUT, get_stationary_type(), action_type_t::STORE);
 #endif

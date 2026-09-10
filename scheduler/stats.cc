@@ -1004,7 +1004,6 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
             // Update transfer cost between the global buffer to the PE array
             transfer_cycle_global_buffer[j] = std::max(transfer_cycle_global_buffer[j], m_global_buffer[i]->transfer_cycle[j]);
-            { static int d=0; if(d<3) std::cerr << "[GLBF] sep=" << m_global_buffer[i]->fabric_separate << " tc=" << m_global_buffer[i]->transfer_cycle[j] << std::endl; d++; }
             // CE4 rule per the declared GLB fabric: shared medium serializes the datatype
             // streams (sum); separate per-datatype buses run them concurrently (max).
             if(m_global_buffer[i]->fabric_separate) {

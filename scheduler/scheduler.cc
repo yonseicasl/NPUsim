@@ -27,9 +27,26 @@ void scheduler_t::init(mapping_table_t *m_mapping_table, stationary_type_t pe_st
 
     mapping_table = m_mapping_table;
 
-    // Calculate time-granular data size 
+    // Calculate time-granular data size
     tile_size.reserve(component_type_t::NUM_COMPONENT_TYPES);
     tile_size = calculate_tile_size();
+
+    // G7: does the mapping split a reduction dimension (C/R/S) across chips?
+    {
+        const std::vector<unsigned> at_glb = mapping_table->calculate_parameter_size(component_type_t::GLOBAL_BUFFER);
+        const std::vector<unsigned> at_cx  = mapping_table->calculate_parameter_size(component_type_t::CHIPS_X);
+        const std::vector<unsigned> at_cy  = mapping_table->calculate_parameter_size(component_type_t::CHIPS_Y);
+        auto grows = [](const std::vector<unsigned> &outer, const std::vector<unsigned> &inner,
+                        parameter_type_t dim) {
+            return inner[dim] != 0 && outer[dim]/inner[dim] > 1;
+        };
+        chip_reduction_x = grows(at_cx, at_glb, parameter_type_t::INPUT_CHANNEL) ||
+                           grows(at_cx, at_glb, parameter_type_t::FILTER_HEIGHT) ||
+                           grows(at_cx, at_glb, parameter_type_t::FILTER_WIDTH);
+        chip_reduction_y = grows(at_cy, at_cx, parameter_type_t::INPUT_CHANNEL) ||
+                           grows(at_cy, at_cx, parameter_type_t::FILTER_HEIGHT) ||
+                           grows(at_cy, at_cx, parameter_type_t::FILTER_WIDTH);
+    }
 
 #ifdef FUNCTIONAL
     // Initialize the number of zero-value data for a compression.
@@ -1622,8 +1639,14 @@ void scheduler_t::output_data_store(data_t *m_dest, data_t *m_source, unsigned m
     // moves a whole tile between hierarchy levels (distinct elements, one writer each) and
     // must remain a copy. The PE-array output buffer is zero-initialised each layer, so a
     // lone contribution (no spatial reduction) accumulates onto 0 -- identical to a copy.
+    // G7: the same rule at the GLB -> multi-chip boundary when the mapping splits a
+    // reduction dimension across CHIPS_Y -- each chip's GLB holds a partial of the SAME
+    // output tile (multi_chip->data is re-zeroed per layer/pass by reset()).
     const bool reduce_accumulate = (m_source_type == component_type_t::PE &&
-                                    m_destination_type == component_type_t::PE_Y);
+                                    m_destination_type == component_type_t::PE_Y) ||
+                                   (chip_reduction_y &&
+                                    m_source_type == component_type_t::GLOBAL_BUFFER &&
+                                    m_destination_type == component_type_t::CHIPS_Y);
 
     for(unsigned b = 0; b < source_param[parameter_type_t::BATCH_SIZE]; b++) {
         for(unsigned g = 0; g < source_param[parameter_type_t::GROUP]; g++) {

@@ -39,7 +39,10 @@ void print_usage(const char *program) {
               << " run [accelerator name] [network name] [mapping name]\n"
               << "  " << program
               << " run-ir [accelerator config path] [executable IR path]"
-              << " [mapping path] [optional result name]" << std::endl;
+              << " [mapping path] [optional result name]\n"
+              << "  " << program
+              << " run-ir-functional [accelerator config path] [executable IR path]"
+              << " [mapping path] [tensor artifact path] [optional result name]" << std::endl;
 }
 
 } // namespace
@@ -54,6 +57,7 @@ int main(int argc, char **argv) {
     std::string accelerator_config;
     std::string network_config;
     std::string mapping_config;
+    std::string tensor_artifact;
     std::string accelerator_label;
     std::string network_label;
 
@@ -83,6 +87,19 @@ int main(int argc, char **argv) {
         mapping_config = argv[4];
         accelerator_label = file_stem(accelerator_config);
         network_label = argc == 6 ? file_stem(argv[5]) : file_stem(network_config);
+    } else if(run_type == "run-ir-functional") {
+        // G1: the executable IR carries structure; the npusim.tensor.v1 artifact carries
+        // the values and per-operation goldens, bound together by the executable hash.
+        if(argc != 6 && argc != 7) {
+            print_usage(argv[0]);
+            return 1;
+        }
+        accelerator_config = argv[2];
+        network_config = argv[3];
+        mapping_config = argv[4];
+        tensor_artifact = argv[5];
+        accelerator_label = file_stem(accelerator_config);
+        network_label = argc == 7 ? file_stem(argv[6]) : file_stem(network_config);
     } else {
         std::cerr << "Unknown run type " << run_type << std::endl;
         print_usage(argv[0]);
@@ -92,9 +109,27 @@ int main(int argc, char **argv) {
     require_file(accelerator_config);
     require_file(network_config);
     require_file(mapping_config);
+    if(!tensor_artifact.empty()) require_file(tensor_artifact);
 
     npu_t npu;
+#ifdef FUNCTIONAL
+    npu.functional_artifact_path = tensor_artifact;
+#else
+    if(!tensor_artifact.empty()) {
+        std::cerr << "Error: run-ir-functional requires a FUNCTIONAL build"
+                  << " (FUNCTIONAL=1 ./npusim.sh build npusim)" << std::endl;
+        return 1;
+    }
+#endif
     npu.init(accelerator_config, network_config, mapping_config);
     npu.run(accelerator_label, network_label);
+#ifdef FUNCTIONAL
+    // Acceptance gate: a functional mismatch / uncompared golden is a hard failure, so the
+    // process exits non-zero (CI and scripts can trust the exit code, plan §8).
+    if(npu.functional_failed()) {
+        std::cerr << "[FUNCTIONAL] ACCEPTANCE GATE FAILED (non-zero exit)" << std::endl;
+        return 2;
+    }
+#endif
     return 0;
 }

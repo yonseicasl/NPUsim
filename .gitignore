@@ -38,3 +38,5 @@ validation/decomp/results.csv
 
 # Fidelity report output (regenerate via measure_fidelity.sh)
 validation/fidelity/fidelity_report.csv
+library/obj/
+models/obj/

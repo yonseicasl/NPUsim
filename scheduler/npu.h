@@ -6,6 +6,8 @@
 #include <vector>
 #include <cstring>
 #include <fstream>
+#include <map>
+#include <set>
 
 
 #include "convolutional.h"
@@ -28,6 +30,9 @@
 #include "mapping_table.h"
 #include "scheduler.h"
 #include "stats.h"
+#ifdef FUNCTIONAL
+#include "functional_artifact.h"
+#endif
 
 class network_t;
 class scheduler_t;
@@ -128,11 +133,109 @@ protected:
     std::vector<float> functional_input_buffer;
     std::vector<float> functional_golden;
     bool functional_external_golden;
+    // G4 (gaps plan Step 3): OPTIONAL per-layer goldens so a multi-layer DAG localizes its
+    // first mismatching operation instead of only failing at the final output. [data]
+    // functional_golden<i> compares layer i AFTER its finalize (bias/BN/activation);
+    // [data] functional_golden_raw<i> compares layer i's RAW accumulator BEFORE the
+    // finalize (stage separation, plan §5.3). The final golden remains mandatory.
+    std::map<unsigned, std::vector<float>> functional_layer_golden;
+    std::map<unsigned, std::vector<float>> functional_layer_golden_raw;
     // Index of the LAST mapped (conv/connected) layer. With an external golden the golden is
     // the network's final output, so only this layer is compared; earlier mapped layers are
     // still executed (their output feeds the next layer) but not verified. -1 = uncomputed.
     int functional_last_mapped;
+    // INT8 requantization (plan §7), applied in the finalize after bias/activation when
+    // requant_shift>0: round-half-up arithmetic right shift then clamp to [min,max]. Values
+    // are exact integers in the float datapath, so this is bit-exact. 0 = disabled.
+    int functional_requant_shift;
+    int functional_requant_min;
+    int functional_requant_max;
+    // PER-CHANNEL requant multipliers (plan §7 per-channel scale). When non-empty, requant is
+    // out = clamp((acc*mult[c] + round) >> shift, min, max) with a per-output-channel int32
+    // multiplier mult[c] (TFLite-style fixed point). Done in int64 so the acc*mult product is
+    // exact beyond float's 2^24. Empty => scalar multiplier 1 (plain >>shift). fp32-stored ints.
+    std::vector<float> functional_requant_mult;
+    // Low-precision OUTPUT format (plan §7 fp16/bf16): round each finalized output to the
+    // reduced-mantissa grid. "" = fp32 (no rounding), "bf16", or "fp16". Operands are rounded
+    // fixture-side (stored exactly); accumulation stays fp32 (mixed-precision policy).
+    std::string functional_output_format;
+    // Asymmetric-input INT8 zero-point (plan §7). With a symmetric weight, the raw MAC
+    // Sum(qi*qw) is corrected by -zp_i * Sum_k(weight[n][k]) per output channel n (a
+    // per-channel constant, so the simulator folds it into the finalize like bias). 0 = off.
+    // Requires the standard [N][K] weight layout (not the kfold reduction-tile-major one).
+    int functional_input_zero_point;
+    // Weight zero-point (full asymmetric int8). Adds the per-output-ROW term -zp_w*Sum_k(input
+    // row m) plus the constant +Kdim*zp_i*zp_w to the finalize correction (the row term does NOT
+    // fold into per-channel bias, so the simulator computes it from the injected input rows). 0=off.
+    int functional_weight_zero_point;
+    // G2 (gaps plan Step 2): the EFFECTIVE functional arithmetic profile of this run,
+    // recorded in the report. Derived from the fixture's [data] functional_semantics (or
+    // inferred from its quantization/rounding knobs) and cross-checked against the
+    // accelerator config's input/weight/output_format declarations: a config that declares
+    // int8 tensors refuses an fp32 fixture unless the fixture explicitly declares
+    // functional_semantics = fp32_reference.
+    std::string functional_semantics;
+    // Declared weight layout of the fixture ([data] weight_layout): "" = standard [N][K],
+    // "ktile" = reduction-tile-major [Kf][N][sK] (required by an INPUT_CHANNEL temporal fold,
+    // incompatible with the zero-point corrections that read weight as [N][K]). The mapping
+    // alone cannot reveal the layout, so the fixture declares it and G5 cross-checks.
+    std::string functional_weight_layout;
+    // Machine-readable per-verified-layer comparison records (plan §5.2), one JSON object each.
+    std::vector<std::string> functional_report;
+    // G5 (gaps plan Step 1): refuse mappings whose values the functional path cannot
+    // compute correctly, with an explicit diagnosis instead of a downstream mismatch FAIL.
+    void functional_reject_unsupported_mapping(unsigned m_index);
+    // G3 (gaps plan Step 5): in-simulator im2col value kernel for mapped convolution
+    // layers with P/Q > 1 -- the native conv offset network cannot compute them (it
+    // derives the per-channel input stride from the PE tile), so the VALUE path lowers
+    // the conv to a deterministic scalar im2col GEMM (zero padding, stride, groups),
+    // exactly the lowering a GEMM accelerator performs. Timing still comes from the
+    // mapped datapath run; layers computed here are tagged "im2col" in the report.
+    void functional_conv_im2col(unsigned m_index);
+    std::set<unsigned> functional_kernel_layers;
     void verify_against_golden(unsigned m_index);
+    // Compare one layer's output_data against a specific golden buffer at a named stage
+    // ("final" | "layer" | "raw"). Feeds the summary counters and the JSON report.
+    void verify_buffer_against(unsigned m_index, const std::vector<float> &m_golden,
+                               const char *m_stage);
+    // Raw-pointer form for buffers that do not live in a nebula layer (the executable-IR
+    // tensor store); zero statistics still read the layer's weight/input when present.
+    void verify_buffer_against(unsigned m_index, const float *m_actual, size_t m_elements,
+                               const std::vector<float> &m_golden, const char *m_stage);
+
+    // G1 (gaps plan Step 4): executable-IR functional execution. Values live in a tensor
+    // store keyed by executable tensor id (aliases resolve to their storage tensor); the
+    // npusim.tensor.v1 artifact supplies graph inputs and parameters, MAC operations run
+    // on the mapped datapath (weights copied into the transitional nebula layer, re-laid
+    // reduction-tile-major when the mapping folds INPUT_CHANNEL), convolutions with
+    // P/Q > 1 use the im2col kernel, and non-MAC operations run dedicated value kernels.
+    // Every operation with an artifact golden is compared; graph outputs are mandatory.
+    functional_artifact_t functional_artifact;
+    std::map<std::string, std::vector<float>> functional_tensor_store;
+    std::vector<float> &functional_store(const std::string &m_tensor_id);
+    void functional_bind_executable_operation(unsigned m_index,
+                                              const workload_operation_t &m_operation);
+    void functional_commit_executable_operation(unsigned m_index,
+                                                const workload_operation_t &m_operation);
+    void functional_execute_graph_operation(unsigned m_index,
+                                            const workload_operation_t &m_operation);
+public:
+    // Path to the npusim.tensor.v1 manifest (set by main.cc for run-ir-functional before
+    // init; empty = timing-only executable run, which a FUNCTIONAL build refuses).
+    std::string functional_artifact_path;
+protected:
+    // Write functional_report to result/functional/<network>/report.json.
+    void write_functional_report(const std::string &m_network_label) const;
+public:
+    // Acceptance gate (plan §8 "Failure semantics"): the run FAILS if any verified layer
+    // mismatched, or if an external golden was supplied but nothing was ever compared (a
+    // silently-uncompared or vacuous run must not read as success). main() maps this to a
+    // non-zero process exit.
+    bool functional_failed() const {
+        return functional_layers_failed > 0 ||
+               (functional_external_golden && functional_layers_checked == 0);
+    }
+protected:
 #endif
     // Phase-7: cost of streaming the softmax operand tensor between the memory hierarchy
     // and the SFU, per [sfu] softmax_operand_residency, from the live components' unit
