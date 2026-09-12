@@ -107,6 +107,7 @@ npu_t::npu_t() :
     functional_requant_max = 127;
     functional_input_zero_point = 0;
     functional_weight_zero_point = 0;
+    functional_zero_gating = false;
 #endif
 }
 
@@ -211,6 +212,18 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
                 pe_array->index = i;
                 pe_arrays.emplace_back(pe_array);
             }
+#ifdef FUNCTIONAL
+            section_config.get_setting("functional_zero_gating", &functional_zero_gating);
+#else
+            {
+                bool zero_gating_declared = false;
+                section_config.get_setting("functional_zero_gating", &zero_gating_declared);
+                if(zero_gating_declared) {
+                    std::cout << "# functional_zero_gating declared, but this is a timing-only "
+                              << "build; energies are UNGATED (build with FUNCTIONAL=1)" << std::endl;
+                }
+            }
+#endif
         }
         else if(section_config.name == "spatial_arch" || section_config.name == "SPATIAL_ARCH") {
             pe_array_t *pe_array;
@@ -219,6 +232,18 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
                 pe_array->index = i;
                 pe_arrays.emplace_back(pe_array);
             }
+#ifdef FUNCTIONAL
+            section_config.get_setting("functional_zero_gating", &functional_zero_gating);
+#else
+            {
+                bool zero_gating_declared = false;
+                section_config.get_setting("functional_zero_gating", &zero_gating_declared);
+                if(zero_gating_declared) {
+                    std::cout << "# functional_zero_gating declared, but this is a timing-only "
+                              << "build; energies are UNGATED (build with FUNCTIONAL=1)" << std::endl;
+                }
+            }
+#endif
         }
         else if(section_config.name == "systolic_array" || section_config.name == "SYSTOLIC_ARRAY") {
             pe_array_t *pe_array;
@@ -227,6 +252,18 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
                 pe_array->index = i;
                 pe_arrays.emplace_back(pe_array);
             }
+#ifdef FUNCTIONAL
+            section_config.get_setting("functional_zero_gating", &functional_zero_gating);
+#else
+            {
+                bool zero_gating_declared = false;
+                section_config.get_setting("functional_zero_gating", &zero_gating_declared);
+                if(zero_gating_declared) {
+                    std::cout << "# functional_zero_gating declared, but this is a timing-only "
+                              << "build; energies are UNGATED (build with FUNCTIONAL=1)" << std::endl;
+                }
+            }
+#endif
         }
         // Initialize Global buffer.
         else if(section_config.name == "separate" || section_config.name == "SEPARATE") {
@@ -361,24 +398,43 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         // Load + validate it (hash-bound to this executable), seed the tensor store with
         // the graph inputs and parameters, and arm the acceptance gate.
         if(!functional_artifact_path.empty()) {
-            // G2 for executable runs: the artifact carries float32 values, so the
-            // accelerator must declare fp32 tensors (no override channel here -- pick an
-            // fp32 accelerator config for functional executable runs).
-            const bool fp32_formats =
-                runtime_datatypes().format(data_type_t::INPUT).kind  == data_format_kind_t::FP32 &&
-                runtime_datatypes().format(data_type_t::WEIGHT).kind == data_format_kind_t::FP32 &&
-                runtime_datatypes().format(data_type_t::OUTPUT).kind == data_format_kind_t::FP32;
-            if(!fp32_formats) {
-                std::cerr << "Error: functional executable runs carry float32 values; the"
-                          << " accelerator config must declare input/weight/output_format ="
-                          << " fp32" << std::endl;
+            functional_artifact.load(functional_artifact_path, *workload);
+            // G2 for executable runs: the artifact's declared arithmetic profile must
+            // match the accelerator's tensor-format declarations (no override channel
+            // here -- pick the accelerator config that matches the artifact).
+            auto semantics_of = [](const tensor_format_t &f) -> std::string {
+                switch(f.kind) {
+                    case data_format_kind_t::INT:
+                    case data_format_kind_t::UINT: return f.payload_bits == 8 ? "int8" : "unsupported";
+                    case data_format_kind_t::FP16: return "fp16";
+                    case data_format_kind_t::BF16: return "bf16";
+                    case data_format_kind_t::FP32: return "fp32";
+                    default:                       return "unsupported";
+                }
+            };
+            const std::string in_sem  = semantics_of(runtime_datatypes().format(data_type_t::INPUT));
+            const std::string wt_sem  = semantics_of(runtime_datatypes().format(data_type_t::WEIGHT));
+            const std::string out_sem = semantics_of(runtime_datatypes().format(data_type_t::OUTPUT));
+            if(in_sem != out_sem || wt_sem != out_sem || out_sem != functional_artifact.profile) {
+                std::cerr << "Error: the tensor artifact declares " << functional_artifact.profile
+                          << " semantics but the accelerator's input/weight/output_format"
+                          << " declare " << in_sem << "/" << wt_sem << "/" << out_sem
+                          << "; run it on a matching accelerator config" << std::endl;
                 exit(1);
             }
-            functional_artifact.load(functional_artifact_path, *workload);
+            // Bind the artifact's arithmetic knobs to the finalize (same machinery as
+            // the legacy [data] settings).
+            functional_requant_shift     = functional_artifact.requant_shift;
+            functional_requant_min       = functional_artifact.requant_min;
+            functional_requant_max       = functional_artifact.requant_max;
+            functional_input_zero_point  = functional_artifact.input_zero_point;
+            functional_weight_zero_point = functional_artifact.weight_zero_point;
+            if(functional_artifact.profile == "fp16" || functional_artifact.profile == "bf16")
+                functional_output_format = functional_artifact.profile;
             for(const auto &entry : functional_artifact.tensors) {
                 functional_store(entry.first) = entry.second;
             }
-            functional_semantics = "fp32";
+            functional_semantics = functional_artifact.profile;
             functional_external_golden = true;
         }
 #endif
@@ -875,7 +931,26 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
 
 #ifdef FUNCTIONAL
                 if(executable_ir_mode) functional_bind_executable_operation(index, *operation);
-                functional_reject_unsupported_mapping(index);
+                // Envelope classification: false = the datapath computes the values;
+                // true = a reference kernel (GEMM/im2col) computes them after the run.
+                const bool functional_kernel_values = functional_mapping_needs_kernel(index);
+                // Kernel-value layers: suppress the datapath's own value movement -- its
+                // offsets are exactly what the kernel path declared invalid (garbage moves
+                // at best, window overruns at worst). Timing accounting is untouched.
+                scheduler->functional_value_transfers = !functional_kernel_values;
+                // Zero-gating correction: measure the REAL zero fraction of this layer's
+                // input tensor (the previous layer's finalized functional output, or the
+                // injected graph input) BEFORE the datapath consumes it.
+                double zero_gating_fraction = 0.0;
+                if(functional_zero_gating && layer->input_data != NULL && layer->input_size > 0) {
+                    const size_t input_elements =
+                        static_cast<size_t>(layer->input_size)*network->batch_size;
+                    size_t zeros = 0;
+                    for(size_t i = 0; i < input_elements; ++i)
+                        if(layer->input_data[i] == 0.0f) ++zeros;
+                    zero_gating_fraction =
+                        static_cast<double>(zeros)/static_cast<double>(input_elements);
+                }
 #endif
                 print_network_configuration(index, stats_index);
                 reset();
@@ -908,13 +983,29 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 }
                 layer_stats[stats_index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
 #ifdef FUNCTIONAL
-                // G3: a convolution with P/Q > 1 gets its VALUES from the in-simulator
-                // im2col kernel (the datapath above already produced this layer's timing);
-                // the temporal-fold replay below is GEMM machinery and is skipped for it.
-                const bool conv_value_kernel =
-                    scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER &&
-                    (layer->output_height > 1 || layer->output_width > 1);
-                if(conv_value_kernel) functional_conv_im2col(index);
+                // Apply the zero-gating energy correction on the captured (pre-repetition-
+                // scaled) counters; the fractions are exact measurements, not estimates.
+                if(functional_zero_gating) {
+                    layer_stats[stats_index]->apply_functional_zero_gating(zero_gating_fraction);
+                    functional_gating_fraction[index] = zero_gating_fraction;
+                    std::ostringstream gating_note;
+                    gating_note << std::setprecision(4) << zero_gating_fraction << "; MAC +"
+                                << " weight-spad dynamic energy x " << std::setprecision(4)
+                                << 1.0 - zero_gating_fraction;
+                    std::cout << "[FUNCTIONAL] layer " << index << ": zero-gating -- input zero"
+                              << " fraction " << gating_note.str()
+                              << " (cycles unchanged)" << std::endl;
+                }
+#endif
+#ifdef FUNCTIONAL
+                // G3/G5: layers outside the datapath value envelope get their VALUES from
+                // a reference kernel (the datapath above already produced this layer's
+                // timing): convolution -> im2col kernel, connected -> GEMM kernel. The
+                // temporal-fold replay below is datapath machinery and is skipped for them.
+                const bool conv_value_kernel = functional_kernel_values &&
+                    scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER;
+                if(conv_value_kernel)               functional_conv_im2col(index);
+                else if(functional_kernel_values)   functional_gemm_fallback(index);
                 // TEMPORAL-FOLD FUNCTIONAL REPLAY (batch): the analytical engine simulates ONE
                 // representative tile and scales timing by repetitions, so only the first
                 // batch's VALUES were just computed. Timing is already captured (update_stats
@@ -924,7 +1015,7 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 // write-back chain, so every batch's outputs land in their own tensor region.
                 // Restricted to a pure-batch temporal fold (weight reused; no other GLB/DRAM
                 // output fold); other folds fall through unreplayed (see functional-sim plan).
-                if(!conv_value_kernel) {
+                if(!functional_kernel_values) {
                     // Per-dimension GLB TEMPORAL-REPETITION fold count. The GLB row is stored as
                     // "legacy GLB temporal-repetition factors" SEPARATE from the mapping-table
                     // cumulative product, so calculate_parameter_size() misses it. The full
@@ -1081,16 +1172,33 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     //                             - zp_w*rowsum_i[m] + Kdim*zp_i*zp_w.
                     // colsum_w[n] (per output channel) folds like bias; rowsum_i[m] (per output
                     // ROW) does NOT, so the simulator computes it from the injected input rows.
-                    const int zp_i = functional_input_zero_point;
-                    const int zp_w = functional_weight_zero_point;
+                    // The conv im2col kernel subtracts the zero points DURING accumulation, so
+                    // its layers skip this GEMM-shaped correction entirely.
+                    const int zp_i = conv_value_kernel ? 0 : functional_input_zero_point;
+                    const int zp_w = conv_value_kernel ? 0 : functional_weight_zero_point;
                     const size_t Kdim = Nch ? static_cast<size_t>(layer->weight_size)/Nch : 0;   // reduction len
                     std::vector<double> colsum;   // per output channel n (weight column sum)
                     if(zp_i != 0 && layer->weight != NULL && layer->weight_size > 0) {
                         colsum.assign(Nch, 0.0);
-                        for(unsigned n = 0; n < Nch; ++n) {
-                            double s = 0.0;
-                            for(size_t k = 0; k < Kdim; ++k) s += layer->weight[static_cast<size_t>(n)*Kdim + k];
-                            colsum[n] = s;
+                        if(functional_weight_layout == "ktile") {
+                            // Reduction-tile-major [Kf][N][sK]: column n's elements sit at
+                            // (kt*N + n)*sK + kk. sK is the mapping's spatial reduction extent.
+                            const unsigned sK = scheduler->mapping_table->
+                                calculate_parameter_size(component_type_t::DRAM)[parameter_type_t::INPUT_CHANNEL];
+                            const size_t Kf = sK ? Kdim/sK : 0;
+                            for(unsigned n = 0; n < Nch; ++n) {
+                                double s = 0.0;
+                                for(size_t kt = 0; kt < Kf; ++kt)
+                                    for(unsigned kk = 0; kk < sK; ++kk)
+                                        s += layer->weight[(kt*Nch + n)*sK + kk];
+                                colsum[n] = s;
+                            }
+                        } else {
+                            for(unsigned n = 0; n < Nch; ++n) {
+                                double s = 0.0;
+                                for(size_t k = 0; k < Kdim; ++k) s += layer->weight[static_cast<size_t>(n)*Kdim + k];
+                                colsum[n] = s;
+                            }
                         }
                     }
                     std::vector<double> rowsum;   // per output row m (input row sum)
@@ -1105,6 +1213,28 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                         }
                     }
                     const double zp_const = static_cast<double>(Kdim)*zp_i*zp_w;
+                    // Activation contract: every formula below mirrors nebula's
+                    // (ext/nebula/common/activations.cc) exactly -- same expression, same
+                    // double-precision intermediate arithmetic -- so the accelerator agrees
+                    // with both the nebula oracle and the external Python goldens. An
+                    // activation with NO functional formula must fail LOUDLY here: the old
+                    // default silently passed GELU (etc.) through as linear, producing
+                    // wrong values with no diagnostic.
+                    switch(layer->activation_type) {
+                        case nebula::UNDEFINED_ACTIVATION:
+                        case nebula::LINEAR_ACTIVATION:
+                        case nebula::RELU_ACTIVATION:
+                        case nebula::LEAKY_ACTIVATION:
+                        case nebula::GELU_ACTIVATION:
+                        case nebula::SILU_ACTIVATION:
+                            break;
+                        default:
+                            std::cerr << "Error: layer " << index << " activation '"
+                                      << nebula::activation_type_str[layer->activation_type]
+                                      << "' has no functional finalize formula (supported: "
+                                      << "linear, relu, leaky, gelu, silu)" << std::endl;
+                            exit(1);
+                    }
                     for(size_t i = 0; i < elems; ++i) {
                         const unsigned c = spatial > 1 ? (i/spatial) % Nch : i % Nch;
                         const size_t   m = Nch ? i / Nch : 0;
@@ -1117,6 +1247,15 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                         switch(layer->activation_type) {
                             case nebula::RELU_ACTIVATION:  v = v > 0.0f ? v : 0.0f;        break;
                             case nebula::LEAKY_ACTIVATION: v = v > 0.0f ? v : 0.1f*v;      break;
+                            // GELU, tanh approximation (Hendrycks & Gimpel) -- identical
+                            // expression and double math as nebula's gelu_activation().
+                            case nebula::GELU_ACTIVATION:
+                                v = 0.5*v*(1.0 + tanh(0.7978845608*(v + 0.044715*v*v*v)));
+                                break;
+                            // SiLU (swish): x * sigmoid(x), as nebula's silu_activation().
+                            case nebula::SILU_ACTIVATION:
+                                v = v/(1.0 + exp(0.0 - v));
+                                break;
                             case nebula::LINEAR_ACTIVATION: default:                       break;
                         }
                         if(functional_requant_shift > 0) {
@@ -1973,73 +2112,102 @@ void npu_t::run_standalone_softmax(unsigned m_index, const std::string &m_accele
 // OUTPUT precision, from the live components' declared unit costs. Nothing here mutates
 // a component counter -- the costs land in the softmax layer's own stats object.
 #ifdef FUNCTIONAL
-// G5 (gaps plan Step 1): refuse mappings whose values the functional path cannot compute
-// correctly. Each rejected class would otherwise surface as a confusing value-mismatch FAIL
-// (or a silently-unreplayed fold): the DRAM-queue mechanism iterates tiles without
-// re-initializing accumulators, chip-boundary reduction still moves psums with data_copy
-// (accumulate exists only at the PE->PE_Y adder-tree boundary, scheduler.cc), filter folds
-// have no replay ownership, and the native-conv on-chip offset network derives the
-// per-channel input stride from the PE tile's extent instead of the full input whenever
-// P/Q > 1. The supported envelope is documented in validation/functional/README.md.
-void npu_t::functional_reject_unsupported_mapping(unsigned m_index) {
-    auto reject = [&](const std::string &m_reason) {
-        std::cerr << "Error: unsupported functional mapping for layer " << m_index
-                  << ": " << m_reason
-                  << " (see validation/functional/README.md for the supported envelope)"
-                  << std::endl;
-        exit(1);
-    };
-    // G3: a convolution with P/Q > 1 is computed by the in-simulator im2col value kernel
-    // (functional_conv_im2col), which is mapping-independent -- the mapping then only
-    // shapes timing, so the value-path mapping checks below do not apply. The kernel's
-    // finalize supports bias/BN/activation/requant but not the GEMM-row zero-point
-    // corrections, which assume a [M][K] input layout.
+// G5 (gaps plan Step 1, extended): classify the mapped layer's mapping against the
+// datapath VALUE envelope. Envelope violations no longer reject the run: the DRAM-queue
+// mechanism iterates tiles without re-initializing accumulators, filter folds have no
+// replay ownership, a mixed chip axis would fold distinct output groups into one
+// accumulator, and an INPUT_CHANNEL fold needs the reduction-tile-major weight layout --
+// in each of those cases the layer's VALUES are computed by a mapping-independent
+// reference kernel (GEMM or im2col) instead, announced on stdout and tagged in the
+// report, while TIMING still comes from the mapped datapath run. The only outright
+// rejection left is a ktile-laid weight together with an out-of-envelope mapping: no
+// kernel can interpret that layout. Envelope: validation/functional/README.md.
+bool npu_t::functional_mapping_needs_kernel(unsigned m_index) {
+    // A convolution with P/Q > 1 always uses the im2col value kernel, which is
+    // mapping-independent -- the mapping checks below are moot for it.
     if(scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER &&
        (network->layers[m_index]->output_height > 1 ||
         network->layers[m_index]->output_width  > 1)) {
-        if(functional_input_zero_point != 0 || functional_weight_zero_point != 0) {
-            reject("zero-point correction on a convolution computed by the im2col value "
-                   "kernel; asymmetric quantization is GEMM-only for now");
-        }
-        return;
+        return true;
     }
+    std::string reason;
     if(scheduler->input_offset_dram.size()  != 1 ||
        scheduler->weight_offset_dram.size() != 1 ||
        scheduler->output_offset_dram.size() != 1) {
-        reject("DRAM-level temporal fold (offset queue size > 1); "
-               "express the fold as GLB repetitions instead");
+        reason = "DRAM-level temporal fold (offset queue size > 1)";
     }
     mapping_table_t *mt = scheduler->mapping_table;
     const std::vector<unsigned> full    = mt->calculate_total_parameter_size();
     const std::vector<unsigned> spatial = mt->calculate_parameter_size(component_type_t::DRAM);
-    // G7: a CHIPS_Y reduction split is supported (GLB->multi-chip accumulate); CHIPS_X
-    // has no accumulate convention (the chip index keys outputs by its X part).
-    if(scheduler->chip_reduction_x) {
-        reject("reduction dimension (C/R/S) split across CHIPS_X; "
-               "map chip-level reduction onto CHIPS_Y");
+    // G7: chip-level reduction accumulates at the GLB->multi-chip boundary on either
+    // axis, keyed by the chip index's non-reduction part -- which requires each chip
+    // axis to carry reduction factors OR output factors, never both.
+    if(reason.empty()) {
+        const std::vector<unsigned> at_glb = mt->calculate_parameter_size(component_type_t::GLOBAL_BUFFER);
+        const std::vector<unsigned> at_cx  = mt->calculate_parameter_size(component_type_t::CHIPS_X);
+        const std::vector<unsigned> at_cy  = mt->calculate_parameter_size(component_type_t::CHIPS_Y);
+        auto axis_mixed = [](const std::vector<unsigned> &outer, const std::vector<unsigned> &inner) {
+            auto grows = [&](parameter_type_t d) { return inner[d] != 0 && outer[d]/inner[d] > 1; };
+            const bool reduction = grows(parameter_type_t::INPUT_CHANNEL) ||
+                                   grows(parameter_type_t::FILTER_HEIGHT) ||
+                                   grows(parameter_type_t::FILTER_WIDTH);
+            const bool output    = grows(parameter_type_t::OUTPUT_CHANNEL) ||
+                                   grows(parameter_type_t::BATCH_SIZE) ||
+                                   grows(parameter_type_t::OUTPUT_HEIGHT) ||
+                                   grows(parameter_type_t::OUTPUT_WIDTH) ||
+                                   grows(parameter_type_t::GROUP);
+            return reduction && output;
+        };
+        if(axis_mixed(at_cx, at_glb) || axis_mixed(at_cy, at_cx))
+            reason = "one chip axis carries BOTH reduction (C/R/S) and output factors";
     }
     auto fold = [&](parameter_type_t d) -> unsigned {
         return spatial[d] ? full[d]/spatial[d] : 1;
     };
-    if(fold(parameter_type_t::FILTER_HEIGHT) != 1 ||
-       fold(parameter_type_t::FILTER_WIDTH)  != 1) {
-        reject("filter (R/S) temporal fold; no replay ownership for filter tiles");
+    if(reason.empty() &&
+       (fold(parameter_type_t::FILTER_HEIGHT) != 1 ||
+        fold(parameter_type_t::FILTER_WIDTH)  != 1)) {
+        reason = "filter (R/S) temporal fold";
     }
     // An INPUT_CHANNEL temporal fold is replayed assuming the reduction-tile-major
-    // [Kf][N][sK] weight layout; a standard [N][K] fixture would be read with the wrong
-    // strides and fail as a value mismatch. The fixture must declare the layout.
-    if(fold(parameter_type_t::INPUT_CHANNEL) > 1 && functional_weight_layout != "ktile") {
-        reject("INPUT_CHANNEL temporal fold with a standard [N][K] weight; regenerate the "
-               "fixture with the reduction-tile-major layout and declare "
-               "[data] weight_layout = ktile, or keep the reduction spatial (PE_Y)");
+    // [Kf][N][sK] weight layout; a standard [N][K] weight instead routes to the kernel.
+    if(reason.empty() &&
+       fold(parameter_type_t::INPUT_CHANNEL) > 1 && functional_weight_layout != "ktile") {
+        reason = "INPUT_CHANNEL temporal fold with a standard [N][K] weight";
     }
-    // The zero-point finalize corrections read layer->weight as [N][K]; the ktile layout
-    // would produce wrong per-channel column sums.
-    if((functional_input_zero_point != 0 || functional_weight_zero_point != 0) &&
-       functional_weight_layout == "ktile") {
-        reject("zero-point correction with the reduction-tile-major weight layout; "
-               "use a spatial-reduction mapping for asymmetric quantization");
+    if(reason.empty()) return false;
+    if(functional_weight_layout == "ktile") {
+        std::cerr << "Error: unsupported functional mapping for layer " << m_index
+                  << ": " << reason << " combined with the reduction-tile-major (ktile)"
+                  << " weight layout -- the reference value kernel needs the standard"
+                  << " [N][K] weight (see validation/functional/README.md)" << std::endl;
+        exit(1);
     }
+    std::cout << "[FUNCTIONAL] layer " << m_index << ": mapping outside the datapath"
+              << " value envelope (" << reason << "); values computed by the reference"
+              << " kernel, timing from the mapped datapath" << std::endl;
+    return true;
+}
+
+// Reference GEMM value kernel: raw accumulators out[M][N] = in[M][K] @ W[N][K]^T in the
+// datapath's position-major layout and (m,n,k) scalar order; the shared finalize applies
+// BN/zero-point/bias/activation/requant exactly once afterwards.
+void npu_t::functional_gemm_fallback(unsigned m_index) {
+    nebula::layer_t *l = network->layers[m_index];
+    const unsigned N = l->output_channel;
+    const unsigned K = l->input_size;
+    const size_t rows = static_cast<size_t>(l->output_size)*network->batch_size/(N ? N : 1);
+    const float *in = l->input_data;
+    const float *wt = l->weight;
+    float *out = l->output_data;
+    for(size_t m = 0; m < rows; ++m) {
+        for(unsigned n = 0; n < N; ++n) {
+            float acc = 0.0f;
+            for(unsigned k = 0; k < K; ++k) acc += in[m*K + k]*wt[static_cast<size_t>(n)*K + k];
+            out[m*N + n] = acc;
+        }
+    }
+    functional_kernel_layers[m_index] = "gemm";
 }
 
 // G1 (gaps plan Step 4): executable-IR functional execution over a tensor store keyed by
@@ -2295,6 +2463,12 @@ void npu_t::functional_execute_graph_operation(unsigned m_index,
     } else if(m_operation.activation == "leaky") {
         for(size_t i = 0; i < out.size(); ++i) out[i] = out[i] > 0.0f ? out[i] : 0.1f*out[i];
     }
+    // Low-precision profiles round every operation's output to the grid (the reference
+    // interpreter mirrors this); no-op for fp32.
+    if(!functional_output_format.empty()) {
+        for(size_t i = 0; i < out.size(); ++i)
+            out[i] = round_lowp(functional_output_format, out[i]);
+    }
 
     const auto golden = functional_artifact.golden.find(m_operation.id);
     if(golden != functional_artifact.golden.end()) {
@@ -2328,6 +2502,12 @@ void npu_t::functional_conv_im2col(unsigned m_index) {
     const float *in = l->input_data;
     const float *wt = l->weight;                     // [N][Cg][R][S]
     float *out = l->output_data;
+    // Asymmetric int8 zero points are subtracted DURING accumulation (padding positions
+    // contribute nothing, exactly like a real accelerator's implicit-zero handling of the
+    // padded region in the quantized domain). Values are int8-range integers stored in
+    // fp32, so the accumulation stays integer-exact.
+    const float zp_i = static_cast<float>(functional_input_zero_point);
+    const float zp_w = static_cast<float>(functional_weight_zero_point);
     for(unsigned b = 0; b < batch; ++b) {
         for(unsigned n = 0; n < N; ++n) {
             const unsigned g = n/Ng;
@@ -2341,8 +2521,8 @@ void npu_t::functional_conv_im2col(unsigned m_index) {
                             for(unsigned s = 0; s < S; ++s) {
                                 const long iw = static_cast<long>(q)*stride + s - l->padding_w;
                                 if(iw < 0 || iw >= static_cast<long>(W)) continue;
-                                acc += in[((static_cast<size_t>(b)*C + g*Cg + c)*H + ih)*W + iw]*
-                                       wt[((static_cast<size_t>(n)*Cg + c)*R + r)*S + s];
+                                acc += (in[((static_cast<size_t>(b)*C + g*Cg + c)*H + ih)*W + iw] - zp_i)*
+                                       (wt[((static_cast<size_t>(n)*Cg + c)*R + r)*S + s] - zp_w);
                             }
                         }
                     }
@@ -2351,7 +2531,7 @@ void npu_t::functional_conv_im2col(unsigned m_index) {
             }
         }
     }
-    functional_kernel_layers.insert(m_index);
+    functional_kernel_layers[m_index] = "im2col";
 }
 
 // Functional verification of one layer. The accelerator datapath has already moved the
@@ -2458,8 +2638,12 @@ void npu_t::verify_buffer_against(unsigned m_index, const float *m_actual, size_
     row << std::setprecision(9) << std::defaultfloat
         << "{\"layer\":" << m_index
         << ",\"stage\":\"" << m_stage << "\""
-        << (functional_kernel_layers.count(m_index) ? ",\"kernel\":\"im2col\"" : "")
-        << ",\"pass\":" << (pass ? "true" : "false")
+        << (functional_kernel_layers.count(m_index)
+            ? ",\"kernel\":\"" + functional_kernel_layers[m_index] + "\"" : "");
+    if(functional_gating_fraction.count(m_index)) {
+        row << ",\"zero_gating_fraction\":" << functional_gating_fraction[m_index];
+    }
+    row << ",\"pass\":" << (pass ? "true" : "false")
         << ",\"elements\":" << elements
         << ",\"mismatches\":" << mismatches
         << ",\"max_abs_diff\":" << max_abs_diff
@@ -2541,9 +2725,18 @@ void npu_t::verify_functional_layer(unsigned m_index, bool m_mapped) {
         case nebula::LINEAR_ACTIVATION:
             break;
         case nebula::RELU_ACTIVATION:
+            // Idempotent re-clamp (the finalize already applied ReLU; clamping an
+            // already-clamped tensor is a no-op).
             for(size_t i = 0; i < elements; ++i) {
                 if(accelerator[i] < 0.0f) accelerator[i] = 0.0f;
             }
+            break;
+        // The finalize applied these with nebula's own formulas; the snapshot is
+        // directly comparable against forward() -- re-applying would corrupt it
+        // (GELU/SiLU/leaky are not idempotent).
+        case nebula::LEAKY_ACTIVATION:
+        case nebula::GELU_ACTIVATION:
+        case nebula::SILU_ACTIVATION:
             break;
         default:
             activation_comparable = false;

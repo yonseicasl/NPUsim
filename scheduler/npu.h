@@ -175,6 +175,14 @@ protected:
     // int8 tensors refuses an fp32 fixture unless the fixture explicitly declares
     // functional_semantics = fp32_reference.
     std::string functional_semantics;
+    // DATE2027 zero-gating energy correction: enabled by `functional_zero_gating = 1` in
+    // the accelerator config's PE-array section. For every mapped layer the run measures
+    // the REAL input-tensor zero fraction (the functional values feeding this layer) and
+    // scales the layer's MAC + weight-spad dynamic energy by (1 - fraction) -- the
+    // Eyeriss data-gating semantics (JSSC'17 Sec. V-C), energy-only. Per-layer fractions
+    // are recorded for the JSON report.
+    bool functional_zero_gating;
+    std::map<unsigned, double> functional_gating_fraction;
     // Declared weight layout of the fixture ([data] weight_layout): "" = standard [N][K],
     // "ktile" = reduction-tile-major [Kf][N][sK] (required by an INPUT_CHANNEL temporal fold,
     // incompatible with the zero-point corrections that read weight as [N][K]). The mapping
@@ -182,17 +190,27 @@ protected:
     std::string functional_weight_layout;
     // Machine-readable per-verified-layer comparison records (plan §5.2), one JSON object each.
     std::vector<std::string> functional_report;
-    // G5 (gaps plan Step 1): refuse mappings whose values the functional path cannot
-    // compute correctly, with an explicit diagnosis instead of a downstream mismatch FAIL.
-    void functional_reject_unsupported_mapping(unsigned m_index);
+    // G5 (gaps plan Step 1, extended): classify the mapped layer's mapping against the
+    // datapath VALUE envelope. Returns false when the datapath (+ replay) computes the
+    // values; true when the mapping is outside the envelope (DRAM-queue fold, filter
+    // fold, mixed chip axis, INPUT_CHANNEL fold without the ktile layout) and the values
+    // must come from a mapping-independent reference kernel instead -- timing still comes
+    // from the mapped datapath run. Only a combination no kernel can serve (the ktile
+    // weight layout together with an out-of-envelope mapping) is rejected outright.
+    bool functional_mapping_needs_kernel(unsigned m_index);
     // G3 (gaps plan Step 5): in-simulator im2col value kernel for mapped convolution
-    // layers with P/Q > 1 -- the native conv offset network cannot compute them (it
-    // derives the per-channel input stride from the PE tile), so the VALUE path lowers
-    // the conv to a deterministic scalar im2col GEMM (zero padding, stride, groups),
+    // layers with P/Q > 1 (or an out-of-envelope conv mapping) -- the native conv offset
+    // network cannot compute them, so the VALUE path lowers the conv to a deterministic
+    // scalar im2col GEMM (zero padding, stride, groups, in-accumulation zero points),
     // exactly the lowering a GEMM accelerator performs. Timing still comes from the
     // mapped datapath run; layers computed here are tagged "im2col" in the report.
     void functional_conv_im2col(unsigned m_index);
-    std::set<unsigned> functional_kernel_layers;
+    // Reference GEMM kernel for a mapped CONNECTED layer whose mapping is outside the
+    // datapath value envelope: out[M][N] = in[M][K] @ W[N][K]^T raw accumulators
+    // (position-major, standard weight layout); the shared finalize applies
+    // BN/zero-point/bias/activation/requant. Tagged "gemm" in the report.
+    void functional_gemm_fallback(unsigned m_index);
+    std::map<unsigned, std::string> functional_kernel_layers;   // layer -> kernel tag
     void verify_against_golden(unsigned m_index);
     // Compare one layer's output_data against a specific golden buffer at a named stage
     // ("final" | "layer" | "raw"). Feeds the summary counters and the JSON report.

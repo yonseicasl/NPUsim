@@ -152,7 +152,12 @@ void multi_chip_t::init(section_config_t m_section_config) {
         std::cerr << "Error: Wrong memory type name : " << memory_type << std::endl;
         exit(1);
     }
+#ifdef FUNCTIONAL
+    // FUNCTIONAL value array: one data_t per declared byte (see components/pe.cc note).
+    unsigned num_entry = memory_size;
+#else
     unsigned num_entry = (memory_size + sizeof(data_t) - 1)/sizeof(data_t);
+#endif
 
     data = new data_t[num_entry](); 
 
@@ -386,9 +391,16 @@ void multi_chip_t::update_offset() {
     // Update offsets in the case of separate buffer
     if(memory_type == memory_type_t::SEPARATE) {
         offsets[data_type_t::INPUT] = 0;
+#ifdef FUNCTIONAL
+        // Partition offsets in ELEMENTS, matching the one-element-per-byte value arrays.
+        offsets[data_type_t::WEIGHT] = static_cast<size_t>(input_size);
+        offsets[data_type_t::OUTPUT] = static_cast<size_t>(input_size) +
+                                       static_cast<size_t>(weight_size);
+#else
         offsets[data_type_t::WEIGHT] = static_cast<size_t>(input_size)/sizeof(data_t);
         offsets[data_type_t::OUTPUT] = static_cast<size_t>(input_size)/sizeof(data_t) +
                                        static_cast<size_t>(weight_size)/sizeof(data_t);
+#endif
     }
 }
 
@@ -2041,7 +2053,11 @@ void multi_chip_t::reset() {
     // Phase-2: final_output_tile events reset with the layer.
     final_output_tile_events = 0;
     final_output_tile_elements = 0;
+#ifdef FUNCTIONAL
+    std::fill_n(data, (size_t)memory_size, data_t{});
+#else
     std::fill_n(data, (memory_size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+#endif
 
     initial = true;
     equal_output_tile = false;

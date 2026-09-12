@@ -1232,6 +1232,20 @@ size_t rescale_counter_ratio(size_t value, size_t numerator, size_t denominator,
 }
 } // namespace
 
+// DATE2027 zero-gating correction: see the declaration in stats.h for scope and
+// provenance. Multiplicative, so it composes with scale_serial_repetitions in either
+// order; the layer-wide input zero fraction stands in for each fold's own fraction
+// (their activity-weighted sum equals the layer total).
+void stats_t::apply_functional_zero_gating(double m_zero_fraction) {
+    if(m_zero_fraction <= 0.0) return;
+    if(m_zero_fraction > 1.0) m_zero_fraction = 1.0;
+    const double keep = 1.0 - m_zero_fraction;
+    computation_energy *= keep;
+    access_energy_mac[data_type_t::WEIGHT] *= keep;
+    access_energy_lb[data_type_t::WEIGHT] *= keep;
+    functional_zero_gating_fraction = m_zero_fraction;
+}
+
 void stats_t::scale_serial_repetitions(unsigned m_repetitions,
                                        const std::vector<unsigned> &m_datatype_repetitions,
                                        const input_halo_reuse_t &m_input_halo,
@@ -2945,6 +2959,19 @@ void stats_t::print_energy_summary(std::ofstream &m_output_file) {
                       << " (declare mac_energy_<input>_<weight>_<accumulator> for it)";
     }
     m_output_file << std::endl;
+    // DATE2027: make the zero-gating correction visible wherever it changed the numbers
+    // below -- the fraction comes from the functional simulation's real input values.
+    if(functional_zero_gating_fraction > 0.0) {
+        // Composed in a local stream so the fraction's formatting cannot leak into the
+        // persistent state of m_output_file (every number below would inherit it).
+        std::ostringstream gating_line;
+        gating_line << std::setprecision(4) << functional_zero_gating_fraction;
+        std::ostringstream gating_keep;
+        gating_keep << std::setprecision(4) << 1.0 - functional_zero_gating_fraction;
+        m_output_file << "Zero-gating corr.     : input zero fraction " << gating_line.str()
+                      << " -- MAC + weight-spad dynamic energy scaled by " << gating_keep.str()
+                      << " (functional values; energy-only, cycles unchanged)" << std::endl;
+    }
     // E7: state the unit and its provenance right above the numbers. A normalized fixture's
     // absolute total is not meaningful, and nothing else in the report said so.
     m_output_file << "Energy unit           : " << energy_units().describe() << std::endl;

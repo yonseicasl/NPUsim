@@ -27,6 +27,19 @@ struct functional_artifact_t {
     std::map<std::string, std::string> tensor_roles;   // id -> input|parameter|buffer|constant
     // Per-operation goldens keyed by operation id (stage post_activation).
     std::map<std::string, std::vector<float>> golden;
+    // Arithmetic semantics of the artifact (manifest "semantics" block; absent = fp32).
+    // int8: integer operands stored in float, optional requant shift/clamp and
+    // asymmetric zero points, restricted to all-mapped (linear/conv) executables.
+    // fp16/bf16: operands pre-rounded to the grid, outputs rounded by the simulator.
+    std::string profile;                                // fp32 | int8 | fp16 | bf16
+    int requant_shift;
+    int requant_min;
+    int requant_max;
+    int input_zero_point;
+    int weight_zero_point;
+
+    functional_artifact_t() : profile("fp32"), requant_shift(0), requant_min(-127),
+                              requant_max(127), input_zero_point(0), weight_zero_point(0) {}
 
     // Parse + validate a manifest against the loaded executable. Any violation prints a
     // diagnostic and exits non-zero -- an invalid artifact must never reach compute.

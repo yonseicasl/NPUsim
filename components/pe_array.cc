@@ -106,9 +106,20 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
     weight_size = per_pe_weight * num_pes;
     output_size = per_pe_output * num_pes;
 
+#ifdef FUNCTIONAL
+    // FUNCTIONAL value arrays hold one data_t per declared BYTE: the declared sizes are
+    // byte budgets for the runtime tensor format (16-bit/8-bit words), while the value
+    // path stores data_t=float -- sizing by bytes/sizeof(float) under-allocates whenever
+    // the format is narrower than float (fp16: 2x, int8: 4x) and the scheduler's
+    // per-element offsets then overflow the array (segfault on eyeriss' 24 B spad).
+    const size_t num_input = static_cast<size_t>(input_size);
+    const size_t num_weight = static_cast<size_t>(weight_size);
+    const size_t num_output = static_cast<size_t>(output_size);
+#else
     const size_t num_input = (static_cast<size_t>(input_size) + sizeof(data_t) - 1) / sizeof(data_t);
     const size_t num_weight = (static_cast<size_t>(weight_size) + sizeof(data_t) - 1) / sizeof(data_t);
     const size_t num_output = (static_cast<size_t>(output_size) + sizeof(data_t) - 1) / sizeof(data_t);
+#endif
 
     input_data = new data_t[num_input]();
     weight = new data_t[num_weight]();
@@ -654,9 +665,15 @@ void pe_array_t::reset() {
         pes[i]->reset();
     }
 
+#ifdef FUNCTIONAL
+    std::fill_n(input_data, static_cast<size_t>(input_size), data_t{});
+    std::fill_n(weight, static_cast<size_t>(weight_size), data_t{});
+    std::fill_n(output_data, static_cast<size_t>(output_size), data_t{});
+#else
     std::fill_n(input_data, (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
     std::fill_n(weight, (static_cast<size_t>(weight_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
     std::fill_n(output_data, (static_cast<size_t>(output_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+#endif
 
     initial = true;
     equal_output_tile = false;

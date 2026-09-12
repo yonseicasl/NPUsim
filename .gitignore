@@ -40,3 +40,4 @@ validation/decomp/results.csv
 validation/fidelity/fidelity_report.csv
 library/obj/
 models/obj/
+models/weights/*.wgh

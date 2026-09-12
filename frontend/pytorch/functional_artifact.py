@@ -28,6 +28,26 @@ def _f32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
 
+def _round_bf16(value: float) -> float:
+    x = struct.unpack("<I", struct.pack("<f", value))[0]
+    if (x & 0x7fffffff) > 0x7f800000:
+        return value
+    x = (x + 0x7FFF + ((x >> 16) & 1)) & 0xFFFFFFFF
+    return struct.unpack("<f", struct.pack("<I", x & 0xFFFF0000))[0]
+
+
+def _round_fp16(value: float) -> float:
+    return struct.unpack("<e", struct.pack("<e", value))[0]
+
+
+def _round_lowp(profile: str, value: float) -> float:
+    if profile == "bf16":
+        return _round_bf16(value)
+    if profile == "fp16":
+        return _round_fp16(value)
+    return value
+
+
 def _pack(values: list[float]) -> bytes:
     return struct.pack("<%df" % len(values), *values)
 
@@ -221,10 +241,33 @@ _KERNELS = {
 
 
 def interpret_executable(
-    executable: Mapping[str, Any], values: Mapping[str, list[float]]
+    executable: Mapping[str, Any],
+    values: Mapping[str, list[float]],
+    semantics: Mapping[str, Any] | None = None,
 ) -> dict[str, list[float]]:
-    """Run every executable operation on the reference kernels; returns {op_id: output}."""
+    """Run every executable operation on the reference kernels; returns {op_id: output}.
+
+    `semantics` mirrors the manifest's semantics block (profile int8/fp16/bf16). int8:
+    the zero points are subtracted from the operand copies before the MAC kernels (the
+    payloads carry the RAW offset operands), bias adds in, and requant shift/clamp runs
+    after the fused activation -- the same order the simulator's finalize uses. fp16/
+    bf16: every operation's output is rounded to the reduced-mantissa grid.
+    """
+    semantics = dict(semantics or {})
+    profile = semantics.get("profile", "fp32")
+    shift = int(semantics.get("requant_shift", 0))
+    requant_min = int(semantics.get("requant_min", -127))
+    requant_max = int(semantics.get("requant_max", 127))
+    zp_i = int(semantics.get("input_zero_point", 0))
+    zp_w = int(semantics.get("weight_zero_point", 0))
     tensors = {t["id"]: t for t in executable["tensors"]}
+    weight_ids: set[str] = set()
+    data_input_ids: set[str] = set()
+    for op in executable["operations"]:
+        if op["kind"] in ("npusim.linear", "npusim.conv2d"):
+            data_input_ids.add(op["inputs"][0])
+            if len(op["inputs"]) >= 2:
+                weight_ids.add(op["inputs"][1])
 
     def storage(tensor_id: str) -> str:
         return tensors[tensor_id].get("alias_of") or tensor_id
@@ -235,7 +278,13 @@ def interpret_executable(
         key = storage(tensor_id)
         if key not in store:
             raise FunctionalArtifactError(f"tensor {tensor_id} has no value yet")
-        return store[key]
+        raw = store[key]
+        if profile == "int8":
+            if zp_i and tensor_id in data_input_ids:
+                return [v - zp_i for v in raw]
+            if zp_w and tensor_id in weight_ids:
+                return [v - zp_w for v in raw]
+        return raw
 
     def shape_of(tensor_id: str) -> list[int]:
         return [int(d) for d in tensors[tensor_id]["shape"]]
@@ -245,8 +294,19 @@ def interpret_executable(
         kernel = _KERNELS.get(op["kind"])
         if kernel is None:
             raise FunctionalArtifactError(f"no reference kernel for {op['kind']}")
+        if profile == "int8" and not op["mapping_required"]:
+            raise FunctionalArtifactError(
+                f"int8 semantics covers linear/conv operations only; {op['id']} is not mapped")
         out = kernel(op, fetch, shape_of)
         out = _apply_activation(out, op.get("activation", "linear"))
+        if profile == "int8" and shift > 0:
+            requantized = []
+            for v in out:
+                a = (int(round(v))*1 + (1 << (shift - 1))) >> shift
+                requantized.append(float(max(requant_min, min(requant_max, a))))
+            out = requantized
+        elif profile in ("fp16", "bf16"):
+            out = [_round_lowp(profile, v) for v in out]
         expected = _numel(shape_of(op["outputs"][0]))
         if len(out) != expected:
             raise FunctionalArtifactError(
@@ -260,21 +320,54 @@ def interpret_executable(
 # Value sources
 # --------------------------------------------------------------------------------------
 
-def synthesize_values(executable: Mapping[str, Any], seed: int) -> dict[str, list[float]]:
-    """Deterministic seeded values for every graph input/parameter (torch-free path)."""
+def synthesize_values(
+    executable: Mapping[str, Any], seed: int,
+    semantics: Mapping[str, Any] | None = None,
+) -> dict[str, list[float]]:
+    """Deterministic seeded values for every graph input/parameter (torch-free path).
+
+    int8 semantics: integer operands (uint8-range when the matching zero point is set,
+    signed int8 otherwise), small integer biases. fp16/bf16: values pre-rounded to the
+    grid (mixed-precision contract: exact operands, fp32 accumulate, rounded output).
+    """
+    semantics = dict(semantics or {})
+    profile = semantics.get("profile", "fp32")
+    zp_i = int(semantics.get("input_zero_point", 0))
+    zp_w = int(semantics.get("weight_zero_point", 0))
     rng = random.Random(seed)
     values: dict[str, list[float]] = {}
     inputs = set(executable["inputs"])
+    weight_ids: set[str] = set()
+    bias_ids: set[str] = set()
+    for op in executable["operations"]:
+        if op["kind"] in ("npusim.linear", "npusim.conv2d"):
+            if len(op["inputs"]) >= 2:
+                weight_ids.add(op["inputs"][1])
+            if len(op["inputs"]) >= 3:
+                bias_ids.add(op["inputs"][2])
     for tensor in executable["tensors"]:
-        kind = tensor["kind"]
-        if tensor["id"] in inputs:
-            values[tensor["id"]] = [_f32(rng.uniform(-1.0, 1.0)) for _ in range(_numel(tensor["shape"]))]
+        tensor_id, kind, count = tensor["id"], tensor["kind"], _numel(tensor["shape"])
+        if tensor_id in inputs:
+            if profile == "int8":
+                low, high = (0, 255) if zp_i else (-127, 127)
+                values[tensor_id] = [float(rng.randint(low, high)) for _ in range(count)]
+            else:
+                values[tensor_id] = [_round_lowp(profile, _f32(rng.uniform(-1.0, 1.0)))
+                                     for _ in range(count)]
         elif kind in {"parameter", "buffer", "constant"}:
-            # Small weights keep deep-model activations in a well-conditioned range;
-            # running_var-style buffers must stay positive (sqrt in BN).
-            positive = "var" in tensor["id"]
-            low, high = (0.5, 1.5) if positive else (-0.5, 0.5)
-            values[tensor["id"]] = [_f32(rng.uniform(low, high)) for _ in range(_numel(tensor["shape"]))]
+            if profile == "int8":
+                if tensor_id in bias_ids:
+                    values[tensor_id] = [float(rng.randint(-1000, 1000)) for _ in range(count)]
+                else:
+                    low, high = (0, 255) if zp_w else (-127, 127)
+                    values[tensor_id] = [float(rng.randint(low, high)) for _ in range(count)]
+            else:
+                # Small weights keep deep-model activations in a well-conditioned range;
+                # running_var-style buffers must stay positive (sqrt in BN).
+                positive = "var" in tensor_id
+                low, high = (0.5, 1.5) if positive else (-0.5, 0.5)
+                values[tensor_id] = [_round_lowp(profile, _f32(rng.uniform(low, high)))
+                                     for _ in range(count)]
     return values
 
 
@@ -319,6 +412,7 @@ def write_artifact(
     goldens: Mapping[str, list[float]],
     output_dir: str | Path,
     generator: Mapping[str, Any],
+    semantics: Mapping[str, Any] | None = None,
 ) -> str:
     """Write payloads + goldens + manifest; returns the manifest path."""
     out = Path(output_dir)
@@ -370,6 +464,8 @@ def write_artifact(
         "tensors": manifest_tensors,
         "golden": manifest_goldens,
     }
+    if semantics and semantics.get("profile", "fp32") != "fp32":
+        manifest["semantics"] = dict(semantics)
     manifest_path = out / "tensors.json"
     with manifest_path.open("w", encoding="utf-8") as target:
         json.dump(manifest, target, indent=2, sort_keys=True)
@@ -377,7 +473,10 @@ def write_artifact(
     return str(manifest_path)
 
 
-def synthesize_artifact(executable_path: str, output_dir: str, seed: int) -> str:
+def synthesize_artifact(
+    executable_path: str, output_dir: str, seed: int,
+    semantics: Mapping[str, Any] | None = None,
+) -> str:
     """Torch-free artifact: seeded deterministic values + reference-interpreter goldens."""
     from .executable_ir import load_executable_ir
 
@@ -385,13 +484,13 @@ def synthesize_artifact(executable_path: str, output_dir: str, seed: int) -> str
     if "executable_sha256" not in executable:
         raise FunctionalArtifactError(
             "executable has no executable_sha256; regenerate it with the compile command")
-    values = synthesize_values(executable, seed)
-    goldens = interpret_executable(executable, values)
+    values = synthesize_values(executable, seed, semantics)
+    goldens = interpret_executable(executable, values, semantics)
     return write_artifact(executable, values, goldens, output_dir, {
         "framework": "reference-interpreter",
         "seed": seed,
         "device": "cpu",
-    })
+    }, semantics)
 
 
 def export_functional_artifact(

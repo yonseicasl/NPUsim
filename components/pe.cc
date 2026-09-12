@@ -238,9 +238,20 @@ void pe_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("double_buffer", &double_buffer);
 
     // Initialize the number of elements in each buffer.
+#ifdef FUNCTIONAL
+    // FUNCTIONAL value arrays hold one data_t per declared BYTE: the declared sizes are
+    // byte budgets for the runtime tensor format (16-bit/8-bit words), while the value
+    // path stores data_t=float -- sizing by bytes/sizeof(float) under-allocates whenever
+    // the format is narrower than float (fp16: 2x, int8: 4x) and the scheduler's
+    // per-element offsets then overflow the array (segfault on eyeriss' 24 B spad).
+    size_t num_input = static_cast<size_t>(input_size);
+    size_t num_weight = static_cast<size_t>(weight_size);
+    size_t num_output = static_cast<size_t>(output_size);
+#else
     size_t num_input = (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t);
     size_t num_weight = (static_cast<size_t>(weight_size) + sizeof(data_t) - 1)/sizeof(data_t);
     size_t num_output = (static_cast<size_t>(output_size) + sizeof(data_t) - 1)/sizeof(data_t);
+#endif
 
     // Allocate the memory space for local buffer.
     input_data_lb  = new data_t[num_input]();
@@ -2686,9 +2697,18 @@ void pe_t::reset() {
     std::fill_n(weight_mac, mac_register_capacity, data_t{});
     clear_output_accumulators();
 
+#ifdef FUNCTIONAL
+    std::fill_n(input_data_lb, static_cast<size_t>(input_size), data_t{});
+    std::fill_n(weight_lb, static_cast<size_t>(weight_size), data_t{});
+#else
     std::fill_n(input_data_lb, (static_cast<size_t>(input_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
     std::fill_n(weight_lb, (static_cast<size_t>(weight_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+#endif
+#ifdef FUNCTIONAL
+    std::fill_n(output_data_lb, static_cast<size_t>(output_size), data_t{});
+#else
     std::fill_n(output_data_lb, (static_cast<size_t>(output_size) + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+#endif
 
     input_index = 0;
     weight_index = 0;

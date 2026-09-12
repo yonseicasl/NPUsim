@@ -1550,8 +1550,16 @@ void global_buffer_t::flush_output_writeback(scheduler_t *m_scheduler) {
 #ifdef FUNCTIONAL
 unsigned global_buffer_t::functional_output_writeback_offset(scheduler_t *m_scheduler) const {
     const size_t size = m_scheduler->output_offset_multi_chip.size();
-    const unsigned key = (m_scheduler->chip_reduction_y && m_scheduler->num_active_chips_y > 0)
-        ? index/m_scheduler->num_active_chips_y : index;
+    const unsigned cy = m_scheduler->num_active_chips_y ? m_scheduler->num_active_chips_y : 1;
+    // Chip index convention: X-major, Y innermost (index = x*chips_y + y). Chips that
+    // differ only in a reduction coordinate hold partials of the SAME output tile, so the
+    // offset key strips the reduction axis: Y-reduction keys by the X part, X-reduction
+    // keys by the Y part, both-axis reduction collapses every chip onto one tile. Mixed
+    // reduction+output factors on one axis are rejected by the G5 guard.
+    unsigned key = index;
+    if(m_scheduler->chip_reduction_y && m_scheduler->chip_reduction_x) key = 0;
+    else if(m_scheduler->chip_reduction_y)                            key = index/cy;
+    else if(m_scheduler->chip_reduction_x)                            key = index%cy;
     return m_scheduler->output_offset_multi_chip[key%size];
 }
 #endif
@@ -1729,7 +1737,11 @@ void global_buffer_t::reset() {
     // RE1: the final-cast counters reset with the layer.
     output_cast_bytes = 0;
     output_cast_energy = 0.0;
+#ifdef FUNCTIONAL
+    std::fill_n(data, (size_t)size, data_t{});
+#else
     std::fill_n(data, ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t), data_t{});
+#endif
     
     idle = false;
     initial = true;
@@ -1793,7 +1805,13 @@ void separate_buffer_t::init(section_config_t m_section_config) {
     capacity_per_type[data_type_t::WEIGHT] = weight_size;
     capacity_per_type[data_type_t::OUTPUT] = output_size;
 
+#ifdef FUNCTIONAL
+    // FUNCTIONAL value array: one data_t per declared byte (the byte budget is for the
+    // runtime tensor format, narrower than data_t=float -- see components/pe.cc note).
+    unsigned num_entry = (unsigned)size;
+#else
     unsigned num_entry = ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t);
+#endif
     data = new data_t[num_entry]();
 
     // Initialize the frequency and bandwidth of the separate buffer
@@ -1967,9 +1985,14 @@ void separate_buffer_t::init(section_config_t m_section_config) {
 
 void separate_buffer_t::update_offset() {
     offsets[data_type_t::INPUT] = 0;
+#ifdef FUNCTIONAL
+    // Partition offsets in ELEMENTS, matching the one-element-per-byte value arrays.
+    offsets[data_type_t::WEIGHT] = input_size;
+    offsets[data_type_t::OUTPUT] = input_size + weight_size;
+#else
     offsets[data_type_t::WEIGHT] = input_size/sizeof(data_t);
     offsets[data_type_t::OUTPUT] = input_size/sizeof(data_t) + weight_size/sizeof(data_t);
-
+#endif
 }
 
 void separate_buffer_t::check_tile_size() {
@@ -2076,7 +2099,13 @@ void shared_buffer_t::init(section_config_t m_section_config) {
     // denominator is the full capacity.
     capacity_per_type.assign(data_type_t::NUM_DATA_TYPES, size);
 
+#ifdef FUNCTIONAL
+    // FUNCTIONAL value array: one data_t per declared byte (the byte budget is for the
+    // runtime tensor format, narrower than data_t=float -- see components/pe.cc note).
+    unsigned num_entry = (unsigned)size;
+#else
     unsigned num_entry = ((unsigned)size + sizeof(data_t) - 1)/sizeof(data_t);
+#endif
     data = new data_t[num_entry]();
 
     // Initialize frequency and bandwidth of the shared buffer

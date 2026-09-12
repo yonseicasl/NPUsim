@@ -93,6 +93,17 @@ def main(argv: list[str] | None = None) -> int:
     synthesize.add_argument("--executable", required=True, help="npusim.exec.v1 JSON")
     synthesize.add_argument("--output-dir", required=True, help="artifact directory")
     synthesize.add_argument("--seed", type=int, default=7, help="deterministic value seed")
+    synthesize.add_argument("--profile", default="fp32",
+                            choices=["fp32", "int8", "fp16", "bf16"],
+                            help="arithmetic semantics of the artifact (int8: integer"
+                                 " operands + optional requant/zero points; fp16/bf16:"
+                                 " grid-rounded operands and outputs)")
+    synthesize.add_argument("--requant-shift", type=int, default=0,
+                            help="int8: rounding right-shift applied after activation")
+    synthesize.add_argument("--input-zero-point", type=int, default=0,
+                            help="int8: asymmetric input zero point (uint8 operands)")
+    synthesize.add_argument("--weight-zero-point", type=int, default=0,
+                            help="int8: asymmetric weight zero point (uint8 weights)")
     export_functional = commands.add_parser(
         "export-functional",
         help="export a torch module factory to an executable + npusim.tensor.v1 artifact"
@@ -114,9 +125,19 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.command == "validate-executable":
             return _validate_executable_command(arguments.executable)
         if arguments.command == "synthesize-functional":
+            semantics = {"profile": arguments.profile}
+            if arguments.profile == "int8":
+                semantics.update({
+                    "requant_shift": arguments.requant_shift,
+                    "requant_min": -127,
+                    "requant_max": 127,
+                    "input_zero_point": arguments.input_zero_point,
+                    "weight_zero_point": arguments.weight_zero_point,
+                })
             manifest = synthesize_artifact(arguments.executable, arguments.output_dir,
-                                           arguments.seed)
-            print(json.dumps({"manifest": manifest, "seed": arguments.seed}, sort_keys=True))
+                                           arguments.seed, semantics)
+            print(json.dumps({"manifest": manifest, "profile": arguments.profile,
+                              "seed": arguments.seed}, sort_keys=True))
             return 0
         if arguments.command == "export-functional":
             result = export_functional_artifact(

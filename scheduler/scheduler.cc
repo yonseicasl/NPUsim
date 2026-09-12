@@ -26,6 +26,7 @@ void scheduler_t::init(mapping_table_t *m_mapping_table, stationary_type_t pe_st
                                                          stationary_type_t multi_chip_stationary, std::string multi_chip_parameter_order) {
 
     mapping_table = m_mapping_table;
+    functional_value_transfers = true;
 
     // Calculate time-granular data size
     tile_size.reserve(component_type_t::NUM_COMPONENT_TYPES);
@@ -327,10 +328,13 @@ void scheduler_t::print_stats(std::ofstream &m_output_file) {
 
 
 #ifdef FUNCTIONAL
-void scheduler_t::transfer_data(data_t *m_dest, data_t *m_source, 
-                                unsigned m_dest_offset, unsigned m_source_offset, 
-                                component_type_t m_dest_type, component_type_t m_source_type, 
+void scheduler_t::transfer_data(data_t *m_dest, data_t *m_source,
+                                unsigned m_dest_offset, unsigned m_source_offset,
+                                component_type_t m_dest_type, component_type_t m_source_type,
                                 data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type) {
+    // Values for this layer come from a reference kernel; the datapath's own value
+    // movement is suppressed (see scheduler.h functional_value_transfers).
+    if(!functional_value_transfers) return;
     // Transfer input data.
     if(m_data_type == data_type_t::INPUT) {
         input_data_load(m_dest, m_source, 
@@ -360,9 +364,10 @@ void scheduler_t::transfer_data(data_t *m_dest, data_t *m_source,
     }
 }
 
-void scheduler_t::transfer_data_ver2(data_t *m_dest, data_t *m_source, 
-                                     component_type_t m_destination_type, component_type_t m_source_type, 
+void scheduler_t::transfer_data_ver2(data_t *m_dest, data_t *m_source,
+                                     component_type_t m_destination_type, component_type_t m_source_type,
                                      data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type, bool last_component) {
+    if(!functional_value_transfers) return;
     // Calculate data offsets.
     std::string parameter_order = "BCPQKRS";
 
@@ -1640,11 +1645,11 @@ void scheduler_t::output_data_store(data_t *m_dest, data_t *m_source, unsigned m
     // must remain a copy. The PE-array output buffer is zero-initialised each layer, so a
     // lone contribution (no spatial reduction) accumulates onto 0 -- identical to a copy.
     // G7: the same rule at the GLB -> multi-chip boundary when the mapping splits a
-    // reduction dimension across CHIPS_Y -- each chip's GLB holds a partial of the SAME
-    // output tile (multi_chip->data is re-zeroed per layer/pass by reset()).
+    // reduction dimension across chips (either axis) -- each chip's GLB holds a partial
+    // of the SAME output tile (multi_chip->data is re-zeroed per layer/pass by reset()).
     const bool reduce_accumulate = (m_source_type == component_type_t::PE &&
                                     m_destination_type == component_type_t::PE_Y) ||
-                                   (chip_reduction_y &&
+                                   ((chip_reduction_y || chip_reduction_x) &&
                                     m_source_type == component_type_t::GLOBAL_BUFFER &&
                                     m_destination_type == component_type_t::CHIPS_Y);
 

@@ -130,6 +130,14 @@ public:
     // outputs); CHIPS_X reduction has no accumulate convention and is rejected.
     bool chip_reduction_y;
     bool chip_reduction_x;
+    // FUNCTIONAL value-transfer switch: false while a mapped layer's VALUES come from a
+    // mapping-independent reference kernel (GEMM/im2col fallback) instead of the
+    // datapath. The datapath still runs for timing, but its value movement would follow
+    // offsets the kernel path has declared invalid (e.g. the native-conv tile-local
+    // input strides), moving garbage at best and overrunning windows at worst -- so
+    // every transfer_data* entry point becomes a no-op. Timing counters never touch
+    // this flag. Default true; npu_t::run() drives it per layer.
+    bool functional_value_transfers;
     layer_name_t layer_name;
 
 private:

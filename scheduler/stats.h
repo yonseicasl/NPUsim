@@ -588,6 +588,18 @@ public:
     // condition for the analytical path is that its supported scope is stated in the output
     // rather than left to be inferred -- an idealized bank-interleaved row model must not be
     // read as a bank-conflict model.
+    // DATE2027 zero-gating energy correction (FUNCTIONAL builds, opt-in via the PE-array
+    // section's `functional_zero_gating = 1`): Eyeriss-style data gating -- a zero ifmap
+    // operand disables the filter-spad read and the MAC datapath switching (Chen JSSC'17
+    // Sec. V-C) -- applied from the layer's REAL input zero fraction, measured on the
+    // functional simulation's actual tensor values. ENERGY-ONLY: the gated PE still
+    // spends its cycle, so no timing counter moves. Scope: MAC computation energy plus
+    // the WEIGHT slots of the MAC-register and local-buffer access energy (the per-MAC
+    // filter reads dominate those slots; the once-per-residency fills are discounted by
+    // the same factor -- a documented approximation). 0 = not applied.
+    void apply_functional_zero_gating(double m_zero_fraction);
+    double functional_zero_gating_fraction = 0.0;
+
     // E3: which config key supplied the MAC energy, and whether it was declared for the operand
     // precision actually in use. Reported with the energy summary so a compute-energy number is
     // never read as precision-aware when the same scalar would have been used for any precision.

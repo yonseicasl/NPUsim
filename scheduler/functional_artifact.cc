@@ -150,6 +150,30 @@ void functional_artifact_t::load(const std::string &m_manifest_path,
     }
     const std::string base = manifest_directory(m_manifest_path);
 
+    // Arithmetic semantics (optional block; absent = fp32).
+    if(root.find("semantics") != root.not_found()) {
+        const boost::property_tree::ptree &block = root.get_child("semantics");
+        profile = block.get<std::string>("profile", "fp32");
+        if(profile != "fp32" && profile != "int8" && profile != "fp16" && profile != "bf16") {
+            artifact_fail("semantics profile '" + profile + "' is not fp32/int8/fp16/bf16");
+        }
+        requant_shift     = block.get<int>("requant_shift", 0);
+        requant_min       = block.get<int>("requant_min", -127);
+        requant_max       = block.get<int>("requant_max", 127);
+        input_zero_point  = block.get<int>("input_zero_point", 0);
+        weight_zero_point = block.get<int>("weight_zero_point", 0);
+    }
+    if(profile == "int8") {
+        // int8 arithmetic is defined for the mapped MAC operations (linear/conv); a
+        // non-MAC operation (softmax/pool/...) has no integer semantics here.
+        for(const workload_operation_t &operation : m_graph.operations) {
+            if(!operation.mapping_required) {
+                artifact_fail("int8 semantics covers linear/conv operations only, but "
+                              + operation.id + " is not a mapped MAC operation");
+            }
+        }
+    }
+
     // The coverage contract: every graph input and every parameter/buffer/constant of the
     // executable must be supplied exactly once; activations must not be.
     std::set<std::string> required;
