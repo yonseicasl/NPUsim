@@ -315,9 +315,54 @@ void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
     multi_chip->skip_transfer[type] = false;
 }
 
+// B-7: compressed (sparse) DRAM load. Same accounting shape as account_descriptor_dense_load
+// -- charges the DRAM read, the multi-chip temporal-buffer write, the serialized link and the
+// overlap pipeline, and feeds payload/metadata/serialized link counters -- but the payload is
+// the NONZERO element count sized by the datatype format (so a bf16/int8 compressed tile is
+// charged its real width, not the host data_t), and `metadata_bits` of CSR/CSC index+pointer
+// (or SparseMap bitmap) traffic rides alongside. num_zeros/nonzeros come from the functional
+// value load (scheduler input_data_load/weight_data_load), so the compression tracks the real
+// data. This runs ONLY for datapath-value layers; kernel-value (conv) sparse is rejected
+// upstream and takes the dense-only analytical path.
+void dram_t::account_descriptor_sparse_load(data_type_t type, size_t nonzeros, size_t metadata_bits) {
+    const sparse_transport_cost_t cost = sparse_transport_cost(type, nonzeros, metadata_bits, bitwidth);
+
+    num_data_transfer[type]++;
+    payload_link_transactions[type] += cost.payload_link;
+    metadata_link_transactions[type] += cost.metadata_link;
+    storage_link_transactions[type] += cost.payload_link + cost.metadata_link;
+    // Per-element access, mirroring the datapath-value DENSE path this sits alongside (one
+    // DRAM read / temporal-buffer write per element; metadata packs at the element width).
+    access_energy[type] += cost.source_elements*u_read_energy[type];
+    multi_chip->access_energy[type] += cost.source_elements*multi_chip->u_write_energy[type];
+    if(!multi_chip->double_buffer) {
+        access_cycle[type] += cost.source_elements*u_read_cycle[type];
+        multi_chip->access_cycle[type] += cost.source_elements*multi_chip->u_write_cycle[type];
+    }
+    transfer_cycle[type] += cost.link_transactions()*u_transfer_cycle;
+    transfer_energy[type] += cost.link_transactions()*u_transfer_energy;
+    account_row_activations(type, cost.source_elements);
+    // L8: a load reads the bus.
+    account_bus_turnaround(type, false);
+    // Overlap of the DRAM read and the multi-chip temporal-buffer write (max of the two legs).
+    if(multi_chip->exist_temporal_buffer) {
+        cycle_chip_dram[type] += std::max(cost.source_elements*u_read_cycle[type],
+                                          cost.source_elements*multi_chip->u_write_cycle[type]);
+    }
+    multi_chip->skip_transfer[type] = false;
+}
+
 void dram_t::data_transfer(scheduler_t *m_scheduler) {
     if(multi_chip->request_to_dram[data_type_t::INPUT]) {
-#ifndef FUNCTIONAL
+        // A-1: a kernel-value layer (conv/im2col, functional_value_transfers=false) takes
+        // the SAME analytical descriptor accounting as the timing build, so its DRAM input
+        // traffic -- and the halo-reuse decision that reads it -- matches. Datapath-value
+        // layers (GEMM) keep the per-element functional counting below.
+#ifdef FUNCTIONAL
+        if(!m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::INPUT]) {
+            account_descriptor_dense_load(data_type_t::INPUT, multi_chip->tile_size[data_type_t::INPUT]);
+        }
+#else
         if(m_scheduler->compression_type != compression_type_t::DENSE) {
             std::cerr << "Error: timing DRAM supports dense descriptor traffic only" << std::endl;
             exit(1);
@@ -341,9 +386,10 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         //                                data_type_t::INPUT, multi_chip->get_stationary_type(), 
         //                                action_type_t::LOAD, true);
 
-        // Case 1. Dense data format
+        // Case 1. Dense data format. A-1: only datapath-value layers count per-element
+        // here; kernel-value layers were charged analytically at the guard above.
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
-            if(!skip_transfer[data_type_t::INPUT]) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::INPUT]) {
                 num_data_transfer[data_type_t::INPUT]++;
                 std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
                 std::vector<unsigned> parameters_dram(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -449,233 +495,24 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
                 multi_chip->skip_transfer[data_type_t::INPUT] = false;
             }
         }
-        // Case 2. COO data format
-        else if(m_scheduler->compression_type == compression_type_t::SPARSE_COO) {
-            if(!skip_transfer[data_type_t::INPUT]) {
-                std::cout << "Current version does not support COO format for sparse data" << std::endl;
-                exit(1);
-            }
-        }
-        // Case 3. CSC data format
-        else if(m_scheduler->compression_type == compression_type_t::SPARSE_CSC) {
-            if(!skip_transfer[data_type_t::INPUT]) {
-                unsigned row_bit = 1;
-                std::vector<unsigned> parameters = m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
-                unsigned row = parameters[parameter_type_t::INPUT_HEIGHT];
-                while(row > 1) {
-                    row /= 2;
-                    row_bit++;
-                }
-
-                num_data_transfer[data_type_t::INPUT]++;
-
-                // Update off-chip memory access cost
-                access_cycle[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                   *u_read_cycle[data_type_t::INPUT]  + // Non-zero data
-                                                    (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                   *u_read_cycle[data_type_t::INPUT]
-                                                   /(sizeof(data_t)*8/row_bit) + // Row index
-                                                    parameters[parameter_type_t::BATCH_SIZE]
-                                                   *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                   *(parameters[parameter_type_t::INPUT_WIDTH]+1)
-                                                   *u_read_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/row_bit); // Column pointer
-                access_energy[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                    *u_read_energy[data_type_t::INPUT] + // Non-zero data
-                                                     (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                    *u_read_energy[data_type_t::INPUT]
-                                                    /(sizeof(data_t)*8/row_bit) + // Row index
-                                                     parameters[parameter_type_t::BATCH_SIZE]
-                                                    *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                    *(parameters[parameter_type_t::INPUT_WIDTH]+1)
-                                                    *u_read_energy[data_type_t::INPUT]/(sizeof(data_t)*8/row_bit); // Column pointer
-
-                // Update on-chip processor access cost
-                multi_chip->access_cycle[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]
-                                                               /(sizeof(data_t)*8/row_bit) + // row index
-                                                                parameters[parameter_type_t::BATCH_SIZE]
-                                                               *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                               *(parameters[parameter_type_t::INPUT_WIDTH]+1)
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/row_bit); // Column pointer
-                multi_chip->access_energy[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT] + // Non-zero data
-                                                                 (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT]
-                                                                /(sizeof(data_t)*8/row_bit) + // Row index
-                                                                 parameters[parameter_type_t::BATCH_SIZE]
-                                                                *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                *(parameters[parameter_type_t::INPUT_WIDTH]+1)
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT]/(sizeof(data_t)*8/row_bit); // Column pointer
-
-                // Update overlapped cycle between the off-chip memory and temporal buffer in on-chip processor
-                cycle_chip_dram[data_type_t::INPUT] += std::max((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *u_read_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *u_read_cycle[data_type_t::INPUT]
-                                                               /(sizeof(data_t)*8/row_bit) + // Row index
-                                                                parameters[parameter_type_t::BATCH_SIZE]
-                                                               *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                               *(parameters[parameter_type_t::INPUT_WIDTH]+1)
-                                                               *u_read_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/row_bit), // Column pointer
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]
-                                                               /(sizeof(data_t)*8/row_bit) + // Row index
-                                                                parameters[parameter_type_t::BATCH_SIZE]
-                                                               *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                               *(parameters[parameter_type_t::INPUT_WIDTH]+1)
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/row_bit)); // Column pointer
-
-                // Update transfer cost between the off-chip memory and temporal buffer in on-chip processor
-                transfer_cycle[data_type_t::INPUT] += u_transfer_cycle*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*8*sizeof(data_t))/(float)bitwidth) + // Non-zero data
-                                                      u_transfer_cycle*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*row_bit)/(float)bitwidth) + // Row index
-                                                      u_transfer_cycle*ceil((float)(parameters[parameter_type_t::BATCH_SIZE]
-                                                                                   *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                                   *(parameters[parameter_type_t::INPUT_WIDTH+1])*row_bit)/(float)bitwidth); // Column pointer
-                transfer_energy[data_type_t::INPUT] += u_transfer_energy*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*8*sizeof(data_t))/(float)bitwidth) + // Non-zero data
-                                                       u_transfer_energy*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*row_bit)/(float)bitwidth) + // Row index
-                                                       u_transfer_energy*ceil((float)(parameters[parameter_type_t::BATCH_SIZE]
-                                                                                     *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                                     *(parameters[parameter_type_t::INPUT_WIDTH+1])*row_bit)/(float)bitwidth); // Column pointer
-                multi_chip->skip_transfer[data_type_t::INPUT] = false;
-
-            }
-        }
-        // Case 4. CSR data format
-        else if(m_scheduler->compression_type == compression_type_t::SPARSE_CSR) {
-            if(!skip_transfer[data_type_t::INPUT]) {
-                unsigned column_bit = 1;
-                std::vector<unsigned> parameters = m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
-                unsigned column = parameters[parameter_type_t::INPUT_WIDTH];
-                while(column > 1) {
-                    column /= 2;
-                    column_bit++;
-                }
-
-                num_data_transfer[data_type_t::INPUT]++;
-
-                // Update off-chip memory access cost
-                access_cycle[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                   *u_read_cycle[data_type_t::INPUT]  + // Non-zero data
-                                                    (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                   *u_read_cycle[data_type_t::INPUT]
-                                                   /(sizeof(data_t)*8/column_bit) + // Column index
-                                                    parameters[parameter_type_t::BATCH_SIZE]
-                                                   *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                   *(parameters[parameter_type_t::INPUT_HEIGHT]+1)
-                                                   *u_read_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/column_bit); // Row pointer
-                access_energy[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                    *u_read_energy[data_type_t::INPUT] + // Non-zero data
-                                                     (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                    *u_read_energy[data_type_t::INPUT]
-                                                    /(sizeof(data_t)*8/column_bit) + // Column index
-                                                     parameters[parameter_type_t::BATCH_SIZE]
-                                                    *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                    *(parameters[parameter_type_t::INPUT_HEIGHT]+1)
-                                                    *u_read_energy[data_type_t::INPUT]/(sizeof(data_t)*8/column_bit); // Row pointer
-
-                // Update on-chip processor access cost
-                multi_chip->access_cycle[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]
-                                                               /(sizeof(data_t)*8/column_bit) + // Column index
-                                                                parameters[parameter_type_t::BATCH_SIZE]
-                                                               *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                               *(parameters[parameter_type_t::INPUT_HEIGHT]+1)
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/column_bit); // Row pointer
-                multi_chip->access_energy[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT] + // Non-zero data
-                                                                 (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT]
-                                                                /(sizeof(data_t)*8/column_bit) + // Column index
-                                                                 parameters[parameter_type_t::BATCH_SIZE]
-                                                                *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                *(parameters[parameter_type_t::INPUT_HEIGHT]+1)
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT]/(sizeof(data_t)*8/column_bit); // Row pointer
-
-                // Update overlapped cycle between the off-chip memory and temporal buffer in on-chip processor
-                cycle_chip_dram[data_type_t::INPUT] += std::max((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *u_read_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *u_read_cycle[data_type_t::INPUT]
-                                                               /(sizeof(data_t)*8/column_bit) + // Column index
-                                                                parameters[parameter_type_t::BATCH_SIZE]
-                                                               *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                               *(parameters[parameter_type_t::INPUT_HEIGHT]+1)
-                                                               *u_read_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/column_bit), // Row pointer
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]
-                                                               /(sizeof(data_t)*8/column_bit) + // Column index
-                                                                parameters[parameter_type_t::BATCH_SIZE]
-                                                               *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                               *(parameters[parameter_type_t::INPUT_HEIGHT]+1)
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]/(sizeof(data_t)*8/column_bit)); // Row pointer
-
-                // Update transfer cost between the off-chip memory and temporal buffer in on-chip processor
-                transfer_cycle[data_type_t::INPUT] += u_transfer_cycle*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*8*sizeof(data_t))/(float)bitwidth) + // Non-zero data
-                                                      u_transfer_cycle*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*column_bit)/(float)bitwidth) + // Column index
-                                                      u_transfer_cycle*ceil((float)(parameters[parameter_type_t::BATCH_SIZE]
-                                                                                   *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                                   *(parameters[parameter_type_t::INPUT_HEIGHT+1])*column_bit)/(float)bitwidth); // Row pointer
-                transfer_energy[data_type_t::INPUT] += u_transfer_energy*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*8*sizeof(data_t))/(float)bitwidth) + // Non-zero data
-                                                       u_transfer_energy*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])*column_bit)/(float)bitwidth) + // Column index
-                                                       u_transfer_energy*ceil((float)(parameters[parameter_type_t::BATCH_SIZE]
-                                                                                     *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                                     *(parameters[parameter_type_t::INPUT_HEIGHT+1])*column_bit)/(float)bitwidth); // Row pointer
-                multi_chip->skip_transfer[data_type_t::INPUT] = false;
-            }
-        }
-        // Case 4. SparseMap
-        else if(m_scheduler->compression_type == compression_type_t::SPARSEMAP) {
-            if(!skip_transfer[data_type_t::INPUT]) {
-                num_data_transfer[data_type_t::INPUT]++;
-    
-                // Update off-chip memory access cost
-                access_cycle[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                   *u_read_cycle[data_type_t::INPUT] + // Non-zero data
-                                                    multi_chip->tile_size[data_type_t::INPUT]
-                                                    *u_read_cycle[data_type_t::INPUT]/(sizeof(data_t)*8); // Metadata
-                access_energy[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                    *u_read_energy[data_type_t::INPUT] + // Non-zero data
-                                                     multi_chip->tile_size[data_type_t::INPUT]
-                                                    *u_read_energy[data_type_t::INPUT]/(sizeof(data_t)*8); // Metadata
-    
-                // Update on-chip processor access cost (if temporal buffer exist)
-                multi_chip->access_cycle[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                multi_chip->tile_size[data_type_t::INPUT]
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]/(sizeof(data_t)*8); // Metadata
-                multi_chip->access_energy[data_type_t::INPUT] += (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT] + // Non-zero data
-                                                                 multi_chip->tile_size[data_type_t::INPUT]
-                                                                *multi_chip->u_write_energy[data_type_t::INPUT]/(sizeof(data_t)*8); // Metadata
-    
-                // Update overlapped cycle between the off-chip memory and on-chip processor
-                cycle_chip_dram[data_type_t::INPUT] += std::max((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *u_read_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                multi_chip->tile_size[data_type_t::INPUT]
-                                                               *u_read_cycle[data_type_t::INPUT]/(sizeof(data_t)*8), // metadata
-                                                                (multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT] + // Non-zero data
-                                                                multi_chip->tile_size[data_type_t::INPUT]
-                                                               *multi_chip->u_write_cycle[data_type_t::INPUT]/(sizeof(data_t)*8)); // meta data
-    
-                // Update transfer cost between the off-chip memory and on-chip processor
-                transfer_cycle[data_type_t::INPUT] += u_transfer_cycle*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                     *8*sizeof(data_t))/(float)bitwidth) + // Non-zero data
-                                                      u_transfer_cycle*ceil((float)(multi_chip->tile_size[data_type_t::INPUT])/(float)bitwidth); // Metadata
-                transfer_energy[data_type_t::INPUT] += u_transfer_energy*ceil((float)((multi_chip->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
-                                                      *8*sizeof(data_t))/(float)bitwidth) + // Non-zero data
-                                                       u_transfer_energy*ceil((float)(multi_chip->tile_size[data_type_t::INPUT])/(float)bitwidth); // Metadata
-
-                multi_chip->skip_transfer[data_type_t::INPUT] = false;
-
+        // Compressed formats (B-7): COO/CSC/CSR/SparseMap all route through one analytical
+        // sparse accountant. Payload = nonzero elements sized by the datatype format (bf16/
+        // int8 correct, not the host data_t); metadata = the format's index/pointer/bitmap
+        // stream. Datapath-value layers only -- a kernel-value sparse layer was already charged
+        // (dense) at the analytical guard above, so gating on functional_value_transfers here
+        // prevents a double count.
+        else if(m_scheduler->compression_type == compression_type_t::SPARSE_COO ||
+                m_scheduler->compression_type == compression_type_t::SPARSE_CSC ||
+                m_scheduler->compression_type == compression_type_t::SPARSE_CSR ||
+                m_scheduler->compression_type == compression_type_t::SPARSEMAP) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::INPUT]) {
+                const std::vector<unsigned> parameters =
+                    m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
+                const size_t tile = multi_chip->tile_size[data_type_t::INPUT];
+                const size_t nonzeros = tile - m_scheduler->num_zeros[data_type_t::INPUT];
+                const size_t metadata_bits = sparse_metadata_bits(
+                    m_scheduler->compression_type, data_type_t::INPUT, parameters, tile, nonzeros);
+                account_descriptor_sparse_load(data_type_t::INPUT, nonzeros, metadata_bits);
             }
         }
         else {
@@ -800,7 +637,12 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         if(multi_chip->tile_size[data_type_t::INPUT] == tile_size[data_type_t::INPUT]) { skip_transfer[data_type_t::INPUT] = true;}
     }
     if(multi_chip->request_to_dram[data_type_t::WEIGHT]) {
-#ifndef FUNCTIONAL
+        // A-1: analytical accounting for kernel-value layers (see the INPUT guard above).
+#ifdef FUNCTIONAL
+        if(!m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::WEIGHT]) {
+            account_descriptor_dense_load(data_type_t::WEIGHT, multi_chip->tile_size[data_type_t::WEIGHT]);
+        }
+#else
         if(m_scheduler->compression_type != compression_type_t::DENSE) {
             std::cerr << "Error: timing DRAM supports dense descriptor traffic only" << std::endl;
             exit(1);
@@ -824,9 +666,9 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
         //                                component_type_t::CHIPS_Y, component_type_t::DRAM,
         //                                data_type_t::WEIGHT, multi_chip->get_stationary_type(), 
         //                                action_type_t::LOAD, true);
-        // Case 1. Dense data format
+        // Case 1. Dense data format. A-1: datapath-value layers only (see INPUT).
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
-            if(!skip_transfer[data_type_t::WEIGHT]) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::WEIGHT]) {
                 num_data_transfer[data_type_t::WEIGHT]++;
 
                 std::vector<unsigned> parameters_multi_chip(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -932,282 +774,22 @@ void dram_t::data_transfer(scheduler_t *m_scheduler) {
                 multi_chip->skip_transfer[data_type_t::WEIGHT] = false;
             }
         }
-        // Case 2. COO data format
-        else if(m_scheduler->compression_type == compression_type_t::SPARSE_COO) {
-            if(!skip_transfer[data_type_t::WEIGHT]) {
-                std::cout << "Current version does not support COO format" << std::endl;
-                exit(1);
-            }
-        }
-        // Case 3. CSC data format
-        else if(m_scheduler->compression_type == compression_type_t::SPARSE_CSC) {
-            if(!skip_transfer[data_type_t::WEIGHT]) {
-                // Row bit calculation
-                unsigned row_bit = 1;
-                std::vector<unsigned> parameters = m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
-                unsigned row = parameters[parameter_type_t::FILTER_HEIGHT];
-                while(row > 1) {
-                    row /= 2;
-                    row_bit++;
-                }
-
-                num_data_transfer[data_type_t::WEIGHT]++;
-
-                // Update off-chip memory access cost
-                access_cycle[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                    *u_read_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                     (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                    *u_read_cycle[data_type_t::WEIGHT]
-                                                    /(sizeof(data_t)*8/row_bit) + // row index
-                                                     parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                    *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                    *(parameters[parameter_type_t::FILTER_WIDTH]+1)
-                                                    *u_read_cycle[data_type_t::WEIGHT]
-                                                    /(sizeof(data_t)*8/row_bit); // Column pointer
-                access_energy[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                     *u_read_energy[data_type_t::WEIGHT] + // Non-zero data
-                                                      (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                     *u_read_energy[data_type_t::WEIGHT]
-                                                     /(sizeof(data_t)*8/row_bit) + // Row index
-                                                      parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                     *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                     *(parameters[parameter_type_t::FILTER_WIDTH]+1)
-                                                     *u_read_energy[data_type_t::WEIGHT]
-                                                     /(sizeof(data_t)*8/row_bit); // Column pointer
-
-                // Update on-chip processor access cost
-                multi_chip->access_cycle[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                                 (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                                /(sizeof(data_t)*8/row_bit) + // row index
-                                                                 parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                *(parameters[parameter_type_t::FILTER_WIDTH]+1)
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                                /(sizeof(data_t)*8/row_bit); // Column pointer
-                multi_chip->access_energy[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT] + // Non-zero data
-                                                                  (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT]
-                                                                 /(sizeof(data_t)*8/row_bit) + // Row index
-                                                                  parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                 *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                 *(parameters[parameter_type_t::FILTER_WIDTH]+1)
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT]
-                                                                 /(sizeof(data_t)*8/row_bit); // Column pointer
-
-                // Update overlapped cycle between the off-chip memory and on-chip processor
-                cycle_chip_dram[data_type_t::WEIGHT] += std::max((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *u_read_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                        (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *u_read_cycle[data_type_t::WEIGHT]
-                                                       /(sizeof(data_t)*8/row_bit) + // Row index
-                                                        parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *(parameters[parameter_type_t::FILTER_WIDTH]+1)
-                                                       *u_read_cycle[data_type_t::WEIGHT]
-                                                       /(sizeof(data_t)*8/row_bit), // Column pointer
-                                                        (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *multi_chip->u_write_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                        (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                       /(sizeof(data_t)*8/row_bit) + // Row index
-                                                        parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *(parameters[parameter_type_t::FILTER_WIDTH]+1)
-                                                       *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                       /(sizeof(data_t)*8/row_bit)); // Column pointer
-
-                // Update transfer cost between the off-chip memory and on-chip processor
-                transfer_cycle[data_type_t::WEIGHT] += u_transfer_cycle
-                                                      *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*8*sizeof(data_t))
-                                                      /(float)bitwidth) + // Non-zero data
-                                                       u_transfer_cycle
-                                                      *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*row_bit)
-                                                      /(float)bitwidth) + // Column index
-                                                       u_transfer_cycle
-                                                      *ceil((float)(parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                      *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                      *(parameters[parameter_type_t::FILTER_WIDTH+1])*row_bit)
-                                                      /(float)bitwidth); // Row pointer
-                transfer_energy[data_type_t::WEIGHT] += u_transfer_energy
-                                                       *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*8*sizeof(data_t))
-                                                       /(float)bitwidth) + // Non-zero data
-                                                        u_transfer_energy
-                                                       *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*row_bit)
-                                                       /(float)bitwidth) + // Column index
-                                                        u_transfer_energy
-                                                       *ceil((float)(parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *(parameters[parameter_type_t::FILTER_WIDTH+1])*row_bit)
-                                                       /(float)bitwidth); // Row pointer
-                multi_chip->skip_transfer[data_type_t::WEIGHT] = false;
-
-            }
-        }
-        // Case 4. CSR data format
-        else if(m_scheduler->compression_type == compression_type_t::SPARSE_CSR) {
-            if(!skip_transfer[data_type_t::WEIGHT]) {
-                // Column bit calculation
-                unsigned column_bit = 1;
-                std::vector<unsigned> parameters = m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
-                unsigned column = parameters[parameter_type_t::FILTER_WIDTH];
-                while(column > 1) {
-                    column /= 2;
-                    column_bit++;
-                }
-
-                num_data_transfer[data_type_t::WEIGHT]++;
-
-                // Update off-chip memory access cost
-                access_cycle[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                    *u_read_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                     (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                    *u_read_cycle[data_type_t::WEIGHT]
-                                                    /(sizeof(data_t)*8/column_bit) + // Column index
-                                                     parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                    *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                    *(parameters[parameter_type_t::FILTER_HEIGHT]+1)
-                                                    *u_read_cycle[data_type_t::WEIGHT]
-                                                    /(sizeof(data_t)*8/column_bit); // Row pointer
-                access_energy[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                     *u_read_energy[data_type_t::WEIGHT] + // Non-zero data
-                                                      (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                     *u_read_energy[data_type_t::WEIGHT]
-                                                     /(sizeof(data_t)*8/column_bit) + // Column index
-                                                      parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                     *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                     *(parameters[parameter_type_t::FILTER_HEIGHT]+1)
-                                                     *u_read_energy[data_type_t::WEIGHT]
-                                                     /(sizeof(data_t)*8/column_bit); // Row pointer
-
-                // Update on-chip processor access cost
-                multi_chip->access_cycle[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                                 (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                                /(sizeof(data_t)*8/column_bit) + // Column index
-                                                                 parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                *(parameters[parameter_type_t::FILTER_HEIGHT]+1)
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                                /(sizeof(data_t)*8/column_bit); // row pointer
-                multi_chip->access_energy[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT] + // Non-zero data
-                                                                  (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT]
-                                                                 /(sizeof(data_t)*8/column_bit) + // Column index
-                                                                  parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                 *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                                 *(parameters[parameter_type_t::FILTER_HEIGHT]+1)
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT]
-                                                                 /(sizeof(data_t)*8/column_bit); // row pointer
-
-                // Update overlapped cycle between the off-chip memory and on-chip processor
-                cycle_chip_dram[data_type_t::WEIGHT] += std::max((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *u_read_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                        (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *u_read_cycle[data_type_t::WEIGHT]
-                                                       /(sizeof(data_t)*8/column_bit) + // Column index
-                                                        parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *(parameters[parameter_type_t::FILTER_HEIGHT]+1)
-                                                       *u_read_cycle[data_type_t::WEIGHT]
-                                                       /(sizeof(data_t)*8/column_bit), // Row pointer
-                                                        (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *multi_chip->u_write_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                        (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                       *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                       /(sizeof(data_t)*8/column_bit) + // Column index
-                                                        parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *(parameters[parameter_type_t::FILTER_HEIGHT]+1)
-                                                       *multi_chip->u_write_cycle[data_type_t::WEIGHT]/(sizeof(data_t)*8/column_bit)); // row pointer
-
-                // Update transfer cost between the off-chip memory and on-chip processor
-                transfer_cycle[data_type_t::WEIGHT] += u_transfer_cycle
-                                                      *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*8*sizeof(data_t))
-                                                      /(float)bitwidth) + // Non-zero data
-                                                       u_transfer_cycle
-                                                      *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*column_bit)
-                                                      /(float)bitwidth) + // Column index
-                                                       u_transfer_cycle
-                                                      *ceil((float)(parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                      *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                      *(parameters[parameter_type_t::FILTER_HEIGHT+1])*column_bit)
-                                                      /(float)bitwidth); // Row pointer
-                transfer_energy[data_type_t::WEIGHT] += u_transfer_energy
-                                                       *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*8*sizeof(data_t))
-                                                       /(float)bitwidth) + // Non-zero data
-                                                        u_transfer_energy
-                                                       *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*column_bit)
-                                                       /(float)bitwidth) + // Column index
-                                                        u_transfer_energy
-                                                       *ceil((float)(parameters[parameter_type_t::OUTPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *parameters[parameter_type_t::INPUT_CHANNEL]/parameters[parameter_type_t::GROUP]
-                                                       *(parameters[parameter_type_t::FILTER_HEIGHT+1])*column_bit)
-                                                       /(float)bitwidth); // Row pointer
-                multi_chip->skip_transfer[data_type_t::WEIGHT] = false;
-
-            }
-        }
-        else if(m_scheduler->compression_type == compression_type_t::SPARSEMAP) {
-            if(!skip_transfer[data_type_t::WEIGHT]) {
-                num_data_transfer[data_type_t::WEIGHT]++;
-
-                // Update off-chip memory access cost
-                access_cycle[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                    *u_read_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                     multi_chip->tile_size[data_type_t::WEIGHT]
-                                                    *u_read_cycle[data_type_t::WEIGHT]
-                                                    /(sizeof(data_t)*8); // Metadata
-                access_energy[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                     *u_read_energy[data_type_t::WEIGHT] + // Non-zero data
-                                                      multi_chip->tile_size[data_type_t::WEIGHT]
-                                                     *u_read_energy[data_type_t::WEIGHT]
-                                                     /(sizeof(data_t)*8); // Metadata
-
-                // Update on-chip processor access cost
-                multi_chip->access_cycle[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                                 multi_chip->tile_size[data_type_t::WEIGHT]
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT]
-                                                                /(sizeof(data_t)*8); // Metadata
-                multi_chip->access_energy[data_type_t::WEIGHT] += (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT] + // Non-zero data
-                                                                  multi_chip->tile_size[data_type_t::WEIGHT]
-                                                                 *multi_chip->u_write_energy[data_type_t::WEIGHT]
-                                                                 /(sizeof(data_t)*8); // Metadata
-
-                // Update overlapped cycle between the off-chip memory and on-chip processor
-                cycle_chip_dram[data_type_t::WEIGHT] += std::max((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                *u_read_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                                 multi_chip->tile_size[data_type_t::WEIGHT]
-                                                                *u_read_cycle[data_type_t::WEIGHT]
-                                                                /(sizeof(data_t)*8), // Metadata
-                                                                 (multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT] + // Non-zero data
-                                                                 multi_chip->tile_size[data_type_t::WEIGHT]
-                                                                *multi_chip->u_write_cycle[data_type_t::WEIGHT]); // Metadata
-
-                // Update transfer cost between the off-chip memory and on-chip processor
-                transfer_cycle[data_type_t::WEIGHT] += u_transfer_cycle
-                                                      *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*8*sizeof(data_t))
-                                                      /(float)bitwidth) + // Non-zero data
-                                                       u_transfer_cycle
-                                                      *ceil((float)(multi_chip->tile_size[data_type_t::WEIGHT])
-                                                      /(float)bitwidth); // Metadata
-                transfer_energy[data_type_t::WEIGHT] += u_transfer_energy
-                                                       *ceil((float)((multi_chip->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])*8*sizeof(data_t))
-                                                       /(float)bitwidth) + // Non-zero data
-                                                        u_transfer_energy
-                                                       *ceil((float)(multi_chip->tile_size[data_type_t::WEIGHT])
-                                                       /(float)bitwidth); // Metadata
-
-                // Update data transfer cycle and energy between DRAM and Global buffer
-                multi_chip->skip_transfer[data_type_t::WEIGHT] = false;
-                
+        // Compressed formats (B-7): one analytical sparse accountant for COO/CSC/CSR/SparseMap
+        // (payload = nonzeros at the datatype format width, plus the format's index/pointer/
+        // bitmap metadata). Datapath-value layers only; kernel-value sparse was charged dense
+        // at the guard above.
+        else if(m_scheduler->compression_type == compression_type_t::SPARSE_COO ||
+                m_scheduler->compression_type == compression_type_t::SPARSE_CSC ||
+                m_scheduler->compression_type == compression_type_t::SPARSE_CSR ||
+                m_scheduler->compression_type == compression_type_t::SPARSEMAP) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::WEIGHT]) {
+                const std::vector<unsigned> parameters =
+                    m_scheduler->calculate_parameter_size(component_type_t::CHIPS_Y);
+                const size_t tile = multi_chip->tile_size[data_type_t::WEIGHT];
+                const size_t nonzeros = tile - m_scheduler->num_zeros[data_type_t::WEIGHT];
+                const size_t metadata_bits = sparse_metadata_bits(
+                    m_scheduler->compression_type, data_type_t::WEIGHT, parameters, tile, nonzeros);
+                account_descriptor_sparse_load(data_type_t::WEIGHT, nonzeros, metadata_bits);
             }
         }
         else {

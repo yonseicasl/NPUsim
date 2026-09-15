@@ -200,8 +200,24 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
                 compression_type = (compression_type_t)get_type(compression_type_str, compression_str);
             }
             if(compression_type != compression_type_t::DENSE) {
-                std::cerr << "Error: sparse PE execution is not implemented; use compression_type=dense" << std::endl;
+#ifdef FUNCTIONAL
+                // B-7: value-aware sparse EXECUTION. The PE compute already zero-skips MACs
+                // with a zero operand (count_nonzero_mac_operations), so a functional run on
+                // real (pruned) values models the compute-side speedup -- the SparTen "PE
+                // cycles fall with sparsity" result. SCOPE: this models COMPUTE zero-skip
+                // only; off-chip/on-chip TRAFFIC stays dense-sized (compressed CSR/CSC/
+                // SparseMap transport + metadata is not modeled), and it is restricted to
+                // GEMM/connected layers (matrix sparsity). A sparse convolution -- which
+                // takes the analytical descriptor path (A-1) that is dense-only -- is
+                // rejected per layer in run().
+                std::cout << "# compression_type=" << compression_str << " (FUNCTIONAL): "
+                          << "value-aware sparse COMPUTE zero-skip modeled; traffic stays "
+                          << "dense-sized (compressed transport not modeled)" << std::endl;
+#else
+                std::cerr << "Error: sparse PE execution is not implemented in timing-only "
+                          << "builds; use compression_type=dense or a FUNCTIONAL build" << std::endl;
                 exit(1);
+#endif
             }
         }
         // Initialize PE array.
@@ -696,6 +712,33 @@ void npu_t::override_executable_layer_geometry() {
             current->weight_size = operation.geometry.output_channels*
                 (operation.geometry.input_channels/operation.geometry.groups)*
                 operation.geometry.filter_height*operation.geometry.filter_width;
+        } else if(operation.kind == WORKLOAD_MATMUL) {
+            // B-4: attention/bmm matmul as a MAC layer. The transitional connected layer
+            // sees the FLATTENED GEMM: input row length = K, output width = N, over
+            // matmul_batch*M rows. Its weight buffer holds the largest per-batch B slice
+            // (K*N); the functional value kernel rebinds it per batch.
+            current->input_channel = operation.geometry.matmul_k;
+            current->input_height = current->input_width = 1;
+            current->output_channel = operation.geometry.matmul_n;
+            current->output_height = current->output_width = 1;
+            current->input_size = operation.geometry.matmul_k;
+            current->output_size = operation.geometry.matmul_n;
+            current->weight_size = operation.geometry.matmul_k*operation.geometry.matmul_n;
+        }
+        // Nebula sized this transitional layer's weight/output buffers from its chained
+        // input-size inference, which is WRONG when a non-MAC op (layer_norm/transpose,
+        // lowered to a placeholder) sits before this mapped op and changes the inferred
+        // shape. Reallocate to the executable's own geometry so the functional bind's
+        // weight copy and the datapath's output writes stay in bounds. The layer owns and
+        // deletes both buffers, so this is safe right after init.
+        if(operation.mapping_required && current->weight != NULL) {
+            delete [] current->weight;
+            current->weight = new float[std::max<unsigned>(1u, current->weight_size)]();
+            if(current->output_data != NULL) {
+                delete [] current->output_data;
+                const size_t out_n = static_cast<size_t>(current->output_size)*batch;
+                current->output_data = new float[std::max<size_t>(1, out_n)]();
+            }
         }
     }
 }
@@ -799,7 +842,8 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 } else if(operation.kind == WORKLOAD_ELEMENTWISE) {
                     require_sfu(index, operation.geometry.elementwise_operator == "add"
                         ? SFU_OP_VADD : SFU_OP_VMUL);
-                } else if(operation.kind == WORKLOAD_BATCH_NORM) {
+                } else if(operation.kind == WORKLOAD_BATCH_NORM ||
+                          operation.kind == WORKLOAD_LAYER_NORM) {
                     require_sfu(index, SFU_OP_VMUL);
                     require_sfu(index, SFU_OP_VADD);
                 }
@@ -932,8 +976,21 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
 #ifdef FUNCTIONAL
                 if(executable_ir_mode) functional_bind_executable_operation(index, *operation);
                 // Envelope classification: false = the datapath computes the values;
-                // true = a reference kernel (GEMM/im2col) computes them after the run.
-                const bool functional_kernel_values = functional_mapping_needs_kernel(index);
+                // true = a reference kernel (GEMM/im2col/matmul) computes them after the run.
+                // A batched matmul (B-4) is always kernel-value: per-batch operands the
+                // single-tile datapath cannot carry.
+                const bool matmul_op = executable_ir_mode && operation->kind == WORKLOAD_MATMUL;
+                const bool functional_kernel_values =
+                    matmul_op ? true : functional_mapping_needs_kernel(index);
+                // B-7: a sparse run is restricted to layers computed on the datapath (GEMM/
+                // connected); a kernel-value layer (conv/envelope-out) takes the analytical
+                // dense-only descriptor path, which cannot represent zero-skip traffic.
+                if(scheduler->compression_type != compression_type_t::DENSE && functional_kernel_values) {
+                    std::cerr << "Error: sparse execution supports GEMM/connected layers only; "
+                              << "layer " << index << " needs the dense reference kernel "
+                              << "(keep convolutions dense, or lower them to GEMM)" << std::endl;
+                    exit(1);
+                }
                 // Kernel-value layers: suppress the datapath's own value movement -- its
                 // offsets are exactly what the kernel path declared invalid (garbage moves
                 // at best, window overruns at worst). Timing accounting is untouched.
@@ -982,21 +1039,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                     }
                 }
                 layer_stats[stats_index]->update_stats(pe_arrays, global_buffers, multi_chip, dram);
-#ifdef FUNCTIONAL
-                // Apply the zero-gating energy correction on the captured (pre-repetition-
-                // scaled) counters; the fractions are exact measurements, not estimates.
-                if(functional_zero_gating) {
-                    layer_stats[stats_index]->apply_functional_zero_gating(zero_gating_fraction);
-                    functional_gating_fraction[index] = zero_gating_fraction;
-                    std::ostringstream gating_note;
-                    gating_note << std::setprecision(4) << zero_gating_fraction << "; MAC +"
-                                << " weight-spad dynamic energy x " << std::setprecision(4)
-                                << 1.0 - zero_gating_fraction;
-                    std::cout << "[FUNCTIONAL] layer " << index << ": zero-gating -- input zero"
-                              << " fraction " << gating_note.str()
-                              << " (cycles unchanged)" << std::endl;
-                }
-#endif
+                // (A-3: zero-gating is applied AFTER the value kernel runs below, so the
+                // exact per-MAC fraction it measures is available -- see the apply block
+                // right after the kernel dispatch.)
 #ifdef FUNCTIONAL
                 // G3/G5: layers outside the datapath value envelope get their VALUES from
                 // a reference kernel (the datapath above already produced this layer's
@@ -1004,8 +1049,28 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 // temporal-fold replay below is datapath machinery and is skipped for them.
                 const bool conv_value_kernel = functional_kernel_values &&
                     scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER;
-                if(conv_value_kernel)               functional_conv_im2col(index);
+                if(matmul_op)                       functional_matmul(index, *operation);
+                else if(conv_value_kernel)          functional_conv_im2col(index);
                 else if(functional_kernel_values)   functional_gemm_fallback(index);
+                // A-3: apply zero-gating now that the value kernel (if any) has run and
+                // recorded its EXACT per-MAC ifmap-zero fraction. Datapath-value layers
+                // (no kernel) fall back to the unweighted input-tensor fraction measured
+                // above -- which, for a dense GEMM, equals the exact per-MAC fraction.
+                if(functional_zero_gating) {
+                    const bool have_exact = functional_exact_gating_fraction.count(index);
+                    const double f = have_exact
+                        ? functional_exact_gating_fraction[index] : zero_gating_fraction;
+                    layer_stats[stats_index]->apply_functional_zero_gating(f);
+                    functional_gating_fraction[index] = f;
+                    std::ostringstream gating_note;
+                    gating_note << std::setprecision(4) << f << " ("
+                                << (have_exact ? "exact per-MAC" : "input-tensor")
+                                << "); MAC + weight-spad dynamic energy x "
+                                << std::setprecision(4) << 1.0 - f;
+                    std::cout << "[FUNCTIONAL] layer " << index << ": zero-gating -- ifmap zero"
+                              << " fraction " << gating_note.str()
+                              << " (cycles unchanged)" << std::endl;
+                }
                 // TEMPORAL-FOLD FUNCTIONAL REPLAY (batch): the analytical engine simulates ONE
                 // representative tile and scales timing by repetitions, so only the first
                 // batch's VALUES were just computed. Timing is already captured (update_stats
@@ -1361,6 +1426,38 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                       ? "  (NO LAYER COMPARED -- gate fails)" : "")
                   << std::endl;
         if(functional_external_golden) write_functional_report(m_network_config);
+        // B-6: inference accuracy. For a real classification run (labels loaded via the
+        // image path, not an external-golden fixture) the accelerator computed the actual
+        // class scores; report top-1/top-5 against the reference labels. This is the
+        // value-aware simulation's end-to-end correctness signal (e.g. a pruning/
+        // quantization accuracy drop) that a timing-only run cannot produce.
+        if(!functional_external_golden && !executable_ir_mode &&
+           network->output_layer != NULL && network->output_layer->output_data != NULL &&
+           network->num_classes > 0 && network->reference_label != NULL) {
+            const unsigned classes = network->num_classes;
+            const unsigned batch = network->batch_size;
+            const unsigned k1 = 1;
+            const unsigned k5 = std::min<unsigned>(5, classes);
+            size_t top1 = 0, top5 = 0;
+            const float *scores = network->output_layer->output_data;
+            std::vector<unsigned> order(classes);
+            for(unsigned s = 0; s < batch; ++s) {
+                for(unsigned c = 0; c < classes; ++c) order[c] = c;
+                std::partial_sort(order.begin(), order.begin() + k5, order.end(),
+                    [&](unsigned a, unsigned b) {
+                        return scores[s*classes + a] > scores[s*classes + b];
+                    });
+                const unsigned ref = network->reference_label[s];
+                for(unsigned k = 0; k < k5; ++k) {
+                    if(order[k] == ref) { if(k < k1) ++top1; ++top5; break; }
+                }
+            }
+            std::cout << std::setprecision(4) << std::defaultfloat
+                      << "[FUNCTIONAL] accuracy: top-1 " << top1 << "/" << batch << " ("
+                      << 100.0*top1/batch << "%), top-" << k5 << " " << top5 << "/" << batch
+                      << " (" << 100.0*top5/batch << "%)" << std::endl;
+            functional_top1 = top1; functional_top5 = top5; functional_accuracy_samples = batch;
+        }
 #endif
     }
 }
@@ -1719,8 +1816,15 @@ void npu_t::apply_weight_decompression(unsigned m_stats_index) {
         global_buffer_t *glb = global_buffers[0];
         const double write_cycle = glb->u_write_cycle[data_type_t::WEIGHT];
         if(write_cycle > 0.0) {
-            sink_bytes_per_cycle =
-                static_cast<double>(glb->line_size[data_type_t::WEIGHT])/8.0/write_cycle;
+            // Port rate: the declared GLB bandwidth (bits/cycle) when present. The
+            // line-size fallback exists for configs that declare per-tensor line widths
+            // but no bandwidth; new-format configs declare only BANDWIDTH, and their
+            // 64-bit line-size default would starve the sink to ~8 B/cycle and put the
+            // whole decoder window on the critical path regardless of overlap.
+            const double port_bits = glb->get_bitwidth() > 0
+                ? static_cast<double>(glb->get_bitwidth())
+                : static_cast<double>(glb->line_size[data_type_t::WEIGHT]);
+            sink_bytes_per_cycle = port_bits/8.0/write_cycle;
         }
     }
     layer_stats[m_stats_index]->apply_decompression(decomp, dense_weight_bytes,
@@ -1952,8 +2056,15 @@ void npu_t::run_standalone_graph_operation(
         } else if(operation.kind == WORKLOAD_BATCH_NORM) {
             local = sfus[chip]->elementwise_invocation(SFU_OP_VMUL, share);
             local.merge_serial(sfus[chip]->elementwise_invocation(SFU_OP_VADD, share));
+        } else if(operation.kind == WORKLOAD_LAYER_NORM) {
+            // B-4: per-row mean/var (VADD reductions) + normalize/scale/shift (VMUL+VADD).
+            local = sfus[chip]->elementwise_invocation(SFU_OP_VADD, 2*share);
+            local.merge_serial(sfus[chip]->elementwise_invocation(SFU_OP_VMUL, share));
+            local.merge_serial(sfus[chip]->elementwise_invocation(SFU_OP_VADD, share));
         } else if(operation.kind == WORKLOAD_CONCAT) {
             local.operation = "concat (copy-only)";
+        } else if(operation.kind == WORKLOAD_TRANSPOSE) {
+            local.operation = "transpose (copy-only)";   // pure data movement, no arithmetic
         } else {
             std::cerr << "Error: unsupported standalone graph operation " << operation.id << std::endl;
             exit(1);
@@ -1970,6 +2081,8 @@ void npu_t::run_standalone_graph_operation(
         combined.operation = "batch_norm inference (mul-add)";
     } else if(operation.kind == WORKLOAD_CONCAT) {
         combined.operation = "concat (copy-only)";
+    } else if(operation.kind == WORKLOAD_TRANSPOSE) {
+        combined.operation = "transpose (copy-only)";
     }
 
     const sfu_operand_stream_t stream = graph_operand_stream(operation, m_plan);
@@ -2192,6 +2305,41 @@ bool npu_t::functional_mapping_needs_kernel(unsigned m_index) {
 // Reference GEMM value kernel: raw accumulators out[M][N] = in[M][K] @ W[N][K]^T in the
 // datapath's position-major layout and (m,n,k) scalar order; the shared finalize applies
 // BN/zero-point/bias/activation/requant exactly once afterwards.
+// B-4: batched matmul C[Bt][M][N] = A[Bt][M][K] @ B[Bt][K][N] (or A @ B^T when
+// transpose_b, i.e. B is [Bt][N][K] -- the attention Q*K^T form). Operands and output
+// live in the tensor store; writes the result into the transitional layer's output_data
+// so the shared commit publishes and verifies it. Scalar (m,n,k) order, fp32.
+void npu_t::functional_matmul(unsigned m_index, const workload_operation_t &m_operation) {
+    const workload_geometry_t &g = m_operation.geometry;
+    const unsigned Bt = g.matmul_batch, M = g.matmul_m, K = g.matmul_k, N = g.matmul_n;
+    std::vector<float> &A = functional_store(m_operation.inputs[0]);
+    std::vector<float> &B = functional_store(m_operation.inputs[1]);
+    std::vector<float> &store_out = functional_store(m_operation.outputs.front());
+    if(A.size() != static_cast<size_t>(Bt)*M*K || B.size() != static_cast<size_t>(Bt)*K*N ||
+       store_out.size() != static_cast<size_t>(Bt)*M*N) {
+        std::cerr << "Error: matmul " << m_operation.id << " operand/output sizes disagree "
+                  << "with geometry Bt=" << Bt << " M=" << M << " K=" << K << " N=" << N << std::endl;
+        exit(1);
+    }
+    float *out = store_out.data();
+    for(unsigned b = 0; b < Bt; ++b) {
+        const float *a = A.data() + static_cast<size_t>(b)*M*K;
+        const float *bb = B.data() + static_cast<size_t>(b)*K*N;
+        float *c = out + static_cast<size_t>(b)*M*N;
+        for(unsigned m = 0; m < M; ++m) {
+            for(unsigned n = 0; n < N; ++n) {
+                float acc = 0.0f;
+                if(g.matmul_transpose_b)   // B stored [N][K]: c[m][n] = sum_k a[m][k]*B[n][k]
+                    for(unsigned k = 0; k < K; ++k) acc += a[m*K + k]*bb[static_cast<size_t>(n)*K + k];
+                else                       // B stored [K][N]: c[m][n] = sum_k a[m][k]*B[k][n]
+                    for(unsigned k = 0; k < K; ++k) acc += a[m*K + k]*bb[static_cast<size_t>(k)*N + n];
+                c[m*N + n] = acc;
+            }
+        }
+    }
+    functional_kernel_layers[m_index] = "matmul";
+}
+
 void npu_t::functional_gemm_fallback(unsigned m_index) {
     nebula::layer_t *l = network->layers[m_index];
     const unsigned N = l->output_channel;
@@ -2206,6 +2354,15 @@ void npu_t::functional_gemm_fallback(unsigned m_index) {
             for(unsigned k = 0; k < K; ++k) acc += in[m*K + k]*wt[static_cast<size_t>(n)*K + k];
             out[m*N + n] = acc;
         }
+    }
+    // A-3: exact per-MAC ifmap-zero fraction. Every input element in[m][k] drives N MACs
+    // (one per output channel), so the per-MAC fraction equals the input-row zero fraction;
+    // recorded here for uniformity with the conv kernel.
+    if(functional_zero_gating && rows > 0 && K > 0) {
+        size_t zeros = 0;
+        for(size_t i = 0; i < rows*K; ++i) if(in[i] == 0.0f) ++zeros;
+        functional_exact_gating_fraction[m_index] =
+            static_cast<double>(zeros)/static_cast<double>(rows*K);
     }
     functional_kernel_layers[m_index] = "gemm";
 }
@@ -2255,6 +2412,11 @@ void npu_t::functional_bind_executable_operation(unsigned m_index,
     // Output store allocation; the nebula buffer must agree on the element count.
     const workload_tensor_t &out_decl = workload->tensor(m_operation.outputs.front());
     functional_store(m_operation.outputs.front()).assign(out_decl.elements(), 0.0f);
+    // B-4: a batched matmul's operands both live in the store and vary per batch, so it
+    // does not bind a single weight buffer nor size-check against the transitional layer
+    // (its geometry is per-(batch,M) flattened). functional_matmul computes it after the
+    // datapath and publishes into the store; datapath value movement is suppressed.
+    if(m_operation.kind == WORKLOAD_MATMUL) return;
     const size_t layer_elements =
         static_cast<size_t>(current->output_size)*network->batch_size;
     if(layer_elements != out_decl.elements())
@@ -2315,7 +2477,10 @@ void npu_t::functional_commit_executable_operation(unsigned m_index,
                                                    const workload_operation_t &m_operation) {
     nebula::layer_t *current = network->layers[m_index];
     std::vector<float> &out = functional_store(m_operation.outputs.front());
-    std::memcpy(out.data(), current->output_data, out.size()*sizeof(float));
+    // B-4: functional_matmul already wrote the batched result straight into the store
+    // (its output can exceed the transitional layer's output buffer), so no copy.
+    if(m_operation.kind != WORKLOAD_MATMUL)
+        std::memcpy(out.data(), current->output_data, out.size()*sizeof(float));
     const auto golden = functional_artifact.golden.find(m_operation.id);
     if(golden != functional_artifact.golden.end()) {
         verify_buffer_against(m_index, out.data(), out.size(), golden->second,
@@ -2350,14 +2515,25 @@ void npu_t::functional_execute_graph_operation(unsigned m_index,
             std::vector<float> &in = fetch(m_operation.inputs.front());
             const size_t rows = g.rows, len = g.row_length;
             if(rows*len != in.size()) op_fail("softmax geometry disagrees with input");
+            // B-4 causal mask: within each [Tq][Tk] score block (span columns) a query at
+            // local row q attends only to keys 0..q. `span` is the per-block key length;
+            // for a batched (multi-head) score tensor the blocks tile the rows, so the
+            // local query index is r % (rows-per-block). rows-per-block == span for a
+            // square [T][T] block (Tq == Tk).
+            const unsigned span = g.softmax_causal
+                ? (g.causal_span ? g.causal_span : static_cast<unsigned>(len)) : 0;
             for(size_t r = 0; r < rows; ++r) {
                 const float *x = in.data() + r*len;
                 float *y = out.data() + r*len;
+                // Causal: keys after the query position are masked out (excluded from the
+                // softmax). The query's local position is r modulo the block's query count.
+                const size_t valid = span ? std::min<size_t>(len, (r % span) + 1) : len;
                 float peak = x[0];
-                for(size_t i = 1; i < len; ++i) peak = std::max(peak, x[i]);
+                for(size_t i = 1; i < valid; ++i) peak = std::max(peak, x[i]);
                 float sum = 0.0f;
-                for(size_t i = 0; i < len; ++i) { y[i] = std::exp(x[i] - peak); sum += y[i]; }
-                for(size_t i = 0; i < len; ++i) y[i] /= sum;
+                for(size_t i = 0; i < valid; ++i) { y[i] = std::exp(x[i] - peak); sum += y[i]; }
+                for(size_t i = 0; i < valid; ++i) y[i] /= sum;
+                for(size_t i = valid; i < len; ++i) y[i] = 0.0f;   // masked positions
             }
             break;
         }
@@ -2453,6 +2629,60 @@ void npu_t::functional_execute_graph_operation(unsigned m_index,
             }
             break;
         }
+        case WORKLOAD_LAYER_NORM: {
+            // B-4: LayerNorm over the last axis. Torch order (input, weight, bias); the
+            // normalized size is geometry.row_length. mean/var per row, then affine.
+            if(m_operation.inputs.size() != 3)
+                op_fail("layer_norm requires (input, weight, bias)");
+            std::vector<float> &in    = fetch(m_operation.inputs[0]);
+            std::vector<float> &gamma = fetch(m_operation.inputs[1]);
+            std::vector<float> &beta  = fetch(m_operation.inputs[2]);
+            const size_t L = g.row_length;
+            if(L == 0 || in.size() % L != 0 || in.size() != out.size())
+                op_fail("layer_norm geometry disagrees");
+            if(gamma.size() != L || beta.size() != L)
+                op_fail("layer_norm weight/bias length must equal the normalized size");
+            const size_t rows = in.size()/L;
+            for(size_t r = 0; r < rows; ++r) {
+                const float *x = in.data() + r*L;
+                float *y = out.data() + r*L;
+                double mean = 0.0;
+                for(size_t i = 0; i < L; ++i) mean += x[i];
+                mean /= static_cast<double>(L);
+                double var = 0.0;
+                for(size_t i = 0; i < L; ++i) { const double d = x[i]-mean; var += d*d; }
+                var /= static_cast<double>(L);
+                const double inv = 1.0/std::sqrt(var + g.epsilon);
+                for(size_t i = 0; i < L; ++i)
+                    y[i] = static_cast<float>((x[i]-mean)*inv)*gamma[i] + beta[i];
+            }
+            break;
+        }
+        case WORKLOAD_TRANSPOSE: {
+            // B-4: physically swap two axes of the input tensor. Multi-head split
+            // ([T,H,d]->[H,T,d]) and merge are exactly this. General N-D via the input's
+            // declared shape and the two swapped axes.
+            std::vector<float> &in = fetch(m_operation.inputs.front());
+            const std::vector<size_t> &shape = workload->tensor(m_operation.inputs.front()).shape;
+            const unsigned a0 = g.transpose_axis0, a1 = g.transpose_axis1;
+            if(a1 >= shape.size()) op_fail("transpose axis out of range");
+            if(in.size() != out.size()) op_fail("transpose element count disagrees");
+            // Row-major strides of the input; the output swaps the two axes' extents.
+            std::vector<size_t> in_stride(shape.size(), 1);
+            for(size_t d = shape.size() - 1; d-- > 0; ) in_stride[d] = in_stride[d+1]*shape[d+1];
+            std::vector<size_t> out_shape = shape; std::swap(out_shape[a0], out_shape[a1]);
+            std::vector<size_t> out_stride(shape.size(), 1);
+            for(size_t d = shape.size() - 1; d-- > 0; ) out_stride[d] = out_stride[d+1]*out_shape[d+1];
+            std::vector<size_t> idx(shape.size(), 0);
+            for(size_t flat = 0; flat < in.size(); ++flat) {
+                size_t rem = flat, o = 0;
+                for(size_t d = 0; d < shape.size(); ++d) { idx[d] = rem/in_stride[d]; rem %= in_stride[d]; }
+                std::swap(idx[a0], idx[a1]);
+                for(size_t d = 0; d < shape.size(); ++d) o += idx[d]*out_stride[d];
+                out[o] = in[flat];
+            }
+            break;
+        }
         default:
             op_fail("no functional kernel for this operation kind");
     }
@@ -2508,6 +2738,10 @@ void npu_t::functional_conv_im2col(unsigned m_index) {
     // fp32, so the accumulation stays integer-exact.
     const float zp_i = static_cast<float>(functional_input_zero_point);
     const float zp_w = static_cast<float>(functional_weight_zero_point);
+    // A-3: exact per-MAC ifmap-zero accounting. A MAC is "gated" when its ifmap operand is
+    // zero -- either real zero data or a padding position (which the chip skips too).
+    size_t total_macs = 0, gated_macs = 0;
+    const bool measure_gating = functional_zero_gating;
     for(unsigned b = 0; b < batch; ++b) {
         for(unsigned n = 0; n < N; ++n) {
             const unsigned g = n/Ng;
@@ -2517,10 +2751,16 @@ void npu_t::functional_conv_im2col(unsigned m_index) {
                     for(unsigned c = 0; c < Cg; ++c) {
                         for(unsigned r = 0; r < R; ++r) {
                             const long ih = static_cast<long>(p)*stride + r - l->padding_h;
-                            if(ih < 0 || ih >= static_cast<long>(H)) continue;   // zero pad
+                            const bool row_pad = (ih < 0 || ih >= static_cast<long>(H));
                             for(unsigned s = 0; s < S; ++s) {
                                 const long iw = static_cast<long>(q)*stride + s - l->padding_w;
-                                if(iw < 0 || iw >= static_cast<long>(W)) continue;
+                                const bool pad = row_pad || iw < 0 || iw >= static_cast<long>(W);
+                                if(measure_gating) {
+                                    ++total_macs;
+                                    if(pad || in[((static_cast<size_t>(b)*C + g*Cg + c)*H + ih)*W + iw] == 0.0f)
+                                        ++gated_macs;
+                                }
+                                if(pad) continue;                                  // zero pad
                                 acc += (in[((static_cast<size_t>(b)*C + g*Cg + c)*H + ih)*W + iw] - zp_i)*
                                        (wt[((static_cast<size_t>(n)*Cg + c)*R + r)*S + s] - zp_w);
                             }
@@ -2531,6 +2771,9 @@ void npu_t::functional_conv_im2col(unsigned m_index) {
             }
         }
     }
+    if(measure_gating && total_macs > 0)
+        functional_exact_gating_fraction[m_index] =
+            static_cast<double>(gated_macs)/static_cast<double>(total_macs);
     functional_kernel_layers[m_index] = "im2col";
 }
 
@@ -2641,7 +2884,10 @@ void npu_t::verify_buffer_against(unsigned m_index, const float *m_actual, size_
         << (functional_kernel_layers.count(m_index)
             ? ",\"kernel\":\"" + functional_kernel_layers[m_index] + "\"" : "");
     if(functional_gating_fraction.count(m_index)) {
-        row << ",\"zero_gating_fraction\":" << functional_gating_fraction[m_index];
+        row << ",\"zero_gating_fraction\":" << functional_gating_fraction[m_index]
+            << ",\"zero_gating_basis\":\""
+            << (functional_exact_gating_fraction.count(m_index) ? "exact_per_mac" : "input_tensor")
+            << "\"";
     }
     row << ",\"pass\":" << (pass ? "true" : "false")
         << ",\"elements\":" << elements

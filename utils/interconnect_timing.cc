@@ -401,6 +401,61 @@ datatype_transfer_timing_t datatype_transfer_timing(data_type_t type, size_t ele
         timing.source_accesses, timing.link_transactions, timing.destination_accesses);
     return timing;
 }
+
+unsigned index_bit_width(unsigned extent) {
+    unsigned bits = 1;
+    while(extent > 1) { extent /= 2; bits++; }
+    return bits;
+}
+
+size_t sparse_metadata_bits(compression_type_t compression, data_type_t type,
+                            const std::vector<unsigned> &parameters,
+                            size_t tile_size, size_t nonzeros) {
+    const bool is_weight = (type == data_type_t::WEIGHT);
+    const unsigned row_extent = is_weight ? parameters[parameter_type_t::FILTER_HEIGHT]
+                                          : parameters[parameter_type_t::INPUT_HEIGHT];
+    const unsigned col_extent = is_weight ? parameters[parameter_type_t::FILTER_WIDTH]
+                                          : parameters[parameter_type_t::INPUT_WIDTH];
+    const unsigned group = parameters[parameter_type_t::GROUP];
+    // Pointer-entry fan-out: one pointer stream per (batch,channel) group for INPUT, per
+    // (out-channel,in-channel) group for WEIGHT -- exactly the legacy branch counts.
+    const size_t fanout = is_weight
+        ? (size_t)parameters[parameter_type_t::OUTPUT_CHANNEL]/group
+          *parameters[parameter_type_t::INPUT_CHANNEL]/group
+        : (size_t)parameters[parameter_type_t::BATCH_SIZE]
+          *parameters[parameter_type_t::INPUT_CHANNEL]/group;
+    switch(compression) {
+        case compression_type_t::SPARSEMAP:
+            return tile_size;                                          // one bit per element
+        case compression_type_t::SPARSE_COO:
+            return nonzeros*(index_bit_width(row_extent) + index_bit_width(col_extent));
+        case compression_type_t::SPARSE_CSC: {                         // row indices + column pointers
+            const size_t pointers = fanout*(col_extent + 1);
+            return (nonzeros + pointers)*index_bit_width(row_extent);
+        }
+        case compression_type_t::SPARSE_CSR: {                         // column indices + row pointers
+            const size_t pointers = fanout*(row_extent + 1);
+            return (nonzeros + pointers)*index_bit_width(col_extent);
+        }
+        default:
+            return 0;
+    }
+}
+
+sparse_transport_cost_t sparse_transport_cost(data_type_t type, size_t nonzeros,
+                                              size_t metadata_bits, size_t link_bits) {
+    auto ceil_div = [](size_t a, size_t b) -> size_t { return b ? (a + b - 1)/b : 0; };
+    const size_t elem_bits = runtime_datatypes().format(type).payload_bits;   // format element width
+    sparse_transport_cost_t cost;
+    // Bandwidth (link) beats: the compressed payload sized by the real element width, and the
+    // metadata stream, each packed to the link width.
+    cost.payload_link  = ceil_div(runtime_datatypes().payload_bits(type, nonzeros), link_bits);
+    cost.metadata_link = ceil_div(metadata_bits, link_bits);
+    // Per-element accesses: the nonzero payload plus the metadata packed at the element width
+    // (the granularity the datapath-value dense path reads/writes in).
+    cost.source_elements = nonzeros + ceil_div(metadata_bits, elem_bits ? elem_bits : 1);
+    return cost;
+}
 double temporal_pipeline_run_cycles(unsigned tiles, const std::vector<double> &stage_totals) {
     if(stage_totals.empty()) return 0.0;
     if(tiles <= 1) {

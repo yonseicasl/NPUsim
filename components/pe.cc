@@ -825,7 +825,82 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
         utilization_local_buffer[data_type_t::OUTPUT] = std::max(utilization_local_buffer[data_type_t::OUTPUT],
             static_cast<double>(runtime_datatypes().storage_bytes(data_type_t::OUTPUT, tile_size_lb[data_type_t::OUTPUT]))/static_cast<double>(output_size));
     }
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: a kernel-value layer (conv P/Q>1, envelope-outside mappings; its
+    // values come from the reference kernel and datapath value movement is
+    // suppressed) takes the SAME analytical accounting as the timing build, so
+    // its reported stats are identical by construction. Datapath-value layers
+    // (GEMM) fall through to the per-element functional body below.
+    if(!m_scheduler->functional_value_transfers) {
+        if(m_scheduler->compression_type != compression_type_t::DENSE) {
+            std::cerr << "Error: timing PE supports dense descriptor traffic only" << std::endl;
+            exit(1);
+        }
+        const bool last_pe = pe_array->index == m_scheduler->num_active_chips_x*m_scheduler->num_active_chips_y - 1 &&
+                             index == m_scheduler->num_active_pe_x*m_scheduler->num_active_pe_y - 1;
+        if(request_to_lb[data_type_t::INPUT]) {
+            account_format_events(data_type_t::INPUT, tile_size_mac[data_type_t::INPUT]);
+            if(!skip_transfer[data_type_t::INPUT]) {
+                num_data_transfer_to_mac[data_type_t::INPUT]++;
+                account_descriptor_dense_mac_transfer(data_type_t::INPUT, tile_size_mac[data_type_t::INPUT], true);
+                if(last_pe) move_front(&m_scheduler->input_offset_pe);
+            }
+            input_index++;
+            exist_data_mac[data_type_t::INPUT] = true;
+            request_to_lb[data_type_t::INPUT] = false;
+            if(tile_size_mac[data_type_t::INPUT] == tile_size_lb[data_type_t::INPUT]) skip_transfer[data_type_t::INPUT] = true;
+        }
+        if(request_to_lb[data_type_t::WEIGHT]) {
+            account_format_events(data_type_t::WEIGHT, tile_size_mac[data_type_t::WEIGHT]);
+            if(!skip_transfer[data_type_t::WEIGHT]) {
+                num_data_transfer_to_mac[data_type_t::WEIGHT]++;
+                account_descriptor_dense_mac_transfer(data_type_t::WEIGHT, tile_size_mac[data_type_t::WEIGHT], true);
+                if(last_pe) move_front(&m_scheduler->weight_offset_pe);
+            }
+            weight_index++;
+            exist_data_mac[data_type_t::WEIGHT] = true;
+            request_to_lb[data_type_t::WEIGHT] = false;
+            if(tile_size_mac[data_type_t::WEIGHT] == tile_size_lb[data_type_t::WEIGHT]) skip_transfer[data_type_t::WEIGHT] = true;
+        }
+        if(request_to_lb[data_type_t::OUTPUT]) {
+            account_format_events(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT]);
+            if(m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()]) {
+                // RE1/E20-4: a prior partial sum exists -- but that alone is not a reload. A reload is
+                // the physical READ-BACK over the LB->MAC path, and that path is skipped when the
+                // output tile is already resident in the MAC. Charging before the guard billed a
+                // read-back that never happened, on every retained pass.
+                if(!skip_transfer[data_type_t::OUTPUT]) {
+                    account_accumulator_reload(tile_size_mac[data_type_t::OUTPUT]);
+                    num_data_transfer_to_mac[data_type_t::OUTPUT]++;
+                    account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], true);
+                } else {
+                    // E20-4: the accumulator stayed in the MAC. Counted so a retained pass is visible
+                    // as a retention, not as an absent event.
+                    ++accumulator_retained_events;
+                }
+                if(tile_size_mac[data_type_t::OUTPUT] == tile_size_lb[data_type_t::OUTPUT]) skip_transfer[data_type_t::OUTPUT] = true;
+            } else {
+                // RE1: a fresh accumulator is zero-initialized in place -- nothing is read back, so no
+                // reload energy is charged here. This branch used to pay for a reload that never
+                // happened.
+                account_accumulator_create(tile_size_mac[data_type_t::OUTPUT]);
+                clear_output_accumulators();
+                m_scheduler->output_read_pe[m_scheduler->output_offset_pe.front()] = true;
+            }
+            output_index++;
+            exist_data_mac[data_type_t::OUTPUT] = true;
+            request_to_lb[data_type_t::OUTPUT] = false;
+        }
+    
+        computation(m_scheduler);
+        if(input_index == m_scheduler->offset_size_pe[data_type_t::INPUT].front() &&
+           weight_index == m_scheduler->offset_size_pe[data_type_t::WEIGHT].front() &&
+           output_index == m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+            flush_data(m_scheduler);
+        }
+        return;
+    }
+#else
     if(m_scheduler->compression_type != compression_type_t::DENSE) {
         std::cerr << "Error: timing PE supports dense descriptor traffic only" << std::endl;
         exit(1);
@@ -1830,7 +1905,81 @@ void pe_t::data_transfer_to_mac(scheduler_t *m_scheduler) {
 
 // Flush the data in local buffer.
 void pe_t::flush_data(scheduler_t *m_scheduler) {
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: a kernel-value layer (conv P/Q>1, envelope-outside mappings; its
+    // values come from the reference kernel and datapath value movement is
+    // suppressed) takes the SAME analytical accounting as the timing build, so
+    // its reported stats are identical by construction. Datapath-value layers
+    // (GEMM) fall through to the per-element functional body below.
+    if(!m_scheduler->functional_value_transfers) {
+        if(m_scheduler->compression_type != compression_type_t::DENSE) {
+            std::cerr << "Error: timing PE flush supports dense descriptor traffic only" << std::endl;
+            exit(1);
+        }
+        bool write_output = false;
+        if(stationary_type_local_buffer == stationary_type_t::INPUT_STATIONARY) {
+            write_output = true;
+            if(weight_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::WEIGHT].front() - 1 &&
+               output_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::OUTPUT].front() - 1) {
+                exist_data_lb[data_type_t::WEIGHT] = false;
+                exist_data_lb[data_type_t::OUTPUT] = false;
+                weight_flush_counter++;
+                output_flush_counter++;
+            } else {
+                exist_data_lb[data_type_t::INPUT] = false;
+                exist_data_lb[data_type_t::WEIGHT] = false;
+                exist_data_lb[data_type_t::OUTPUT] = false;
+                weight_flush_counter = 0;
+                output_flush_counter = 0;
+            }
+        } else if(stationary_type_local_buffer == stationary_type_t::WEIGHT_STATIONARY) {
+            write_output = true;
+            if(input_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::INPUT].front() - 1 &&
+               output_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::OUTPUT].front() - 1) {
+                exist_data_lb[data_type_t::INPUT] = false;
+                exist_data_lb[data_type_t::OUTPUT] = false;
+                input_flush_counter++;
+                output_flush_counter++;
+            } else {
+                exist_data_lb[data_type_t::INPUT] = false;
+                exist_data_lb[data_type_t::WEIGHT] = false;
+                exist_data_lb[data_type_t::OUTPUT] = false;
+                input_flush_counter = 0;
+                output_flush_counter = 0;
+            }
+        } else if(stationary_type_local_buffer == stationary_type_t::OUTPUT_STATIONARY) {
+            if(input_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::INPUT].front() - 1 &&
+               weight_flush_counter < m_scheduler->offset_size_global_buffer[data_type_t::WEIGHT].front() - 1) {
+                exist_data_lb[data_type_t::INPUT] = false;
+                exist_data_lb[data_type_t::WEIGHT] = false;
+                input_flush_counter++;
+                weight_flush_counter++;
+            } else {
+                exist_data_lb[data_type_t::INPUT] = false;
+                exist_data_lb[data_type_t::WEIGHT] = false;
+                exist_data_lb[data_type_t::OUTPUT] = false;
+                input_flush_counter = 0;
+                weight_flush_counter = 0;
+                write_output = true;
+            }
+        } else {
+            exist_data_lb[data_type_t::INPUT] = false;
+            exist_data_lb[data_type_t::WEIGHT] = false;
+            exist_data_lb[data_type_t::OUTPUT] = false;
+            write_output = true;
+        }
+        // RE1: the final cast is NOT charged here. A PE writes the same output tile back once per
+        // reduction pass, so a cast charged at this boundary would follow the MAC count rather than the
+        // final output element count. It is charged where the completed accumulation is read out of the
+        // chip instead (global_buffer_t::account_output_writeback_link()).
+        if(write_output) pe_array->account_descriptor_dense_writeback(this, tile_size_lb[data_type_t::OUTPUT]);
+        wait_data();
+        input_index = 0;
+        weight_index = 0;
+        output_index = 0;
+        return;
+    }
+#else
     if(m_scheduler->compression_type != compression_type_t::DENSE) {
         std::cerr << "Error: timing PE flush supports dense descriptor traffic only" << std::endl;
         exit(1);
@@ -2855,6 +3004,17 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
         if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER ||
            m_scheduler->layer_name == layer_name_t::CONNECTED_LAYER) {
 #ifdef FUNCTIONAL
+            // A-1: kernel-value layers (values from the reference kernel)
+            // use the analytical compute count so stats match the timing build.
+            if(!m_scheduler->functional_value_transfers) {
+                for(unsigned i = 0; i < num_active_macs; i++) {
+                    num_computation++;
+                    computation_energy += u_computation_energy;
+                }
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+            } else {
             mac_operation(m_scheduler);
             // Activation is applied only after a completed output reduction.
             // Split active_macs and mac_width
@@ -2877,6 +3037,7 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
                      reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
+            }
 #else
             for(unsigned i = 0; i < num_active_macs; i++) {
                 num_computation++;
@@ -2890,7 +3051,35 @@ void input_stationary_t::computation(scheduler_t *m_scheduler) {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
             exit(1);
         }
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: a kernel-value layer (conv P/Q>1, envelope-outside mappings; its
+    // values come from the reference kernel and datapath value movement is
+    // suppressed) takes the SAME analytical accounting as the timing build, so
+    // its reported stats are identical by construction. Datapath-value layers
+    // (GEMM) fall through to the per-element functional body below.
+    if(!m_scheduler->functional_value_transfers) {
+            // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
+            account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
+            account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
+            exist_data_mac[data_type_t::WEIGHT] = false;
+            request_to_lb[data_type_t::WEIGHT] = true;
+            exist_data_mac[data_type_t::OUTPUT] = false;
+            request_to_lb[data_type_t::OUTPUT] = true;
+            num_request_to_lb[data_type_t::WEIGHT]++;
+            num_request_to_lb[data_type_t::OUTPUT]++;
+            if(weight_index == m_scheduler->offset_size_pe[data_type_t::WEIGHT].front() &&
+               output_index == m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+                exist_data_mac[data_type_t::INPUT] = false;
+                request_to_lb[data_type_t::INPUT] = true;
+                num_request_to_lb[data_type_t::INPUT]++;
+                if(input_index < m_scheduler->offset_size_pe[data_type_t::INPUT].front()) {
+                    weight_index = 0;
+                    output_index = 0;
+                }
+            }
+            return;
+    }
+#else
         // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
         account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
         account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
@@ -3064,6 +3253,17 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
         if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER ||
            m_scheduler->layer_name == layer_name_t::CONNECTED_LAYER) {
 #ifdef FUNCTIONAL
+            // A-1: kernel-value layers (values from the reference kernel)
+            // use the analytical compute count so stats match the timing build.
+            if(!m_scheduler->functional_value_transfers) {
+                for(unsigned i = 0; i < num_active_macs; i++) {
+                    num_computation++;
+                    computation_energy += u_computation_energy;
+                }
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+            } else {
             mac_operation(m_scheduler);
             // Activation is applied only after a completed output reduction.
             // Split active_macs and mac_width
@@ -3086,6 +3286,7 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
                      reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
+            }
 #else
             for(unsigned i = 0; i < num_active_macs; i++) {
                 num_computation++;
@@ -3100,7 +3301,35 @@ void weight_stationary_t::computation(scheduler_t *m_scheduler) {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
             exit(1);
         }
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: a kernel-value layer (conv P/Q>1, envelope-outside mappings; its
+    // values come from the reference kernel and datapath value movement is
+    // suppressed) takes the SAME analytical accounting as the timing build, so
+    // its reported stats are identical by construction. Datapath-value layers
+    // (GEMM) fall through to the per-element functional body below.
+    if(!m_scheduler->functional_value_transfers) {
+            // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
+            account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
+            account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
+            exist_data_mac[data_type_t::INPUT] = false;
+            request_to_lb[data_type_t::INPUT] = true;
+            exist_data_mac[data_type_t::OUTPUT] = false;
+            request_to_lb[data_type_t::OUTPUT] = true;
+            num_request_to_lb[data_type_t::INPUT]++;
+            num_request_to_lb[data_type_t::OUTPUT]++;
+            if(input_index == m_scheduler->offset_size_pe[data_type_t::INPUT].front() &&
+               output_index == m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+                exist_data_mac[data_type_t::WEIGHT] = false;
+                request_to_lb[data_type_t::WEIGHT] = true;
+                num_request_to_lb[data_type_t::WEIGHT]++;
+                if(weight_index < m_scheduler->offset_size_pe[data_type_t::WEIGHT].front()) {
+                    input_index = 0;
+                    output_index = 0;
+                }
+            }
+            return;
+    }
+#else
         // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
         account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
         account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
@@ -3277,6 +3506,17 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
         if(m_scheduler->layer_name == layer_name_t::CONVOLUTIONAL_LAYER ||
            m_scheduler->layer_name == layer_name_t::CONNECTED_LAYER) {
 #ifdef FUNCTIONAL
+            // A-1: kernel-value layers (values from the reference kernel)
+            // use the analytical compute count so stats match the timing build.
+            if(!m_scheduler->functional_value_transfers) {
+                for(unsigned i = 0; i < num_active_macs; i++) {
+                    num_computation++;
+                    computation_energy += u_computation_energy;
+                }
+                computation_cycle += accumulate_issue_cycles(1, u_computation_cycle) +
+                     lane_reduction_fill_cycles(lane_state, u_computation_cycle);
+                     reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
+            } else {
             mac_operation(m_scheduler);
             // Activation is applied only after a completed output reduction.
             if(m_scheduler->compression_type == compression_type_t::DENSE) {
@@ -3298,6 +3538,7 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
                      reduction_energy += lane_reduction_energy(lane_state, u_mac_reduction_energy);
                 }
             }
+            }
 #else
             for(unsigned i = 0; i < num_active_macs; i++) {
                 num_computation++;
@@ -3314,7 +3555,35 @@ void output_stationary_t::computation(scheduler_t *m_scheduler) {
             std::cerr << "Error: PE computation supports only convolution/connected layers" << std::endl;
             exit(1);
         }
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: a kernel-value layer (conv P/Q>1, envelope-outside mappings; its
+    // values come from the reference kernel and datapath value movement is
+    // suppressed) takes the SAME analytical accounting as the timing build, so
+    // its reported stats are identical by construction. Datapath-value layers
+    // (GEMM) fall through to the per-element functional body below.
+    if(!m_scheduler->functional_value_transfers) {
+            exist_data_mac[data_type_t::INPUT] = false;
+            request_to_lb[data_type_t::INPUT] = true;
+            exist_data_mac[data_type_t::WEIGHT] = false;
+            request_to_lb[data_type_t::WEIGHT] = true;
+            num_request_to_lb[data_type_t::INPUT]++;
+            num_request_to_lb[data_type_t::WEIGHT]++;
+            if(input_index == m_scheduler->offset_size_pe[data_type_t::INPUT].front() &&
+               weight_index == m_scheduler->offset_size_pe[data_type_t::WEIGHT].front()) {
+                exist_data_mac[data_type_t::OUTPUT] = false;
+                request_to_lb[data_type_t::OUTPUT] = true;
+                num_request_to_lb[data_type_t::OUTPUT]++;
+                // RE1: a MAC -> LB write-back of a partial sum IS the accumulator spill.
+            account_accumulator_spill(tile_size_mac[data_type_t::OUTPUT]);
+            account_descriptor_dense_mac_transfer(data_type_t::OUTPUT, tile_size_mac[data_type_t::OUTPUT], false);
+                if(output_index < m_scheduler->offset_size_pe[data_type_t::OUTPUT].front()) {
+                    input_index = 0;
+                    weight_index = 0;
+                }
+            }
+            return;
+    }
+#else
         exist_data_mac[data_type_t::INPUT] = false;
         request_to_lb[data_type_t::INPUT] = true;
         exist_data_mac[data_type_t::WEIGHT] = false;

@@ -183,6 +183,20 @@ protected:
     // are recorded for the JSON report.
     bool functional_zero_gating;
     std::map<unsigned, double> functional_gating_fraction;
+    // B-6: inference accuracy of a real classification functional run (top-1/top-5 hits
+    // over the batch), reported at the end of run() and available to callers.
+    size_t functional_top1 = 0;
+    size_t functional_top5 = 0;
+    size_t functional_accuracy_samples = 0;
+    // A-3: EXACT per-MAC ifmap-zero fraction, weighted by actual MAC participation.
+    // The reference kernels (functional_conv_im2col / functional_gemm_fallback) walk every
+    // valid MAC and record (zero-ifmap MACs / total MACs) here. For a dense GEMM this
+    // equals the unweighted input-tensor fraction (every input element drives N MACs), but
+    // for convolution it differs: border ifmap elements drive fewer MACs, and padding
+    // positions are gated (no spad read) exactly as the chip handles them -- so this is the
+    // fraction the data-gating energy model should use. -1 = kernel did not record it
+    // (datapath-value layer), in which case the unweighted tensor fraction is used.
+    std::map<unsigned, double> functional_exact_gating_fraction;
     // Declared weight layout of the fixture ([data] weight_layout): "" = standard [N][K],
     // "ktile" = reduction-tile-major [Kf][N][sK] (required by an INPUT_CHANNEL temporal fold,
     // incompatible with the zero-point corrections that read weight as [N][K]). The mapping
@@ -237,6 +251,11 @@ protected:
                                                 const workload_operation_t &m_operation);
     void functional_execute_graph_operation(unsigned m_index,
                                             const workload_operation_t &m_operation);
+    // B-4: batched matmul of two activations (attention Q*K^T / score*V, general bmm).
+    // A mapped MAC op whose per-batch operands vary, so the single-tile datapath cannot
+    // compute it -- this kernel reads A and B from the tensor store and writes the batched
+    // result; timing still comes from the mapped datapath run.
+    void functional_matmul(unsigned m_index, const workload_operation_t &m_operation);
 public:
     // Path to the npusim.tensor.v1 manifest (set by main.cc for run-ir-functional before
     // init; empty = timing-only executable run, which a FUNCTIONAL build refuses).

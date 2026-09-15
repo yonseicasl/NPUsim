@@ -15,6 +15,14 @@ enum workload_operation_kind_t {
     WORKLOAD_ELEMENTWISE,
     WORKLOAD_CONCAT,
     WORKLOAD_BATCH_NORM,
+    // B-4 (transformer functional): layer normalization over the last axis, and a
+    // matmul of two ACTIVATIONS (attention Q*K^T and score*V, general bmm) -- both
+    // needed to express a full attention block that no legacy layer can carry.
+    WORKLOAD_LAYER_NORM,
+    WORKLOAD_MATMUL,
+    // B-4 multi-head: physical swap of two tensor axes (head split [T,H,d]->[H,T,d] and
+    // its merge). Unlike a contiguous reshape it reorders data, so it is a real op.
+    WORKLOAD_TRANSPOSE,
     WORKLOAD_UNDEFINED
 };
 
@@ -54,9 +62,24 @@ struct workload_geometry_t {
     unsigned groups;
     unsigned rows;
     unsigned row_length;
+    // B-4 multi-head/causal: softmax over attention scores. `causal` masks each row r's
+    // columns > (r % causal_span) to zero (autoregressive attention). causal_span is the
+    // query-key alignment width -- the row_length of one head's [Tq][Tk] score block, so a
+    // batched (multi-head) score tensor flattened to rows still masks per (query,key)
+    // correctly. 0 span => span = row_length (single block).
+    bool softmax_causal;
+    unsigned causal_span;
     unsigned kernel_height;
     unsigned kernel_width;
     unsigned axis;
+    // B-4 matmul: batched GEMM C[B][M][N] = A[B][M][K] @ B[B][K][N] (batch = heads*batch).
+    unsigned matmul_batch;
+    unsigned matmul_m;
+    unsigned matmul_k;
+    unsigned matmul_n;
+    bool matmul_transpose_b;   // true: second operand is [B][N][K] (Q*K^T form)
+    unsigned transpose_axis0;  // B-4 transpose: the two axes swapped (axis0 < axis1)
+    unsigned transpose_axis1;
     size_t elements;
     bool count_include_pad;
     double epsilon;

@@ -1476,11 +1476,21 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
             std::max(1u, m_datatype_repetitions[data_type_t::WEIGHT]);
         if(weight_refetch > 1) {
             if(decomp_decoder_ratio <= 0.0) {
+                // Absolute-throughput mode: decoder work is a per-refetch byte cost, so every
+                // weight refetch decodes again, and its output SINK (scratchpad write of the
+                // dense stream) scales with it -- the two stay on one basis.
                 decomp_decoder_cycles *= weight_refetch;
+                decomp_sink_cycles *= weight_refetch;
             }
+            // Relative-throughput mode (decomp_decoder_ratio > 0): the decoder window is
+            // derived in finalize_layer_timeline() from the ALREADY repetition-scaled
+            // compute-side busy, so the decoder is exempt above. Its output sink must share
+            // that basis -- scaling the sink by weight_refetch while the decoder is exempt put
+            // the decoder->scratchpad stages a factor of weight_refetch apart, making the sink
+            // (not the decoder) the pipeline bottleneck and turning a compressed, DRAM-relieved
+            // layer into a spurious slowdown. So the sink is exempt in exactly the same mode.
             decomp_decoder_energy *= weight_refetch;
             decomp_tiles *= weight_refetch;
-            decomp_sink_cycles *= weight_refetch;
             decomp_dram_weight_saved_cycle *= weight_refetch;
         }
     }

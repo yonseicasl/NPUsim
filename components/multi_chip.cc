@@ -755,16 +755,22 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
     }
 
     if(request_to_multi_chip_input) {
-#ifndef FUNCTIONAL
+        // A-1: analytical accounting for kernel-value layers (see components/dram.cc).
+#ifdef FUNCTIONAL
+        if(!m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::INPUT]) {
+            account_descriptor_dense_distribution(data_type_t::INPUT,
+                std::max<size_t>(1, m_scheduler->input_offset_multi_chip.size()));
+        }
+#else
         if(!skip_transfer[data_type_t::INPUT]) {
             account_descriptor_dense_distribution(data_type_t::INPUT,
                 std::max<size_t>(1, m_scheduler->input_offset_multi_chip.size()));
         }
 #endif
 #ifdef FUNCTIONAL
-        // Case 1. Dense data format
+        // Case 1. Dense data format. A-1: datapath-value layers only.
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
-            if(!skip_transfer[data_type_t::INPUT]) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::INPUT]) {
                 num_data_transfer[data_type_t::INPUT]++;
 
                 std::vector<unsigned> parameters_global_buffer(parameter_type_t::NUM_PARAMETER_TYPES, 1);
@@ -1286,7 +1292,13 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
     }
 
     if(request_to_multi_chip_weight) {
-#ifndef FUNCTIONAL
+        // A-1: analytical accounting for kernel-value layers.
+#ifdef FUNCTIONAL
+        if(!m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::WEIGHT]) {
+            account_descriptor_dense_distribution(data_type_t::WEIGHT,
+                std::max<size_t>(1, m_scheduler->weight_offset_multi_chip.size()));
+        }
+#else
         if(!skip_transfer[data_type_t::WEIGHT]) {
             account_descriptor_dense_distribution(data_type_t::WEIGHT,
                 std::max<size_t>(1, m_scheduler->weight_offset_multi_chip.size()));
@@ -1294,7 +1306,7 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
 #endif
 #ifdef FUNCTIONAL
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
-            if(!skip_transfer[data_type_t::WEIGHT]) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::WEIGHT]) {
                 num_data_transfer[data_type_t::WEIGHT]++;
 
                 std::vector<unsigned> parameters_global_buffer(parameter_type_t::NUM_PARAMETER_TYPES, 1);

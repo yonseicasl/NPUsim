@@ -32,6 +32,9 @@ _MODELED_KINDS = {
     "npusim.elementwise",
     "npusim.concat",
     "npusim.batch_norm",
+    "npusim.layer_norm",
+    "npusim.matmul",
+    "npusim.transpose",
 }
 _ACTIVATIONS = {"linear", "relu", "leaky"}
 
@@ -202,6 +205,29 @@ def _validate_geometry(operation: Mapping[str, Any]) -> None:
             raise ExecutableIRError(
                 f"operation {operation_id} geometry.epsilon must be a positive finite number"
             )
+    elif kind == "npusim.layer_norm":
+        _positive_integer(geometry.get("elements"), f"operation {operation_id} geometry.elements")
+        _positive_integer(
+            geometry.get("normalized_size"), f"operation {operation_id} geometry.normalized_size"
+        )
+        epsilon = geometry.get("epsilon")
+        if (
+            isinstance(epsilon, bool)
+            or not isinstance(epsilon, (int, float))
+            or not math.isfinite(epsilon)
+            or epsilon <= 0
+        ):
+            raise ExecutableIRError(
+                f"operation {operation_id} geometry.epsilon must be a positive finite number"
+            )
+    elif kind == "npusim.matmul":
+        for field in ("matmul_batch", "matmul_m", "matmul_k", "matmul_n"):
+            _positive_integer(geometry.get(field), f"operation {operation_id} geometry.{field}")
+    elif kind == "npusim.transpose":
+        a0 = _nonnegative_integer(geometry.get("axis0"), f"operation {operation_id} geometry.axis0")
+        a1 = _nonnegative_integer(geometry.get("axis1"), f"operation {operation_id} geometry.axis1")
+        if a0 >= a1:
+            raise ExecutableIRError(f"operation {operation_id} transpose needs axis0 < axis1")
 
 
 def validate_executable_ir(executable: Mapping[str, Any]) -> None:

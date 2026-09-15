@@ -190,5 +190,62 @@ void workload_graph_t::validate_operation_geometry(const workload_operation_t &o
         return;
     }
 
+    if(operation.kind == WORKLOAD_LAYER_NORM) {
+        // B-4: (input, weight, bias); weight/bias are 1-D of the normalized size.
+        if(operation.inputs.size() != 3) {
+            geometry_fail(operation.id, "layer_norm needs (input, weight, bias)");
+        }
+        const workload_tensor_t &input = tensor(operation.inputs[0]);
+        if(input.shape.empty() || input.shape != output.shape ||
+           output.elements() != operation.geometry.elements ||
+           input.shape.back() != operation.geometry.row_length) {
+            geometry_fail(operation.id, "layer_norm geometry disagrees with tensor shapes");
+        }
+        for(size_t index = 1; index < 3; ++index) {
+            const workload_tensor_t &parameter = tensor(operation.inputs[index]);
+            if(parameter.shape.size() != 1 ||
+               parameter.shape[0] != operation.geometry.row_length) {
+                geometry_fail(operation.id, "layer_norm weight/bias shape is invalid");
+            }
+        }
+        return;
+    }
+
+    if(operation.kind == WORKLOAD_MATMUL) {
+        // B-4: A[Bt*M*K] @ B[Bt*K*N] -> C[Bt*M*N] (B is [Bt*N*K] when transpose_b).
+        if(operation.inputs.size() != 2) {
+            geometry_fail(operation.id, "matmul needs two operand tensors");
+        }
+        const workload_geometry_t &g = operation.geometry;
+        const size_t a_elems = static_cast<size_t>(g.matmul_batch)*g.matmul_m*g.matmul_k;
+        const size_t b_elems = static_cast<size_t>(g.matmul_batch)*g.matmul_k*g.matmul_n;
+        const size_t c_elems = static_cast<size_t>(g.matmul_batch)*g.matmul_m*g.matmul_n;
+        if(tensor(operation.inputs[0]).elements() != a_elems ||
+           tensor(operation.inputs[1]).elements() != b_elems ||
+           output.elements() != c_elems) {
+            geometry_fail(operation.id, "matmul operand/output element counts disagree with geometry");
+        }
+        return;
+    }
+
+    if(operation.kind == WORKLOAD_TRANSPOSE) {
+        // B-4: one input, one output; the output shape is the input with two axes swapped.
+        if(operation.inputs.size() != 1) {
+            geometry_fail(operation.id, "transpose needs exactly one input");
+        }
+        const workload_tensor_t &input = tensor(operation.inputs[0]);
+        const unsigned a0 = operation.geometry.transpose_axis0;
+        const unsigned a1 = operation.geometry.transpose_axis1;
+        if(a1 >= input.shape.size() || a0 >= a1) {
+            geometry_fail(operation.id, "transpose axes out of range");
+        }
+        std::vector<size_t> expected = input.shape;
+        std::swap(expected[a0], expected[a1]);
+        if(expected != output.shape) {
+            geometry_fail(operation.id, "transpose output shape must swap the two axes");
+        }
+        return;
+    }
+
     geometry_fail(operation.id, "has no geometry validator");
 }

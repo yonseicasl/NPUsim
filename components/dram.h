@@ -143,6 +143,7 @@ public:
 
 private:
     void account_descriptor_dense_load(data_type_t type, size_t elements);
+    void account_descriptor_sparse_load(data_type_t type, size_t nonzeros, size_t metadata_bits);
 
     /* DRAM specification */
     float frequency;                                // Frequency of DRAM.

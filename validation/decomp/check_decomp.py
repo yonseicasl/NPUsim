@@ -78,6 +78,87 @@ DECOMP = ("\n[decomp]\ncompression_ratio = {cr}\ndecoder_bytes_per_cycle = {tp}\
           "tile_ratio_cv = {cv}\ndecomp_decoder_energy = 0.05\ndecomp_static_energy = 0.001\n")
 
 
+def run_named(accel_cfg_text, net_name):
+    """Run the classic path from models/ via the `run` subcommand (NPUSIM_CONFIG_ROOT),
+    so relative resources (DRAM ini) resolve exactly as in a normal run. The temp
+    accelerator config is written into configs/accelerators/ and its mapping dir is
+    reused from the base 128x128 WS config. Returns the network report text."""
+    acc_dir = os.path.join(ROOT, "configs", "accelerators")
+    map_root = os.path.join(ROOT, "configs", "mappings")
+    label = "decomp_ratio_regression_tmp"
+    cfg = os.path.join(acc_dir, label + ".cfg")
+    with open(cfg, "w") as f:
+        f.write(accel_cfg_text)
+    # The `run` path resolves the mapping at mappings/<accel>/<net>/<map>.map, so mirror
+    # the base config's mapping under the temp accelerator name.
+    src_map = os.path.join(map_root, "gemmini_128x128_ws", net_name, "pruning_cycle.map")
+    dst_dir = os.path.join(map_root, label, net_name)
+    os.makedirs(dst_dir, exist_ok=True)
+    dst_map = os.path.join(dst_dir, "pruning_cycle.map")
+    with open(src_map) as s, open(dst_map, "w") as d:
+        d.write(s.read())
+    models = os.path.join(ROOT, "models")
+    env = dict(ENV, NPUSIM_CONFIG_ROOT=os.path.join(ROOT, "configs"))
+    try:
+        subprocess.run([os.path.join(models, "model"), "run", label, net_name,
+                        "pruning_cycle"], cwd=models, env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        report = os.path.join(models, "%s_%s.txt" % (label, net_name))
+        text = open(report).read() if os.path.exists(report) else ""
+        for suffix in ("", "_layer_0"):
+            p = os.path.join(models, "%s_%s%s.txt" % (label, net_name, suffix))
+            if os.path.exists(p):
+                os.remove(p)
+        return text
+    finally:
+        os.remove(cfg)
+        import shutil
+        shutil.rmtree(os.path.join(map_root, label), ignore_errors=True)
+
+
+def run_ratio_regression():
+    base_path = os.path.join(ROOT, "configs", "accelerators", "gemmini_128x128_ws.cfg")
+    net_name = "tinyllama_ffn_up_decode"
+    mp = os.path.join(ROOT, "configs", "mappings", "gemmini_128x128_ws", net_name,
+                      "pruning_cycle.map")
+    if not (os.path.exists(base_path) and os.path.exists(mp)):
+        print("  R1/R2 (128x128 WS config or decode mapping absent -- skipped)")
+        return
+    base = open(base_path).read()
+    ratio_block = ("\n[decomp]\ncompression_ratio = 4\ndecoder_ratio = 1\noverlap = 1\n"
+                   "input_queue_depth = 4\noutput_buffer_tiles = 2\n"
+                   "profile_reference = decomp ratio-mode regression\n")
+    dense = run_named(base, net_name)
+    comp = run_named(base + ratio_block, net_name)
+    if not (dense and comp):
+        print("  R1/R2 (report not produced -- skipped)")
+        return
+    dense_crit = grab(dense, r"Critical-path latency\s*:\s*([\d.]+)")
+    comp_crit = grab(comp, r"Critical-path latency\s*:\s*([\d.]+)")
+    dec_total = grab(comp, r"Decoder cycles\s*:\s*([\d.]+)")
+    dec_exposed = grab(comp, r"on critical path\s*:\s*([\d.]+)")
+    # R1: a stage cannot expose more decode work than the decoder performs in total.
+    if dec_total is not None and dec_exposed is not None:
+        ok = dec_exposed <= dec_total + 1e-6
+        print("  R1   exposed %.6g <= total %.6g decoder cycles              %s" %
+              (dec_exposed, dec_total, "ok" if ok else "FAIL"))
+        if not ok:
+            failures.append("R1")
+    else:
+        print("  R1   (decoder report rows not found)                            FAIL")
+        failures.append("R1")
+    # R2: on this DRAM-bound decode layer, cr=4 with a pace-keeping decoder speeds it up.
+    if dense_crit and comp_crit:
+        ok = comp_crit < dense_crit
+        print("  R2   cr4 crit %.6g < dense crit %.6g                    %s" %
+              (comp_crit, dense_crit, "ok" if ok else "FAIL"))
+        if not ok:
+            failures.append("R2")
+    else:
+        print("  R2   (critical-path rows not found)                             FAIL")
+        failures.append("R2")
+
+
 def main():
     print("== decomp: absolute decoder, CR=2, throughput 16 B/cyc, startup 32, meta 0 ==")
     t = run(DECOMP.format(cr=2.0, tp=16.0, st=32, meta=0.0, cv=0.0))
@@ -158,6 +239,17 @@ def main():
     occ = grab(run(KV.format(algo="online", sched="blocking")),
                r"cache occupancy\s*:\s*(\d+)")
     check("K3", occ or 0.0, 1024.0*(4096 + 1))
+
+    # R-series: relative-throughput (decoder_ratio) mode on a weight-REFETCHED layer.
+    # The bug this guards (2026-09-13): in ratio mode the decoder window is derived from the
+    # already repetition-scaled compute-side busy, so it is exempt from the weight_refetch
+    # multiply -- but the decoder's output SINK was still scaled by weight_refetch, putting
+    # the two stages a factor of weight_refetch apart. The sink then dominated the pipeline
+    # and a compressed, DRAM-relieved layer reported a spurious slowdown. These run the
+    # classic path (./model run) on the 128x128 WS config + a decode op whose mapping
+    # refetches weight many times, and assert the invariants that broke.
+    print("== decomp: relative-ratio mode on a refetched layer (R1/R2) ==")
+    run_ratio_regression()
 
     print()
     if failures:

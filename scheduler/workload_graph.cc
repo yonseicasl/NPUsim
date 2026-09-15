@@ -104,6 +104,9 @@ workload_operation_kind_t parse_operation_kind(const std::string &kind) {
     if(kind == "npusim.elementwise") return WORKLOAD_ELEMENTWISE;
     if(kind == "npusim.concat") return WORKLOAD_CONCAT;
     if(kind == "npusim.batch_norm") return WORKLOAD_BATCH_NORM;
+    if(kind == "npusim.layer_norm") return WORKLOAD_LAYER_NORM;
+    if(kind == "npusim.matmul") return WORKLOAD_MATMUL;
+    if(kind == "npusim.transpose") return WORKLOAD_TRANSPOSE;
     fail("unsupported operation kind " + kind);
     return WORKLOAD_UNDEFINED;
 }
@@ -119,8 +122,11 @@ workload_geometry_t::workload_geometry_t() :
     input_width(0), output_channels(0), output_height(0), output_width(0), filter_height(0),
     filter_width(0), stride_height(0), stride_width(0), padding_height(0), padding_width(0),
     dilation_height(0), dilation_width(0), groups(0), rows(0), row_length(0),
-    kernel_height(0), kernel_width(0), axis(0), elements(0), count_include_pad(true),
-    epsilon(0.0), mode(), elementwise_operator() {}
+    softmax_causal(false), causal_span(0),
+    kernel_height(0), kernel_width(0), axis(0), matmul_batch(0), matmul_m(0),
+    matmul_k(0), matmul_n(0), matmul_transpose_b(false), transpose_axis0(0),
+    transpose_axis1(0), elements(0),
+    count_include_pad(true), epsilon(0.0), mode(), elementwise_operator() {}
 
 size_t workload_tensor_t::elements() const {
     size_t result = 1;
@@ -268,6 +274,8 @@ void workload_graph_t::load(const std::string &m_path) {
         } else if(operation.kind == WORKLOAD_SOFTMAX) {
             geometry.rows = required_unsigned(value, "geometry.rows");
             geometry.row_length = required_unsigned(value, "geometry.row_length");
+            geometry.softmax_causal = value.get<bool>("geometry.causal", false);
+            geometry.causal_span = value.get<unsigned>("geometry.causal_span", 0);
             if(operation.mapping_required) fail("softmax operation " + operation.id + " cannot use a MAC mapping");
         } else if(operation.kind == WORKLOAD_POOL2D) {
             geometry.mode = required_string(value, "geometry.mode");
@@ -303,6 +311,28 @@ void workload_graph_t::load(const std::string &m_path) {
                 fail("batch_norm operation " + operation.id + " requires a positive finite epsilon");
             }
             if(operation.mapping_required) fail("batch_norm operation " + operation.id + " cannot use a MAC mapping");
+        } else if(operation.kind == WORKLOAD_LAYER_NORM) {
+            geometry.elements = required_size(value, "geometry.elements");
+            geometry.row_length = required_unsigned(value, "geometry.normalized_size");
+            geometry.epsilon = value.get<double>("geometry.epsilon", 0.0);
+            if(!std::isfinite(geometry.epsilon) || geometry.epsilon <= 0.0) {
+                fail("layer_norm operation " + operation.id + " requires a positive finite epsilon");
+            }
+            if(operation.mapping_required) fail("layer_norm operation " + operation.id + " cannot use a MAC mapping");
+        } else if(operation.kind == WORKLOAD_MATMUL) {
+            geometry.matmul_batch = required_unsigned(value, "geometry.matmul_batch");
+            geometry.matmul_m = required_unsigned(value, "geometry.matmul_m");
+            geometry.matmul_k = required_unsigned(value, "geometry.matmul_k");
+            geometry.matmul_n = required_unsigned(value, "geometry.matmul_n");
+            geometry.matmul_transpose_b = value.get<bool>("geometry.matmul_transpose_b", false);
+            // A matmul of two activations is a MAC operation; it must be mapped.
+            if(!operation.mapping_required) fail("matmul operation " + operation.id + " must be mapped");
+        } else if(operation.kind == WORKLOAD_TRANSPOSE) {
+            geometry.transpose_axis0 = required_unsigned(value, "geometry.axis0", true);
+            geometry.transpose_axis1 = required_unsigned(value, "geometry.axis1", true);
+            if(geometry.transpose_axis0 >= geometry.transpose_axis1)
+                fail("transpose operation " + operation.id + " needs axis0 < axis1");
+            if(operation.mapping_required) fail("transpose operation " + operation.id + " cannot use a MAC mapping");
         }
         validate_operation_geometry(operation);
         produced.insert(operation.outputs.begin(), operation.outputs.end());
@@ -334,6 +364,9 @@ std::string workload_graph_t::operation_kind_name(workload_operation_kind_t m_ki
     if(m_kind == WORKLOAD_ELEMENTWISE) return "elementwise";
     if(m_kind == WORKLOAD_CONCAT) return "concat";
     if(m_kind == WORKLOAD_BATCH_NORM) return "batch_norm";
+    if(m_kind == WORKLOAD_LAYER_NORM) return "layer_norm";
+    if(m_kind == WORKLOAD_MATMUL) return "matmul";
+    if(m_kind == WORKLOAD_TRANSPOSE) return "transpose";
     return "undefined";
 }
 
@@ -381,6 +414,12 @@ std::string workload_graph_t::legacy_network_config() const {
             config << "activation=" << operation.activation << "\n\n";
         } else if(operation.kind == WORKLOAD_SOFTMAX) {
             config << "[softmax]\ngroups=1\n\n";
+        } else if(operation.kind == WORKLOAD_MATMUL) {
+            // A matmul of two activations is a MAC op: a connected layer whose "input" is
+            // the flattened A operand and whose "output" width is N. Its weight is operand
+            // B, bound per batch by the functional value kernel.
+            config << "[connected]\noutput=" << operation.geometry.matmul_n
+                   << "\nactivation=" << operation.activation << "\n\n";
         } else {
             // Timing-only shape placeholder. The framework-neutral descriptor below is
             // authoritative; after Nebula allocates this harmless identity layer, npu_t

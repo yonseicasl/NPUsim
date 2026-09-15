@@ -233,7 +233,17 @@ void spatial_arch_t::data_transfer(scheduler_t *m_scheduler) {
     // Legacy multiplicative view kept for the FUNCTIONAL-only body below.
     const double topology_cycle = noc_cycle*(topology_cost.latency_fill_hops + 1.0);
     const double topology_energy = noc_energy*topology_cost.link_traversals;
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: kernel-value layers share the timing build's analytical distribution
+    // accounting (values come from the reference kernel; datapath movement is off).
+    if(!m_scheduler->functional_value_transfers) {
+        // SP1: hops pipeline -- per-transaction latency stays one link cycle and the mesh
+        // route depth is a one-time fill; energy is per-hop per transaction.
+        account_descriptor_dense_distribution(m_scheduler, noc_cycle, topology_energy,
+                                              topology_cost.latency_fill_hops*noc_cycle);
+        return;
+    }
+#else
     // SP1: hops pipeline -- per-transaction latency stays one link cycle and the mesh
     // route depth is a one-time fill; energy is per-hop per transaction.
     account_descriptor_dense_distribution(m_scheduler, noc_cycle, topology_energy,

@@ -203,6 +203,41 @@ datatype_transfer_timing_t datatype_transfer_timing(data_type_t type, size_t ele
                                                      size_t source_line_bits,
                                                      size_t destination_line_bits,
                                                      size_t link_bits);
+
+// B-7: compressed-format metadata size in BITS for one INPUT/WEIGHT tile, reproducing the
+// legacy per-branch index/pointer/bitmap formulas so only the payload sizing changes:
+//   CSR = (nonzeros + row_pointers)   * bits(col_extent)   [column indices + row pointers]
+//   CSC = (nonzeros + col_pointers)   * bits(row_extent)   [row indices + column pointers]
+//   COO =  nonzeros * (bits(row_extent) + bits(col_extent))
+//   SparseMap = one bit per element (tile_size)
+// row/col extents are INPUT_HEIGHT/WIDTH (INPUT) or FILTER_HEIGHT/WIDTH (WEIGHT); the pointer
+// counts follow the legacy branches (batch*channel/group*(dim+1) for INPUT,
+// out_ch/group*in_ch/group*(dim+1) for WEIGHT). `parameters` is any component's
+// calculate_parameter_size() view (all indexed by the same parameter_type_t).
+size_t sparse_metadata_bits(compression_type_t compression, data_type_t type,
+                            const std::vector<unsigned> &parameters,
+                            size_t tile_size, size_t nonzeros);
+
+// B-7: index bit-width for a compressed coordinate/pointer over `extent` positions, matching
+// the legacy per-branch halving loop (`bits=1; while(extent>1){extent/=2; bits++;}`), i.e.
+// floor(log2(extent))+1, and at least 1.
+unsigned index_bit_width(unsigned extent);
+
+// B-7 compressed (sparse) transport cost for one tile. The payload is `nonzeros` tensor
+// elements sized by the configured datatype FORMAT (so a bf16/int8 compressed tile is
+// charged its real element width, not the host data_t), plus `metadata_bits` of
+// compressed-format bookkeeping (CSR/CSC index+pointer streams or a SparseMap bitmap).
+// Access is per element -- one source read / destination write per element -- matching the
+// datapath-value DENSE accounting the sparse branches sit alongside; the link (bandwidth)
+// beats are format-correct and payload/metadata are kept separate for the report.
+struct sparse_transport_cost_t {
+    size_t source_elements;   // per-element access count (payload + metadata packed at elem width)
+    size_t payload_link;      // link beats carrying the compressed nonzero payload
+    size_t metadata_link;     // link beats carrying the index/pointer/bitmap metadata
+    size_t link_transactions() const { return payload_link + metadata_link; }
+};
+sparse_transport_cost_t sparse_transport_cost(data_type_t type, size_t nonzeros,
+                                              size_t metadata_bits, size_t link_bits);
 // Pipelined-hop contract (SP1): a stream of T transactions to the farthest active
 // destination completes in (T + latency_fill_hops)*noc_cycle -- hops pipeline, so
 // the route depth is a one-time fill, not a per-transaction multiplier.

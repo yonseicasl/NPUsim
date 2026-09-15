@@ -31,6 +31,11 @@ _POOL_OPS = {
 _ELEMENTWISE_OPS = {"aten.add.Tensor": "add", "aten.mul.Tensor": "multiply"}
 _CONCAT_OPS = {"aten.cat.default"}
 _BATCH_NORM_OPS = {"aten.batch_norm.default"}
+_LAYER_NORM_OPS = {"aten.layer_norm.default", "aten.native_layer_norm.default"}
+_MATMUL_OPS = {"aten.matmul.default", "aten.bmm.default"}
+# B-4: a last-two-dim transpose feeding a matmul's second operand (the q@k.transpose(-1,-2)
+# attention idiom) is folded into the matmul's transpose_b flag and elided.
+_TRANSPOSE_OPS = {"aten.transpose.int", "aten.t.default"}
 # Element-preserving reshapes of contiguous whole-storage tensors are aliases, not work:
 # they are elided during lowering and never become executable operations. The output
 # tensor is annotated with alias_of so residency/lifetime shares the producer's storage.
@@ -439,6 +444,121 @@ def _batch_norm_operation(node: Mapping[str, Any], tensors: Mapping[str, Mapping
         "source_nodes": [str(node["id"])],
     }
 
+
+def _layer_norm_operation(node: Mapping[str, Any], tensors: Mapping[str, Any]) -> dict[str, Any]:
+    # B-4: aten.layer_norm (input, normalized_shape, weight, bias, eps). Affine form only.
+    inputs, outputs = node.get("inputs", []), node.get("outputs", [])
+    if not isinstance(inputs, list) or len(inputs) < 3 or len(outputs) != 1:
+        raise LoweringError(f"layer_norm node {node['id']} requires (input, weight, bias)")
+    input_shape = _static_shape(tensors[inputs[0]], f"layer_norm node {node['id']} input")
+    output_shape = _static_shape(tensors[outputs[0]], f"layer_norm node {node['id']} output")
+    if not input_shape or input_shape != output_shape:
+        raise LoweringError(f"layer_norm node {node['id']} input/output shape mismatch")
+    # Data inputs are (input, weight, bias); weight/bias are the last two tensor operands.
+    data_inputs = [t for t in inputs if isinstance(t, str) and t in tensors]
+    weight, bias = data_inputs[-2], data_inputs[-1]
+    normalized = _static_shape(tensors[weight], f"layer_norm node {node['id']} weight")
+    if len(normalized) != 1 or normalized != _static_shape(tensors[bias], "layer_norm bias"):
+        raise LoweringError(f"layer_norm node {node['id']} weight/bias must be 1-D of equal size")
+    if input_shape[-1] != normalized[0]:
+        raise LoweringError(f"layer_norm node {node['id']} normalizes the last axis only")
+    attributes = _attributes(node)
+    epsilon = attributes.get("eps", attributes.get("epsilon", 1e-5))
+    arguments = node.get("arguments")
+    if isinstance(arguments, list) and len(arguments) > 4 and isinstance(arguments[4], (int, float)):
+        epsilon = arguments[4]
+    if not isinstance(epsilon, (int, float)) or isinstance(epsilon, bool) or epsilon <= 0:
+        raise LoweringError(f"layer_norm node {node['id']} eps must be positive")
+    return {
+        "id": str(node["id"]), "kind": "npusim.layer_norm", "status": "modeled",
+        "inputs": [inputs[0], weight, bias], "outputs": list(outputs),
+        "activation": "linear", "mapping_required": False,
+        "geometry": {"elements": _product(output_shape), "normalized_size": normalized[0],
+                     "epsilon": float(epsilon)},
+        "source_nodes": [str(node["id"])],
+    }
+
+
+def _matmul_operation(node: Mapping[str, Any], tensors: Mapping[str, Any],
+                      transpose_source: Mapping[str, str] | None = None) -> dict[str, Any]:
+    # B-4: aten.matmul/bmm of two ACTIVATIONS. Supports 2-D [M,K]@[K,N] and batched
+    # 3-D [Bt,M,K]@[Bt,K,N]; transpose_b when the second operand is [.,N,K] -- either an
+    # explicitly [.,N,K]-shaped tensor or a folded transpose (transpose_source).
+    inputs, outputs = list(node.get("inputs", [])), node.get("outputs", [])
+    if len(inputs) != 2 or len(outputs) != 1:
+        raise LoweringError(f"matmul node {node['id']} requires two operands and one output")
+    folded_tb = False
+    if transpose_source and str(inputs[1]) in transpose_source:
+        inputs[1] = transpose_source[str(inputs[1])]
+        folded_tb = True   # the folded transpose already presents B as [.,N,K]
+    a = _static_shape(tensors[inputs[0]], f"matmul node {node['id']} A")
+    b = _static_shape(tensors[inputs[1]], f"matmul node {node['id']} B")
+    out = _static_shape(tensors[outputs[0]], f"matmul node {node['id']} out")
+    if len(a) not in (2, 3) or len(b) != len(a) or len(out) != len(a):
+        raise LoweringError(f"matmul node {node['id']} supports 2-D or batched 3-D matmul only")
+    Bt = a[0] if len(a) == 3 else 1
+    M, K = a[-2], a[-1]
+    # With a folded transpose the source B is already [.,N,K]; otherwise pick the axis
+    # that matches K. (A folded transpose whose source is [.,K,N] would be a no-op fold.)
+    if folded_tb:
+        if b[-1] != K:
+            raise LoweringError(f"matmul node {node['id']} folded transpose inner dim disagrees")
+        N, tb = b[-2], True
+    elif b[-2] == K:
+        N, tb = b[-1], False
+    elif b[-1] == K:
+        N, tb = b[-2], True
+    else:
+        raise LoweringError(f"matmul node {node['id']} inner dimensions disagree")
+    if out[-2] != M or out[-1] != N or (len(out) == 3 and out[0] != Bt):
+        raise LoweringError(f"matmul node {node['id']} output shape disagrees")
+    return {
+        "id": str(node["id"]), "kind": "npusim.matmul", "status": "modeled",
+        "inputs": list(inputs), "outputs": list(outputs),
+        "activation": "linear", "mapping_required": True,
+        "geometry": {"matmul_batch": Bt, "matmul_m": M, "matmul_k": K, "matmul_n": N,
+                     "matmul_transpose_b": tb},
+        "source_nodes": [str(node["id"])],
+    }
+
+
+def _transpose_operation(node: Mapping[str, Any], tensors: Mapping[str, Any]) -> dict[str, Any]:
+    # B-4: aten.transpose(dim0, dim1) / aten.permute swapping exactly two axes -> a physical
+    # transpose op (multi-head split/merge). A transpose folded into a matmul's transpose_b
+    # never reaches here (handled by the fold pre-pass).
+    inputs, outputs = node.get("inputs", []), node.get("outputs", [])
+    if len(inputs) != 1 or len(outputs) != 1:
+        raise LoweringError(f"transpose node {node['id']} requires one input and one output")
+    in_shape = _static_shape(tensors[inputs[0]], f"transpose node {node['id']} input")
+    out_shape = _static_shape(tensors[outputs[0]], f"transpose node {node['id']} output")
+    args = node.get("arguments")
+    op_name = str(node.get("op"))
+    if op_name == "aten.permute.default":
+        perm = args[1] if isinstance(args, list) and len(args) > 1 else None
+        if not isinstance(perm, list):
+            raise LoweringError(f"permute node {node['id']} needs an explicit permutation")
+        perm = [p % len(in_shape) for p in perm]
+        swapped = [i for i, p in enumerate(perm) if p != i]
+        if len(swapped) != 2 or perm[swapped[0]] != swapped[1] or perm[swapped[1]] != swapped[0]:
+            raise LoweringError(f"permute node {node['id']} must swap exactly two axes")
+        a0, a1 = sorted(swapped)
+    else:  # aten.transpose.int(dim0, dim1)
+        dims = [a for a in (args or []) if isinstance(a, int)]
+        if len(dims) < 2:
+            raise LoweringError(f"transpose node {node['id']} needs two dims")
+        a0, a1 = sorted(d % len(in_shape) for d in dims[:2])
+    expected = list(in_shape); expected[a0], expected[a1] = expected[a1], expected[a0]
+    if expected != out_shape:
+        raise LoweringError(f"transpose node {node['id']} output shape disagrees")
+    return {
+        "id": str(node["id"]), "kind": "npusim.transpose", "status": "modeled",
+        "inputs": [str(inputs[0])], "outputs": [str(outputs[0])],
+        "activation": "linear", "mapping_required": False,
+        "geometry": {"axis0": a0, "axis1": a1},
+        "source_nodes": [str(node["id"])],
+    }
+
+
 def lower_graph(graph: Mapping[str, Any]) -> dict[str, Any]:
     """Lower a validated static capture graph, rejecting every unsupported node."""
     validate_graph_ir(graph)
@@ -467,12 +587,51 @@ def lower_graph(graph: Mapping[str, Any]) -> dict[str, Any]:
         fused_activation_by_node[str(node["id"])] = (activation, candidate)
         fused_node_ids.add(str(candidate["id"]))
 
+    # B-4 transpose fold: a transpose node whose sole consumer is a matmul (as its second
+    # operand) is absorbed into that matmul's transpose_b. Record {transpose_out: src} and
+    # the set of matmul-operand ids that must be rewritten + transpose_b'd.
+    transpose_source: dict[str, str] = {}
+    folded_transpose_ids: set[str] = set()
+    tensor_shapes = {str(t["id"]): t.get("shape") for t in graph["tensors"]}
+    for node in nodes:
+        op_name = str(node.get("op"))
+        if op_name not in _TRANSPOSE_OPS:
+            continue
+        outs = node.get("outputs", [])
+        ins = node.get("inputs", [])
+        if not (isinstance(outs, list) and len(outs) == 1 and isinstance(ins, list) and ins):
+            continue
+        # Only fold a transpose of the LAST TWO axes (the matmul K/N axes). A head-split
+        # transpose(0,1) is NOT a transpose_b -- it becomes a real WORKLOAD_TRANSPOSE.
+        src_shape = tensor_shapes.get(str(ins[0]))
+        nd = len(src_shape) if isinstance(src_shape, list) else 0
+        args = node.get("arguments") or []
+        dims = sorted(a % nd for a in args if isinstance(a, int)) if nd else []
+        last_two = (op_name == "aten.t.default" and nd == 2) or (dims == [nd - 2, nd - 1])
+        if not last_two:
+            continue
+        out_id = str(outs[0])
+        cons = consumers.get(out_id, [])
+        if (len(cons) == 1 and str(cons[0].get("op")) in _MATMUL_OPS
+                and list(cons[0].get("inputs", []))[-1:] == [out_id]):
+            transpose_source[out_id] = str(ins[0])
+            folded_transpose_ids.add(str(node["id"]))
+
+    # Outputs of real (non-folded) transpose/permute nodes: materialized contiguous in the
+    # store, so a following reshape can alias them (head-merge idiom).
+    materialized_transpose_ids = {
+        str(n["outputs"][0]) for n in nodes
+        if str(n.get("op")) in (_TRANSPOSE_OPS | {"aten.permute.default"})
+        and str(n["id"]) not in folded_transpose_ids
+        and isinstance(n.get("outputs"), list) and len(n["outputs"]) == 1
+    }
+
     operations: list[dict[str, Any]] = []
     lowered_sources: list[str] = []
     tensor_aliases: dict[str, str] = {}
     for node in nodes:
         node_id = str(node["id"])
-        if node_id in fused_node_ids:
+        if node_id in fused_node_ids or node_id in folded_transpose_ids:
             continue
         operation_name = str(node.get("op"))
         outputs = node.get("outputs", [])
@@ -483,9 +642,14 @@ def lower_graph(graph: Mapping[str, Any]) -> dict[str, Any]:
             if not isinstance(node_inputs, list) or len(node_inputs) != 1:
                 raise LoweringError(f"reshape node {node_id} requires exactly one tensor input")
             source_id, view_id = str(node_inputs[0]), str(outputs[0])
-            source_shape = _whole_contiguous_shape(
-                tensors[source_id], f"reshape node {node_id} input"
-            )
+            # A reshape whose source is a materialized transpose/permute (WORKLOAD_TRANSPOSE
+            # physically reorders into contiguous storage) is a contiguous rename in our IR,
+            # even though torch marks the transpose view "strided" (the head-merge idiom
+            # ctx.transpose(0,1).reshape(T, D)).
+            src_is_materialized = source_id in materialized_transpose_ids
+            source_shape = ([int(d) for d in tensors[source_id]["shape"]]
+                            if src_is_materialized
+                            else _whole_contiguous_shape(tensors[source_id], f"reshape node {node_id} input"))
             view_shape = _whole_contiguous_shape(
                 tensors[view_id], f"reshape node {node_id} output"
             )
@@ -521,6 +685,12 @@ def lower_graph(graph: Mapping[str, Any]) -> dict[str, Any]:
             operation = _concat_operation(node, tensors)
         elif operation_name in _BATCH_NORM_OPS:
             operation = _batch_norm_operation(node, tensors)
+        elif operation_name in _LAYER_NORM_OPS:
+            operation = _layer_norm_operation(node, tensors)
+        elif operation_name in _MATMUL_OPS:
+            operation = _matmul_operation(node, tensors, transpose_source)
+        elif operation_name in _TRANSPOSE_OPS or operation_name == "aten.permute.default":
+            operation = _transpose_operation(node, tensors)
         elif operation_name in _ACTIVATION_OPS:
             raise LoweringError(
                 f"standalone activation node {node_id} cannot yet be scheduled; "

@@ -310,7 +310,13 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
 
     // Transfer input data from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::INPUT]) {
-#ifndef FUNCTIONAL
+        // A-1: analytical accounting for kernel-value layers (see components/dram.cc).
+#ifdef FUNCTIONAL
+        if(!m_scheduler->functional_value_transfers &&
+           m_scheduler->compression_type == compression_type_t::DENSE && !skip_transfer[data_type_t::INPUT]) {
+            account_descriptor_dense_transfer(data_type_t::INPUT);
+        }
+#else
         if(m_scheduler->compression_type == compression_type_t::DENSE && !skip_transfer[data_type_t::INPUT]) {
             account_descriptor_dense_transfer(data_type_t::INPUT);
         }
@@ -327,9 +333,9 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
         //                                component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, 
         //                                data_type_t::INPUT, pe_array->get_stationary_type(), action_type_t::LOAD, true);
                                    
-        // Case 1. Dense data format
+        // Case 1. Dense data format. A-1: datapath-value layers only.
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
-            if(!skip_transfer[data_type_t::INPUT]) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::INPUT]) {
                 // Update PE array write cycle and energy.
                 num_data_transfer[data_type_t::INPUT]++;
 
@@ -810,7 +816,13 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
     }
     // Transfer weight from Global buffer to temporal buffer of PE array.
     if(pe_array->request_to_global_buffer[data_type_t::WEIGHT]) {
-#ifndef FUNCTIONAL
+        // A-1: analytical accounting for kernel-value layers.
+#ifdef FUNCTIONAL
+        if(!m_scheduler->functional_value_transfers &&
+           m_scheduler->compression_type == compression_type_t::DENSE && !skip_transfer[data_type_t::WEIGHT]) {
+            account_descriptor_dense_transfer(data_type_t::WEIGHT);
+        }
+#else
         if(m_scheduler->compression_type == compression_type_t::DENSE && !skip_transfer[data_type_t::WEIGHT]) {
             account_descriptor_dense_transfer(data_type_t::WEIGHT);
         }
@@ -826,9 +838,9 @@ void global_buffer_t::data_transfer(scheduler_t *m_scheduler) {
         //                                component_type_t::PE_Y, component_type_t::GLOBAL_BUFFER, 
         //                                data_type_t::WEIGHT, pe_array->get_stationary_type(), action_type_t::LOAD, true);
         
-        // Case 1. Dense
+        // Case 1. Dense. A-1: datapath-value layers only (kernel-value charged analytically).
         if(m_scheduler->compression_type == compression_type_t::DENSE) {
-            if(!skip_transfer[data_type_t::WEIGHT]) {
+            if(m_scheduler->functional_value_transfers && !skip_transfer[data_type_t::WEIGHT]) {
                 num_data_transfer[data_type_t::WEIGHT]++;
 
                 std::vector<unsigned> parameters_pe_array(parameter_type_t::NUM_PARAMETER_TYPES, 1);

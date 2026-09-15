@@ -29,3 +29,8 @@ python3 "$repo_dir/validation/check_timing.py" --check-baseline
 # committed under validation/phase1/out, so no SCALE-Sim installation is needed here.
 "$repo_dir/npusim.sh" run scalesim alexnet matched >/dev/null
 python3 "$repo_dir/validation/phase1/gate.py" --check-baseline
+
+# Output-stationary variant of the same cross-simulator gate (SCALE-Sim `Dataflow : os`).
+# SS OS reports are committed under validation/phase1/out_os; see README_os.md.
+"$repo_dir/npusim.sh" run scalesim_os alexnet os_filled >/dev/null
+python3 "$repo_dir/validation/phase1/gate_os.py" --check-baseline

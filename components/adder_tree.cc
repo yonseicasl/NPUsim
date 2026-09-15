@@ -254,7 +254,17 @@ void adder_tree_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t el
 }
 
 void adder_tree_t::data_transfer(scheduler_t *m_scheduler) {
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: kernel-value layers share the timing build's analytical distribution
+    // accounting (values come from the reference kernel; datapath movement is off).
+    if(!m_scheduler->functional_value_transfers) {
+        // Operand distribution over the bus is a plain scatter; the reduction cost is
+        // charged where it physically occurs -- on the OUTPUT write-back (see
+        // account_descriptor_dense_writeback above).
+        account_descriptor_dense_distribution(m_scheduler, noc_cycle, noc_energy);
+        return;
+    }
+#else
     // Operand distribution over the bus is a plain scatter; the reduction cost is
     // charged where it physically occurs -- on the OUTPUT write-back (see
     // account_descriptor_dense_writeback above).

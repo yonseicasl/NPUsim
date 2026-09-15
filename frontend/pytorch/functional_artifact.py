@@ -138,9 +138,12 @@ def _softmax(op: Mapping[str, Any], fetch, shape_of) -> list[float]:
     x = fetch(op["inputs"][0])
     g = op["geometry"]
     rows, length = g["rows"], g["row_length"]
+    # B-4 causal mask: within each [Tq][Tk] block, query r attends to keys 0..(r%span).
+    span = (g.get("causal_span") or length) if g.get("causal") else 0
     out = [0.0] * (rows * length)
     for r in range(rows):
-        row = x[r * length:(r + 1) * length]
+        valid = min(length, (r % span) + 1) if span else length
+        row = x[r * length:r * length + valid]
         peak = max(row)
         exps = [_f32(math.exp(_f32(v - peak))) for v in row]
         total = _f32(sum(exps))
@@ -229,6 +232,64 @@ def _batch_norm(op: Mapping[str, Any], fetch, shape_of) -> list[float]:
     return out
 
 
+def _layer_norm(op: Mapping[str, Any], fetch, shape_of) -> list[float]:
+    x = fetch(op["inputs"][0])
+    gamma, beta = fetch(op["inputs"][1]), fetch(op["inputs"][2])
+    L = op["geometry"]["normalized_size"]
+    eps = op["geometry"]["epsilon"]
+    if len(gamma) != L or len(beta) != L:
+        raise FunctionalArtifactError(f"layer_norm {op['id']} weight/bias length != normalized size")
+    out = [0.0] * len(x)
+    for r in range(len(x) // L):
+        row = x[r * L:(r + 1) * L]
+        mean = sum(row) / L
+        var = sum((v - mean) ** 2 for v in row) / L
+        inv = 1.0 / math.sqrt(var + eps)
+        for i, v in enumerate(row):
+            out[r * L + i] = _f32(_f32((v - mean) * inv) * gamma[i] + beta[i])
+    return out
+
+
+def _matmul(op: Mapping[str, Any], fetch, shape_of) -> list[float]:
+    g = op["geometry"]
+    Bt, M, K, N = g["matmul_batch"], g["matmul_m"], g["matmul_k"], g["matmul_n"]
+    tb = bool(g.get("matmul_transpose_b", False))
+    a, b = fetch(op["inputs"][0]), fetch(op["inputs"][1])
+    out = [0.0] * (Bt * M * N)
+    for bt in range(Bt):
+        ab, bb, cb = bt * M * K, bt * K * N, bt * M * N
+        for m in range(M):
+            for n in range(N):
+                acc = 0.0
+                for k in range(K):
+                    bv = b[bb + n * K + k] if tb else b[bb + k * N + n]
+                    acc = _f32(acc + _f32(a[ab + m * K + k] * bv))
+                out[cb + m * N + n] = acc
+    return out
+
+
+def _transpose(op: Mapping[str, Any], fetch, shape_of) -> list[float]:
+    # B-4: swap two axes (multi-head split/merge). Row-major reorder.
+    x = fetch(op["inputs"][0])
+    shape = shape_of(op["inputs"][0])
+    a0, a1 = op["geometry"]["axis0"], op["geometry"]["axis1"]
+    in_stride = [1] * len(shape)
+    for d in range(len(shape) - 2, -1, -1):
+        in_stride[d] = in_stride[d + 1] * shape[d + 1]
+    out_shape = list(shape); out_shape[a0], out_shape[a1] = out_shape[a1], out_shape[a0]
+    out_stride = [1] * len(shape)
+    for d in range(len(shape) - 2, -1, -1):
+        out_stride[d] = out_stride[d + 1] * out_shape[d + 1]
+    out = [0.0] * len(x)
+    for flat in range(len(x)):
+        rem, idx = flat, [0] * len(shape)
+        for d in range(len(shape)):
+            idx[d] = rem // in_stride[d]; rem %= in_stride[d]
+        idx[a0], idx[a1] = idx[a1], idx[a0]
+        out[sum(i * s for i, s in zip(idx, out_stride))] = x[flat]
+    return out
+
+
 _KERNELS = {
     "npusim.linear": _linear,
     "npusim.conv2d": _conv2d,
@@ -237,6 +298,9 @@ _KERNELS = {
     "npusim.elementwise": _elementwise,
     "npusim.concat": _concat,
     "npusim.batch_norm": _batch_norm,
+    "npusim.layer_norm": _layer_norm,
+    "npusim.matmul": _matmul,
+    "npusim.transpose": _transpose,
 }
 
 

@@ -228,7 +228,23 @@ void systolic_array_t::update_tile_size(scheduler_t *m_scheduler) {
 }
 
 void systolic_array_t::data_transfer(scheduler_t *m_scheduler) {
-#ifndef FUNCTIONAL
+#ifdef FUNCTIONAL
+    // A-1: kernel-value layers share the timing build's analytical distribution
+    // accounting (values come from the reference kernel; datapath movement is off).
+    if(!m_scheduler->functional_value_transfers) {
+        // SY1/SY2: a systolic array is structurally a 2D store-and-forward grid, so the
+        // injection wavefront traverses the active diameter regardless of the configured
+        // noc label: route-depth fill = (active_x-1)+(active_y-1) hop cycles per stream,
+        // and per-hop energy = average Manhattan distance per transaction. Active-shape
+        // changes now move the fill/drain latency (1xN vs NxM differ).
+        const spatial_noc_cost_t wavefront = spatial_noc_cost(noc_type_t::MESH, num_active_pe_y, num_active_pe_x,
+                                                           /* multicast = */ true);
+        account_descriptor_dense_distribution(m_scheduler, noc_cycle,
+                                              noc_energy*wavefront.link_traversals,
+                                              wavefront.latency_fill_hops*noc_cycle);
+        return;
+    }
+#else
     // SY1/SY2: a systolic array is structurally a 2D store-and-forward grid, so the
     // injection wavefront traverses the active diameter regardless of the configured
     // noc label: route-depth fill = (active_x-1)+(active_y-1) hop cycles per stream,
