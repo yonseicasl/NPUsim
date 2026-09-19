@@ -6,6 +6,7 @@
 #include <limits>
 
 #include "config.h"
+#include "utils.h"
 
 namespace {
 
@@ -21,10 +22,6 @@ std::string normalized(std::string value) {
 tensor_format_t scalar(data_format_kind_t kind, unsigned bits, bool is_signed, const char *name) {
     tensor_format_t format = {kind, bits, is_signed, 0, 0, name};
     return format;
-}
-
-size_t ceil_div(size_t numerator, size_t denominator) {
-    return numerator / denominator + (numerator % denominator != 0 ? 1 : 0);
 }
 
 const char *config_key(data_type_t type) {
@@ -180,15 +177,6 @@ size_t runtime_datatypes_t::accumulator_storage_bits(size_t elements) const {
 
 size_t runtime_datatypes_t::accumulator_storage_bytes(size_t elements) const {
     return ceil_div(accumulator_storage_bits(elements), 8);
-}
-
-size_t runtime_datatypes_t::accumulator_storage_transactions(size_t elements,
-                                                            size_t transaction_bits) const {
-    if(transaction_bits == 0) {
-        std::cerr << "Error: accumulator transaction width must be non-zero" << std::endl;
-        exit(1);
-    }
-    return ceil_div(accumulator_storage_bits(elements), transaction_bits);
 }
 
 std::string runtime_datatypes_t::describe(data_type_t type) const {

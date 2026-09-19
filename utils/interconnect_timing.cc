@@ -5,6 +5,7 @@
 #include <iostream>
 #include "interconnect_timing.h"
 #include "datatype.h"
+#include "utils.h"
 
 bool is_supported_spatial_noc(noc_type_t topology) {
     return topology == noc_type_t::BUS ||
@@ -158,7 +159,6 @@ spatial_noc_cost_t spatial_noc_cost(noc_type_t topology, unsigned active_height,
         return cost;
     }
     const unsigned endpoints = active_height*active_width;
-    (void)endpoints;
     const unsigned max_hops = (active_height - 1) + (active_width - 1);
     cost.latency_fill_hops = static_cast<double>(std::max(1U, max_hops)) - 1.0;
     if(multicast) {
@@ -444,7 +444,6 @@ size_t sparse_metadata_bits(compression_type_t compression, data_type_t type,
 
 sparse_transport_cost_t sparse_transport_cost(data_type_t type, size_t nonzeros,
                                               size_t metadata_bits, size_t link_bits) {
-    auto ceil_div = [](size_t a, size_t b) -> size_t { return b ? (a + b - 1)/b : 0; };
     const size_t elem_bits = runtime_datatypes().format(type).payload_bits;   // format element width
     sparse_transport_cost_t cost;
     // Bandwidth (link) beats: the compressed payload sized by the real element width, and the
@@ -481,12 +480,7 @@ double combine_datatype_cycles(const std::vector<double> &per_type, bool seriali
 
 double entity_combined_cycles(const std::vector<std::vector<double>> &per_entity_type,
                               bool serialized_types) {
-    double combined = 0.0;
-    for(unsigned entity = 0; entity < per_entity_type.size(); ++entity) {
-        combined = std::max(combined, combine_datatype_cycles(per_entity_type[entity],
-                                                             serialized_types));
-    }
-    return combined;
+    return entity_combined_cycles(per_entity_type, {}, serialized_types);
 }
 
 double entity_combined_cycles(const std::vector<std::vector<double>> &a,

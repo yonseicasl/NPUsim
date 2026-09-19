@@ -1,4 +1,3 @@
-#include <thread>
 #include <algorithm>
 #include <cstdint>
 #include <limits>

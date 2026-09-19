@@ -141,144 +141,79 @@ function print_help {
 function pin_dependency {
     local dependency_dir=$1
     local dependency_branch=$2
-    local dependency_commit=$3
+    local dependency_ref=$3
     git -C "$dependency_dir" fetch origin "$dependency_branch"
-    git -C "$dependency_dir" checkout --detach "$dependency_commit"
+    git -C "$dependency_dir" checkout --detach "$dependency_ref"
 }
 
-function pin_dependency_nebula {
-    local dependency_dir=$1
-    local dependency_branch=$2
-    git -C "$dependency_dir" fetch origin "$dependency_branch"
-    git -C "$dependency_dir" checkout --detach "origin/$dependency_branch"
+##### NPUsim build steps #####
+function build_nebula {
+    mkdir -p $extdir
+    # Install Nebula software framework from Github
+    if [[ ! -d $nebuladir ]]; then
+        echo -e "\n# Install Nebula framework from Github"
+        cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
+    fi
+    pin_dependency "$nebuladir" npusim "origin/npusim"
+
+    # Build Nebula library
+    echo -e "\n# Build Nebula software framework"
+    cd $nebuladir; ./nebula.sh build lib
+}
+
+function build_dramsim3 {
+    mkdir -p $extdir
+    # Install DRAMSim3 from Github
+    if [[ ! -d $dramsim3dir ]]; then
+        echo -e "\n# Install DRAMSim3"
+        cd $extdir; git clone --branch master --single-branch https://github.com/umd-memsys/DRAMsim3.git
+    fi
+    pin_dependency "$dramsim3dir" master "$DRAMSIM3_COMMIT"
+    # Build DRAMSim3
+    echo -e "\n# Build DRAMsim3"
+    cd $dramsim3dir; make libdramsim3.so
+}
+
+function build_lib {
+    # Build NPUsim library
+    echo -e "\n# Build NPUsim library"
+    cd $libdir; eval $mflag $ccflag $std make
+}
+
+function build_exe {
+    # Build NPUsim executable file
+    echo -e "\n# Build NPUsim model"
+    cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
 }
 
 ##### NPUsim build function #####
 function build_model {
-    #echo -e "NPUsim build $1"
-    case "$1" in 
+    case "$1" in
         all)
-            # Make extension directory
-            if [[ ! -d $extdir ]]; then
-                mkdir $extdir
-            fi
-
-            # Build Nebula library
-            # Install Nebula software framework from Github
-            if [[ ! -d $nebuladir ]]; then
-                echo -e "\n# Install Nebula framework from Github"
-                cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
-            fi
-            pin_dependency_nebula "$nebuladir" npusim
-
-            # Build Nebula library
-            echo -e "\n# Build Nebula software framework"
-            cd $nebuladir; ./nebula.sh build lib
-
-
-            # Build DRAMSim3
-            # Install DRAMSim3 from Github
-            if [[ ! -d $dramsim3dir ]]; then
-                echo -e "\n# Install DRAMSim3"
-                cd $extdir; git clone --branch master --single-branch https://github.com/umd-memsys/DRAMsim3.git
-            fi
-            pin_dependency "$dramsim3dir" master "$DRAMSIM3_COMMIT"
-            # Build DRAMSim3
-            echo -e "\n# Build DRAMsim3"
-            cd $dramsim3dir; make libdramsim3.so
-
-            # Build NPUsim library
-            echo -e "\n# Build NPUsim library"
-            cd $libdir; eval $mflag $ccflag $std make
-
-            # Build NPUsim executable file
-            echo -e "\n# Build NPUsim model"
-            cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
+            build_nebula
+            build_dramsim3
+            build_lib
+            build_exe
             ;;
         dramsim3)
-            # Make extension directory
-            if [[ ! -d $extdir ]]; then
-                mkdir $extdir
-            fi
-
-            # Build DRAMSim3
-            # Install DRAMSim3 from Github
-            if [[ ! -d $dramsim3dir ]]; then
-                echo -e "\n# Install DRAMSim3"
-                cd $extdir; git clone --branch master --single-branch https://github.com/umd-memsys/DRAMsim3.git
-            fi
-            pin_dependency "$dramsim3dir" master "$DRAMSIM3_COMMIT"
-            # Build DRAMSim3
-            echo -e "\n# Build DRAMsim3"
-            cd $dramsim3dir; make libdramsim3.so
+            build_dramsim3
             ;;
         ext)
-            # Make extension directory
-            if [[ ! -d $extdir ]]; then
-                mkdir $extdir
-            fi
-
-            # Build Nebula library
-            # Install Nebula software framework from Github
-            if [[ ! -d $nebuladir ]]; then
-                echo -e "\n# Install Nebula framework from Github"
-                cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
-            fi
-            pin_dependency_nebula "$nebuladir" npusim
-
-            # Build Nebula library
-            echo -e "\n# Build Nebula software framework"
-            cd $nebuladir; ./nebula.sh build lib
-
-
-            # Build DRAMSim3
-            # Install DRAMSim3 from Github
-            if [[ ! -d $dramsim3dir ]]; then
-                echo -e "\n# Install DRAMSim3"
-                cd $extdir; git clone --branch master --single-branch https://github.com/umd-memsys/DRAMsim3.git
-            fi
-            pin_dependency "$dramsim3dir" master "$DRAMSIM3_COMMIT"
-            # Build DRAMSim3
-            echo -e "\n# Build DRAMsim3"
-            cd $dramsim3dir; make libdramsim3.so
+            build_nebula
+            build_dramsim3
             ;;
         lib)
-            # Build NPUsim library
-            echo -e "\n# Build NPUsim library"
-            cd $libdir; eval $mflag $ccflag $std make
+            build_lib
             ;;
         model)
-            # Build NPUsim executable file
-            echo -e "\n# Build NPUsim model"
-            cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
+            build_exe
             ;;
         nebula)
-            # Make extension directory
-            if [[ ! -d $extdir ]]; then
-                mkdir $extdir
-            fi
-
-            # Build Nebula library
-            # Install Nebula software framework from Github
-            if [[ ! -d $nebuladir ]]; then
-                echo -e "\n# Install Nebula framework from Github"
-                cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
-            fi
-            pin_dependency_nebula "$nebuladir" npusim
-
-            # Build Nebula library
-            echo -e "\n# Build Nebula software framework"
-            cd $nebuladir; ./nebula.sh build lib
+            build_nebula
             ;;
         npusim)
-            # Build NPUsim library and executable file
-            # Build NPUsim library
-            echo -e "\n# Build NPUsim library"
-            cd $libdir; eval $mflag $ccflag $std make
-
-            # Build NPUsim executable file
-            echo -e "\n# Build NPUsim model"
-            cd $modeldir; eval $mflag $ccflag $ldflag $libflag $std EXE='model' make
+            build_lib
+            build_exe
             ;;
         pytorch)
             echo "NPUsim uses the system Python/PyTorch installation; a PyTorch source checkout is not required."
@@ -300,64 +235,55 @@ function build_model {
     esac
 }
 
+##### NPUsim clean steps #####
+function clean_nebula {
+    echo -e "\n# Cleaning DNN software framework"
+    cd $nebuladir; ./nebula.sh clean lib;
+}
+
+function clean_dramsim3 {
+    echo -e "\n# Cleaning DRAMsim3"
+    cd $dramsim3dir; make clean;
+}
+
+function clean_lib {
+    echo -e "\n# Cleaning NPUsim library"
+    cd $libdir; eval $mflag make clean;
+}
+
+function clean_exe {
+    echo -e "\n# Cleaning NPUsim model"
+    cd $modeldir; eval EXE='model' make clean;
+}
+
 ##### NPUsim clean function #####
 function clean_model {
-    case "$1" in 
+    case "$1" in
         all)
-            # Cleaning Nebula 
-            echo -e "\n# Cleaning DNN framework"
-            cd $nebuladir; ./nebula.sh clean lib;
-
-            # Cleaning DRAMsim3 
-            echo -e "\n# Cleaning DRAMsim3"
-            cd $dramsim3dir; make clean;
-
-            # Cleaning NPUsim library
-            echo -e "\n# Cleaning NPUsim library"
-            cd $libdir; eval $mflag make clean;
-            
-            # Cleaning NPUsim executable file
-            echo -e "\n# Cleaning NPUsim model"
-            cd $modeldir; eval EXE='model' make clean;
+            clean_nebula
+            clean_dramsim3
+            clean_lib
+            clean_exe
             ;;
         dramsim3)
-            # Cleaning DRAMsim3
-            echo -e "\n# Cleaning DRAMsim3"
-            cd $dramsim3dir; make clean;
+            clean_dramsim3
             ;;
         ext)
-            # Cleaning Nebula
-            echo -e "\n# Cleaning DNN software framework"
-            cd $nebuladir; ./nebula.sh clean lib;
-
-            # Cleaning DRAMsim3
-            echo -e "\n# Cleaning DRAMsim3"
-            cd $dramsim3dir; make clean;
+            clean_nebula
+            clean_dramsim3
             ;;
         lib)
-            # Cleaning NPUsim library
-            echo -e "\n# Cleaning NPUsim library"
-            cd $libdir; eval $mflag make clean;
+            clean_lib
             ;;
         nebula)
-            # Cleaning Nebula
-            echo -e "\n# Cleaning DNN software framework"
-            cd $nebuladir; ./nebula.sh clean lib;
+            clean_nebula
             ;;
         npusim)
-            # Cleaning NPUsim library and executable file
-            # Cleaning NPUsim library
-            echo -e "\n# Cleaning NPUsim library"
-            cd $libdir; eval $mflag make clean;
-
-            # Cleaning NPUsim executable file
-            echo -e "\n# Cleaning NPUsim model"
-            cd $modeldir; eval EXE='model' make clean;
+            clean_lib
+            clean_exe
             ;;
         model)
-            # Cleaning NPUsim executable file
-            echo -e "\n# Cleaning NPUsim model"
-            cd $modeldir; eval EXE='model' make clean;
+            clean_exe
             ;;
         *)
             # Print out error message

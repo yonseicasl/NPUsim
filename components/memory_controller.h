@@ -34,25 +34,17 @@ public:
     void read_callback(uint64_t m_address);
     void write_callback(uint64_t m_address);
 
-    void register_callback(std::function<void(uint64_t)> m_read_callback,
-                           std::function<void(uint64_t)> m_write_callback);
-    
-
     unsigned int get_bus_bits() const;
 
     unsigned int get_burst_length() const;
 
     void print_stats() const;
 
-    void reset_stats();
-
     // Check whether the controller can accept a new packet or not.
     bool will_accept_transaction(request_t m_request) const;
     // when will_accept_transaction() function returns true,
     // Enqueue the packet.
     void add_transaction(request_t m_request);
-
-    bool done();
 
 
 private: 

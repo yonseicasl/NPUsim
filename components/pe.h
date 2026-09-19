@@ -290,7 +290,6 @@ protected:
     stationary_type_t stationary_type_local_buffer;         // stationary type of local buffer
     std::string parameter_order;                            //
     memory_type_t memory_type;                              // Memory type.
-    mac_type_t mac_type;                                    // Mac type.
 
     // Number of MACS.
     unsigned num_macs;                                      // Number of independent accumulator units.

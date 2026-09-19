@@ -27,9 +27,6 @@ public:
     void connect(multi_chip_t *m_multi_chip);
     // Connect DRAM to DNN model
     void connect_layer(nebula::layer_t *m_layer);
-    // Connect DRAM to DNN model
-    void disconnect_layer();
-
     // Update the tile size of DRAM.
     void update_tile_size(scheduler_t *m_scheduler);
 

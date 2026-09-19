@@ -159,9 +159,7 @@ public:
     unsigned get_num_units() const { return num_units; }
     unsigned get_lanes() const { return lanes; }
     unsigned get_queue_depth() const { return queue_depth; }
-    double get_setup_cycle() const { return setup_cycle; }
     double get_static_energy_per_cycle() const { return u_static_energy; }
-    bool static_energy_declared() const { return static_energy_is_declared; }
     // Phase-7: where the standalone-softmax operand tensor lives -- "dram" (materialized
     // round trip through the memory hierarchy; matches the simulator's layer flow, which
     // commits every layer's output off-chip) or "glb" (retained on-chip by a fused
@@ -182,8 +180,6 @@ public:
     // fast: a missing execution unit is an architecture fact, not an uncalibrated cost.
     // Undeclared = every modeled operation is available.
     bool op_supported(sfu_op_t m_op) const;
-    bool has_supported_ops_contract() const { return !supported_ops.empty(); }
-    const sfu_op_profile_t &profile(sfu_op_t m_op) const { return profiles[m_op]; }
 
     unsigned index;
 

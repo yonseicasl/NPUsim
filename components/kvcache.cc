@@ -4,14 +4,6 @@
 #include "kvcache.h"
 #include "energy_units.h"
 
-kvcache_invocation_t::kvcache_invocation_t() :
-    active(false),
-    read_bytes(0),
-    dram_read_cycles(0.0),
-    dram_read_energy(0.0),
-    priced(true) {
-}
-
 kvcache_t::kvcache_t(section_config_t m_section_config) :
     index(0),
     kv_bytes_per_token(0),
@@ -173,11 +165,6 @@ void kvcache_t::init(section_config_t m_section_config) {
 
 void kvcache_t::reset() {
     // The component carries no cross-layer state.
-}
-
-size_t kvcache_t::read_bytes() const {
-    // Compatibility accessor: the bytes DRAM actually fetches (post-compression).
-    return compressed_read_bytes();
 }
 
 size_t kvcache_t::dense_read_bytes() const {

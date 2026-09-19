@@ -7,12 +7,9 @@
 #include "sfu.h"
 #include "datatype.h"
 #include "energy_units.h"
+#include "utils.h"
 
 namespace {
-
-size_t ceil_div(size_t m_value, size_t m_divisor) {
-    return (m_value + m_divisor - 1)/m_divisor;
-}
 
 // Depth of a binary reduction tree over m_width live lanes.
 size_t ceil_log2(size_t m_width) {

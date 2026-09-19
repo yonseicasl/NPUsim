@@ -64,17 +64,6 @@
 // model makes it small, an MHA model large. Both are config knobs, so context_length sweeps
 // cleanly. Without a [kvcache] section nothing is added and the numbers are unchanged.
 
-struct kvcache_invocation_t {
-    kvcache_invocation_t();
-
-    bool active;                    // a [kvcache] section injected a read this step
-    size_t read_bytes;              // KV cache bytes read this decode step (one layer)
-    double dram_read_cycles;        // read_bytes * measured DRAM cost/byte (set by stats_t)
-    double dram_read_energy;        // read_bytes * u_read_energy
-    bool priced;                    // read energy was declared
-    std::vector<std::string> unpriced;  // active read with no declared cost
-};
-
 class kvcache_t {
 
 public:
@@ -85,8 +74,6 @@ public:
     void print_specification();
     void reset();
 
-    // Total KV bytes read for one decode step of one layer.
-    size_t read_bytes() const;
     // Read energy for m_read_bytes, and whether it was priced.
     double read_energy(size_t m_read_bytes, bool *m_priced) const;
 
@@ -104,10 +91,8 @@ public:
     double decoder_cycles(size_t m_dense_bytes) const;
     bool decoder_calibrated() const { return kv_decoder_bytes_per_cycle > 0.0; }
 
-    bool enabled() const { return true; }
     size_t get_bytes_per_token() const { return kv_bytes_per_token; }
     size_t get_context_length() const { return context_length; }
-    double get_compression_ratio() const { return kv_compression_ratio; }
     const std::string &get_schedule() const { return kv_schedule; }
     size_t get_tile_bytes() const { return kv_tile_bytes; }
     unsigned get_buffer_tiles() const { return kv_buffer_tiles; }
@@ -115,9 +100,6 @@ public:
 
     /* Attention consumer mode */
     bool attention_enabled() const { return attention; }
-    unsigned get_n_q_heads() const { return n_q_heads; }
-    unsigned get_n_kv_heads() const { return n_kv_heads; }
-    unsigned get_head_dim() const { return head_dim; }
     const std::string &get_attention_algorithm() const { return attention_algorithm; }
     double get_attention_macs_per_cycle() const { return attention_macs_per_cycle; }
     double get_softmax_cycles_per_element() const { return softmax_cycles_per_element; }

@@ -49,8 +49,6 @@ struct decomp_invocation_t {
     std::vector<double> tile_supply_fraction;
 
     double decoder_cycles;          // dense_bytes / decoder throughput (+ startup)
-    double dram_weight_cycles_dense;    // weight DRAM transfer cost WITHOUT compression
-    double dram_weight_cycles_compressed;   // ... WITH compression (the saving)
 
     double decoder_energy;          // per dense byte
     bool timing_calibrated;         // decoder throughput/startup were declared
@@ -78,9 +76,6 @@ public:
     decomp_invocation_t decompress(size_t m_dense_weight_bytes, double m_dram_bytes_per_cycle,
                                    double m_compute_cycles, size_t m_tile_bytes) const;
 
-    bool enabled() const { return true; }
-    double get_compression_ratio() const { return compression_ratio; }
-    double get_decoder_bytes_per_cycle() const { return decoder_bytes_per_cycle; }
     double get_decoder_ratio() const { return decoder_ratio; }
     double get_startup_cycles() const { return startup_cycles; }
     double get_tile_ratio_cv() const { return tile_ratio_cv; }
@@ -88,7 +83,6 @@ public:
     unsigned get_queue_depth() const { return input_queue_depth; }
     bool get_overlap() const { return overlap; }
     double get_static_energy_per_cycle() const { return u_static_energy; }
-    bool static_energy_declared() const { return static_energy_is_declared; }
     const std::string &get_profile_reference() const { return profile_reference; }
 
     unsigned index;

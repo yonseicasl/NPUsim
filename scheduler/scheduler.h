@@ -24,26 +24,11 @@ public:
                                                 stationary_type_t pe_array_stationary, std::string pe_array_parameter_order,
                                                 stationary_type_t multi_chip_stationary, std::string multi_chip_parameter_order);
     
-    // Print out the network stats.
-    void print_stats();
-
-    // Print out the network stats to file
-    void print_stats(std::ofstream &m_output_file);
-
 #ifdef FUNCTIONAL
     void transfer_data(data_t *m_dest, data_t *m_source, 
                        unsigned m_dest_offset, unsigned m_source_offset, 
                        component_type_t m_dest_type, component_type_t m_source_type, 
                        data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type);
-    /* Update for NPUsim ver2 */
-    void transfer_data_ver2(data_t *m_dest, data_t *m_source, 
-                            component_type_t m_destination_type, component_type_t m_source_type, 
-                            data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type, bool last_component);
-
-    /* update for NPUsim ver2 */
-    void transfer_data_network_on_chip(data_t *m_dest, data_t *m_source, unsigned m_dest_offset, unsigned m_source_offset,
-                                       component_type_t m_destination_type, component_type_t m_source_type, 
-                                       data_type_t m_data_type, stationary_type_t m_stationary_type, action_type_t m_action_type);
 #endif
 
     std::vector<unsigned> calculate_parameter_size(component_type_t m_component_type);
@@ -57,11 +42,6 @@ public:
     // The number of zero data
     std::vector<unsigned> num_zeros;                                                    // The number of zero value elements in the case of functional simulation
 #endif
-
-    /* PE instantiates for ver2 */
-    std::vector<unsigned> parameters_pe;                                                // DNN parameters 
-    std::vector<unsigned> offset_pe;
-    std::vector<unsigned> iterations_pe;                                                // The number of iterations at PE
 
     /* PE scheduler */
     std::vector<std::list<unsigned>> offset_size_pe;                                    // The number of data in PE
@@ -82,11 +62,6 @@ public:
     std::vector<unsigned> num_tile_granular_data_pe_array;                              // The number of different tile-granular data
 
 
-    /* Global buffer instantiates for ver2 */
-    std::vector<unsigned> parameters_global_buffer;                                     // DNN parameters at the global buffer
-    std::vector<unsigned> offset_global_buffer;                                         // Data offset at the global buffer
-    std::vector<unsigned> iterations_global_buffer;                                     // The number of iterations at the global buffer
-
     /* Global buffer scheduler */
     std::vector<std::list<unsigned>> offset_size_global_buffer;                         // The number of data in the global buffer
     std::list<unsigned> input_offset_global_buffer;
@@ -104,11 +79,6 @@ public:
     std::vector<bool> read_tile_granular_chip_weight;                                   // Check tile granular weight in multi chip
     std::vector<bool> read_tile_granular_chip_output;                                   // Check tile granular output data in multi-chip
     std::vector<unsigned> num_tile_granular_data_chip;                                  // The number of different tile-granular data
-
-    /* Off-chip memory instantiates for ver2 */
-    std::vector<unsigned> parameters_dram;                                              // DNN parameters at the off-chip memory
-    std::vector<unsigned> offset_dram;                                                  // Data offset at the off-chip memory
-    std::vector<unsigned> iterations_dram;                                              // The number of iterations at the off-chip memory
 
     /* Off-chip memory scheduler */
     std::vector<std::list<unsigned>> offset_size_dram;                                  // The number of data in the off-chip memory
@@ -147,10 +117,6 @@ private:
     std::vector<std::vector<unsigned>> calculate_tile_size();
     
     // Calculate counter and the offsets of data
-    // Case 1. Undefined stationary
-    //std::vector<std::list<unsigned>> calculate_offset_undefined_stationary(std::list<unsigned> *m_input_offsets, std::list<unsigned> *m_weight_offsets, std::list<unsigned> *m_output_offsets, 
-    //                                                                       component_type_t m_dest_type, component_type_t m_source_type);
-
     // Case 2. Input stationary
     std::vector<std::list<unsigned>> calculate_offset_input_stationary(std::list<unsigned> *m_input_offsets, std::list<unsigned> *m_weight_offsets, std::list<unsigned> *m_output_offsets, 
                                                                        component_type_t m_dest_type, component_type_t m_source_type);
@@ -167,12 +133,6 @@ private:
 
     /* Functions for ver2 */
     // Counter and Offset calculation
-    // Case 1. Undefined stationary
-    //std::vector<std::list<unsigned>> calculate_counter_undefined_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset);
-
-    //void calculate_offset_undefined_stationary_ver2(data_type_t m_data_type, component_type_t m_destination_type, component_type_t m_source_type,
-    //                                                                                         std::vector<unsigned> *m_offsets, std::vector<unsigned> *m_params, std::vector<unsigned> *m_iteration, 
-    //                                                                                         std::string m_parameter_order, bool m_last_component);
     // Case 2. Input stationary
     std::vector<std::list<unsigned>> calculate_counter_input_stationary_ver2(component_type_t m_destination_type, component_type_t m_source_type, std::list<unsigned> *m_output_offset);
 

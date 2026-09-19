@@ -12,7 +12,6 @@
 
 #include "convolutional.h"
 #include "fully_connected.h"
-#include "recurrent.h"
 
 #include "adder_tree.h"
 #include "spatial_arch.h"
@@ -80,8 +79,6 @@ public:
     void print_accelerator_specification();
     // Print out DNN configuration.
     void print_network_configuration(unsigned m_layer_index, unsigned m_stats_index);
-    // Print out the stats.
-    void print_stats(const std::string m_accelerator_config, const std::string m_network_config, unsigned m_index);
 
     /* Print result of the simulation */
 

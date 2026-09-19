@@ -259,15 +259,6 @@ protected:
     bool     initial;                           // 
     double nop_cycle;                           // NoP cycle
     double nop_energy;                          // NoP energy
-
-    double scatter_cycle;                       // Scatter network cycle
-    double scatter_energy;                      // Scatter network energy
-
-    double local_cycle;                         // Local network cycle
-    double local_energy;                        // Local network energy
-
-    double gather_cycle;                        // Gather network cycle
-    double gather_energy;                       // Gather network energy
 };
 
 #endif

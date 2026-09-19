@@ -64,7 +64,6 @@ public:
     // give the accumulator-precision sizes so the two events can be charged separately.
     size_t accumulator_storage_bits(size_t elements) const;
     size_t accumulator_storage_bytes(size_t elements) const;
-    size_t accumulator_storage_transactions(size_t elements, size_t transaction_bits) const;
 
 private:
     std::vector<tensor_format_t> formats;

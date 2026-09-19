@@ -6,18 +6,6 @@
 #include <string>
 #include <vector>
 
-enum data_format_t {
-	CONVOLUTION, 
-	GEMM,
-	NUM_DATA_FORMATS,
-};
-
-static std::vector<std::string> data_format_str __attribute((unused)) = {
-    "convolution",
-    "gemm",
-    "num_data_formats",
-};
-
 enum data_type_t {
     INPUT, //input, 
     WEIGHT, //weight, 
@@ -71,23 +59,6 @@ static std::vector<std::string> component_type_str __attribute((unused)) = {
     "chips_y",
     "dram",
 	"num_component_types",
-};
-
-// The MAC type of PE.
-enum mac_type_t {
-    UNDEFINED_MAC = 0,
-    SDSO,
-    SVSO, 
-    MDMO,
-    MVMO,
-};
-
-static std::vector<std::string> mac_type_str __attribute((unused)) = {
-    "undefined_mac",
-    "sdso",
-    "svso",
-    "mdmo",
-    "mvmo",
 };
 
 // The memory type of Local buffer and Global buffer.

@@ -127,107 +127,78 @@ void stats_t::init() {
 
     /* Initialize PE stats */
     // Initialize the number of request to the local buffer
-    num_request_pe.reserve(data_type_t::NUM_DATA_TYPES);
     num_request_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize the number of data transfer to MAC unit
-    num_data_transfer_pe.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize access cycle to computing units
-    access_cycle_mac.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    max_access_cycle_mac.reserve(data_type_t::NUM_DATA_TYPES);
     max_access_cycle_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    min_access_cycle_mac.reserve(data_type_t::NUM_DATA_TYPES);
     min_access_cycle_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    avg_access_cycle_mac.reserve(data_type_t::NUM_DATA_TYPES);
     avg_access_cycle_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize access energy to computing units
-    access_energy_mac.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_mac.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize local buffer access cycle
-    access_cycle_lb.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    max_access_cycle_lb.reserve(data_type_t::NUM_DATA_TYPES);
     max_access_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    min_access_cycle_lb.reserve(data_type_t::NUM_DATA_TYPES);
     min_access_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    avg_access_cycle_lb.reserve(data_type_t::NUM_DATA_TYPES);
     avg_access_cycle_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     
     // Initialize local buffer access energy
-    access_energy_lb.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize local buffer utilization 
-    utilization_local_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     utilization_local_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
         
     // Initialize overlapped cycle between the computing unit and local buffer
-    cycle_mac_lb.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_mac_lb.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer cycle between computing unit and local buffers
-    transfer_cycle_pe.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_cycle_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer energy between computing unit and local buffers
-    transfer_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     payload_link_transactions_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions_pe.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize static energy at PE
-    static_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    static_energy_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    utilization_pe_array_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     utilization_pe_array_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    utilization_multi_chip_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     utilization_multi_chip_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
-    format_cycle_pe.reserve(data_type_t::NUM_DATA_TYPES);
     format_cycle_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    format_energy_pe.reserve(data_type_t::NUM_DATA_TYPES);
     format_energy_pe.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     
     /* Initialize PE array stats */
 
     // Initialize the number of request to PE array
-    num_request_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     num_request_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize the number of data transfer of PE array (to PE)
-    num_data_transfer_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize access cycle to PE array (if temporal buffer exist)
-    access_cycle_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize access energy to PE array (if temporal buffer exist)
-    access_energy_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer cycle between PE array and PE (Interconnection)
-    transfer_cycle_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_cycle_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
-    cycle_temporal_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_temporal_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer energy between PE array and PE (Interconnection)
-    transfer_energy_pe_array.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     payload_link_transactions_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions_pe_array.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -236,11 +207,9 @@ void stats_t::init() {
     /* Initialize Global buffer stats */
 
     // Initialize the number of request to the global buffer
-    num_request_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     num_request_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize the number of data transfer to the PE array
-    num_data_transfer_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
     psum_writeback_events_global_buffer = 0;
     payload_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
@@ -248,7 +217,6 @@ void stats_t::init() {
     storage_link_transactions_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0);
     
     // Initialize access cycle of the global buffer
-    access_cycle_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     fill_access_cycle_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     fill_access_energy_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -435,92 +403,72 @@ void stats_t::init() {
     attn_kv_capacity_bytes = 0;
 
     // Initialize access energy of the global buffer
-    access_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize global buffer utilization
-    utilization_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     utilization_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize overlapped cycle between the global buffer and the PE array
-    cycle_pe_array_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_pe_array_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer cycle between the global buffer and the PE array
-    transfer_cycle_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_cycle_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer energy between the global buffer and the PE array
-    transfer_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize global buffer static energy
-    static_energy_global_buffer.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_global_buffer.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     /* Initialize Multi chip stats */
 
     // Initialize the number of request to chip-level processor
-    num_request_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     num_request_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize the number of data transfer to the global buffer
-    num_data_transfer_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
     payload_link_transactions_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize access cycle of the chip-level processor (if temporal buffer exist)
-    access_cycle_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize access energy of the chip-level processor (if temporal buffer exist)
-    access_energy_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer cycle between the chip-level processor and the global buffer (Network on Package)
-    transfer_cycle_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_cycle_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer energy between the chip-level processor and the global buffer (Network on Package)
-    transfer_energy_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize static (leakage) energy of the Multi-chip temporal buffer
-    static_energy_multi_chip.reserve(data_type_t::NUM_DATA_TYPES);
     static_energy_multi_chip.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     /* Initialize off-chip memory stats */
     // Initialize the number of request to the off-chip memory
-    num_request_dram.reserve(data_type_t::NUM_DATA_TYPES);
     num_request_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize the number of data transfer to chip-level processor
-    num_data_transfer_dram.reserve(data_type_t::NUM_DATA_TYPES);
     num_data_transfer_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
     payload_link_transactions_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
     metadata_link_transactions_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
     storage_link_transactions_dram.assign(data_type_t::NUM_DATA_TYPES, 0);
 
     // Initialize access cycle to the off-chip memory
-    access_cycle_dram.reserve(data_type_t::NUM_DATA_TYPES);
     access_cycle_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize access energy to the off-chip memory
-    access_energy_dram.reserve(data_type_t::NUM_DATA_TYPES);
     access_energy_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize overlapped cycle between the off-chip memory and on-chip processor
-    cycle_chip_dram.reserve(data_type_t::NUM_DATA_TYPES);
     cycle_chip_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer cycle between the off-chip memory and on-chip processor
-    transfer_cycle_dram.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_cycle_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
     // Initialize transfer energy between the off-chip memory and on-chip processor
-    transfer_energy_dram.reserve(data_type_t::NUM_DATA_TYPES);
     transfer_energy_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
 
 }

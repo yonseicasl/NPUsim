@@ -5,11 +5,9 @@
 
 #include "decomp.h"
 #include "energy_units.h"
+#include "utils.h"
 
 namespace {
-size_t ceil_div(size_t m_value, size_t m_divisor) {
-    return m_divisor == 0 ? 0 : (m_value + m_divisor - 1)/m_divisor;
-}
 
 // Deterministic unit-interval hash (splitmix64 finalizer): the per-tile compression
 // factors must be exactly reproducible across runs and platforms, so no libc rand().
@@ -31,8 +29,6 @@ decomp_invocation_t::decomp_invocation_t() :
     compressed_weight_bytes(0),
     effective_ratio(1.0),
     decoder_cycles(0.0),
-    dram_weight_cycles_dense(0.0),
-    dram_weight_cycles_compressed(0.0),
     decoder_energy(0.0),
     timing_calibrated(true) {
 }
@@ -222,15 +218,6 @@ decomp_invocation_t decomp_t::decompress(size_t m_dense_weight_bytes,
     }
     inv.effective_ratio = static_cast<double>(m_dense_weight_bytes)/
                           static_cast<double>(std::max<size_t>(1, inv.compressed_weight_bytes));
-
-    // DRAM weight transfer cost: dense vs compressed, at the DRAM link rate. The saving
-    // is the difference -- what the compression buys on the memory side.
-    if(m_dram_bytes_per_cycle > 0.0) {
-        inv.dram_weight_cycles_dense =
-            static_cast<double>(m_dense_weight_bytes)/m_dram_bytes_per_cycle;
-        inv.dram_weight_cycles_compressed =
-            static_cast<double>(inv.compressed_weight_bytes)/m_dram_bytes_per_cycle;
-    }
 
     // Decoder cost: it emits the full dense weight, plus a one-time pipeline fill. A
     // bypassed layer runs no decoder (the weight is already dense).

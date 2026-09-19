@@ -786,11 +786,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::INPUT], offsets[data_type_t::INPUT] + m_scheduler->input_offset_multi_chip[i%m_scheduler->input_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::INPUT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::INPUT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
 
                     for(unsigned b = 0; b < parameters_global_buffer[parameter_type_t::BATCH_SIZE]; b++) {
                         for(unsigned c = 0; c < parameters_global_buffer[parameter_type_t::INPUT_CHANNEL]; c++) {
@@ -908,11 +903,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::INPUT], offsets[data_type_t::INPUT] + m_scheduler->input_offset_multi_chip[i%m_scheduler->input_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::INPUT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::INPUT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
                     if(!m_scheduler->read_tile_granular_chip_input[i%m_scheduler->input_offset_multi_chip.size()]) {
                         // Update chip-level processor access cost
                         access_cycle[data_type_t::INPUT] += (chips[i]->tile_size[data_type_t::INPUT] - m_scheduler->num_zeros[data_type_t::INPUT])
@@ -1017,11 +1007,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::INPUT], offsets[data_type_t::INPUT] + m_scheduler->input_offset_multi_chip[i%m_scheduler->input_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::INPUT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::INPUT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
                     
                     if(!m_scheduler->read_tile_granular_chip_input[i%m_scheduler->input_offset_multi_chip.size()]) {
                         // Update chip-level processor access cost
@@ -1116,11 +1101,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::INPUT], offsets[data_type_t::INPUT] + m_scheduler->input_offset_multi_chip[i%m_scheduler->input_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::INPUT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::INPUT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
 
                     if(!m_scheduler->read_tile_granular_chip_input[i%m_scheduler->input_offset_multi_chip.size()]) {
                         // Update access cost of chip-level processor
@@ -1323,11 +1303,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::WEIGHT], offsets[data_type_t::WEIGHT] + m_scheduler->weight_offset_multi_chip[i%m_scheduler->weight_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::WEIGHT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::WEIGHT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
 
                     for(unsigned k = 0; k < parameters_global_buffer[parameter_type_t::OUTPUT_CHANNEL]; k++) {
                         for(unsigned c = 0; c < parameters_global_buffer[parameter_type_t::INPUT_CHANNEL]; c++) {
@@ -1444,11 +1419,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::WEIGHT], offsets[data_type_t::WEIGHT] + m_scheduler->weight_offset_multi_chip[i%m_scheduler->weight_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::WEIGHT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::WEIGHT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
                     if(!m_scheduler->read_tile_granular_chip_weight[i%m_scheduler->weight_offset_multi_chip.size()]) {
                         // Update chip-level processor access cost
                         access_cycle[data_type_t::WEIGHT] += (chips[i]->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
@@ -1547,11 +1517,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::WEIGHT], offsets[data_type_t::WEIGHT] + m_scheduler->weight_offset_multi_chip[i%m_scheduler->weight_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::WEIGHT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::WEIGHT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
                     if(!m_scheduler->read_tile_granular_chip_weight[i%m_scheduler->weight_offset_multi_chip.size()]) {
                         // Update chip-level processor access cost
                         access_cycle[data_type_t::WEIGHT] += (chips[i]->tile_size[data_type_t::WEIGHT] - m_scheduler->num_zeros[data_type_t::WEIGHT])
@@ -1641,11 +1606,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                                chips[i]->offsets[data_type_t::WEIGHT], offsets[data_type_t::WEIGHT] + m_scheduler->weight_offset_multi_chip[i%m_scheduler->weight_offset_multi_chip.size()], 
                                                component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                                data_type_t::WEIGHT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                    // Update for NPUsim ver2
-                    //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                    //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                    //                                           data_type_t::WEIGHT, chips[i]->get_stationary_type(), 
-                    //                                           action_type_t::LOAD, false);
                    
                     if(!m_scheduler->read_tile_granular_chip_weight[i%m_scheduler->weight_offset_multi_chip.size()]) { 
                         // Update access cost of chip-level processor
@@ -1829,11 +1789,6 @@ void multi_chip_t::data_transfer(scheduler_t *m_scheduler) {
                                            chips[i]->offsets[data_type_t::OUTPUT], offsets[data_type_t::OUTPUT] + m_scheduler->output_offset_multi_chip[i%m_scheduler->output_offset_multi_chip.size()],
                                            component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
                                            data_type_t::OUTPUT, chips[i]->get_stationary_type(), action_type_t::LOAD);
-                // Update for NPUsim ver2
-                //m_scheduler->transfer_data_network_on_chip(chips[i]->data, data, 
-                //                                           component_type_t::GLOBAL_BUFFER, component_type_t::CHIPS_Y, 
-                //                                           data_type_t::OUTPUT, chips[i]->get_stationary_type(), 
-                //                                           action_type_t::LOAD, false);
             }
 #endif
 
