@@ -4,6 +4,40 @@
 #include "datatype.h"
 #include "interconnect_timing.h"
 #include <limits>
+#include <cstdlib>
+
+#ifdef NPUSIM_MOSAIC_DRAM
+#include <map>
+#include <utility>
+#include "dram/cosim_frontend.h"
+
+namespace {
+// DRAM nanoseconds to read (or write) `bytes` as one sequential stream through MOSAIC's
+// Ramulator2, pushed at full pressure on a fresh device. Memoized: the tiles of a layer
+// repeat the same sizes.
+double ramulator_ns(const std::string &yaml, size_t bytes, bool is_write) {
+    static std::map<std::pair<size_t, bool>, double> memo;
+    const std::pair<size_t, bool> key(bytes, is_write);
+    auto it = memo.find(key);
+    if(it != memo.end()) return it->second;
+    mosaicsim::CosimFrontend fe(yaml);
+    const size_t chunk = 64*fe.get_tx_bytes();   // CosimFrontend splits each push into tx-sized lines
+    size_t pos = 0, pushed = 0, done = 0;
+    while(pos < bytes || done < pushed) {
+        while(pos < bytes && !fe.full(is_write)) {
+            const size_t size = std::min(chunk, bytes - pos);
+            fe.push(static_cast<int64_t>(pos), is_write, static_cast<uint32_t>(size), &fe);
+            pos += size;
+            ++pushed;
+        }
+        fe.tick();
+        while(fe.return_queue_pop()) ++done;
+    }
+    while(!fe.is_idle()) fe.tick();
+    return memo[key] = fe.get_clk()*fe.get_tCK();
+}
+} // namespace
+#endif
 
 
 dram_t::dram_t(section_config_t m_section_config) :
@@ -192,6 +226,48 @@ void dram_t::init(section_config_t m_section_config) {
     memory = new memory_controller_t(dram_config, output_dir);
 #endif
 
+    if(const char *yaml = std::getenv("NPUSIM_MOSAIC_DRAM")) mosaic_dram_config = yaml;
+    if(!mosaic_dram_config.empty()) {
+#ifndef NPUSIM_MOSAIC_DRAM
+        std::cerr << "Error: NPUSIM_MOSAIC_DRAM is set but NPUsim was built without MOSAIC_ROOT" << std::endl;
+        exit(1);
+#endif
+#ifdef FUNCTIONAL
+        // Datapath-value layers count functional DRAM traffic per element, outside the tile streams.
+        std::cerr << "Error: NPUSIM_MOSAIC_DRAM needs the timing build (FUNCTIONAL=0)" << std::endl;
+        exit(1);
+#endif
+        if(frequency <= 0.0) {
+            std::cerr << "Error: NPUSIM_MOSAIC_DRAM needs a positive [dram] frequency" << std::endl;
+            exit(1);
+        }
+    }
+}
+
+dram_t::cycles_snapshot_t dram_t::snapshot(data_type_t type) const {
+    cycles_snapshot_t s = {access_cycle[type], transfer_cycle[type], cycle_chip_dram[type]};
+    return s;
+}
+
+// The analytical DRAM-side cycles of the stream (device accesses, link beats, row activations,
+// bus turnaround) are dropped and the Ramulator2 stream time, in DRAM-clock cycles, takes their
+// place on the link axis. Energy stays analytical. Tiles stream back to back, like the
+// throughput-bound analytical link: a run of copies of the tile, at least 1 MiB, is simulated
+// and the tile is charged its share, so a small tile does not pay a whole DRAM latency.
+// ponytail: the run is one contiguous region (no strided tile layouts, no other streams
+// interleaved); feed real tile addresses if that matters.
+void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, size_t elements,
+                           bool is_write, bool overlap, double sink_cycle) {
+#ifdef NPUSIM_MOSAIC_DRAM
+    if(mosaic_dram_config.empty()) return;
+    const size_t bytes = runtime_datatypes().storage_bytes(type, elements);
+    if(bytes == 0) return;
+    const size_t copies = std::max<size_t>(1, (1 << 20)/bytes);
+    const double cycles = ramulator_ns(mosaic_dram_config, copies*bytes, is_write)/copies*frequency/1e3;
+    access_cycle[type] = before.access;
+    transfer_cycle[type] = before.transfer + cycles;
+    if(overlap) cycle_chip_dram[type] = before.overlap + std::max(cycles, sink_cycle);
+#endif
 }
 
 
@@ -222,6 +298,10 @@ bool dram_t::is_idle() {
 // is the first: the model covers SEQUENTIAL, CONFLICT-FREE streams, and says so in the report
 // so nobody reads its bank parallelism as a conflict model.
 std::string dram_t::describe_timing_model() const {
+    if(!mosaic_dram_config.empty()) {
+        return "MOSAIC Ramulator2 (" + mosaic_dram_config + ") for tile streams;"
+               " KV-cache/SFU operand streams analytical";
+    }
     if(row_buffer_bytes == 0) {
         return "flat per-access (no row-buffer model)";
     }
@@ -234,6 +314,10 @@ std::string dram_t::describe_timing_model() const {
 }
 
 std::string dram_t::describe_timing_limits() const {
+    if(!mosaic_dram_config.empty()) {
+        return "strided tile layouts and interleaving of streams (tiles are timed as one"
+               " contiguous back-to-back stream)";
+    }
     if(row_buffer_bytes == 0) {
         return "row activations, bank/row state, queueing, turnaround, burst scheduling";
     }
@@ -283,6 +367,7 @@ void dram_t::account_row_activations(data_type_t type, size_t elements) {
 void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
     const datatype_transfer_timing_t timing = datatype_transfer_timing(
         type, elements, line_size[type], multi_chip->line_size[type], bitwidth);
+    const cycles_snapshot_t before = snapshot(type);
 
     num_data_transfer[type]++;
     payload_link_transactions[type] += timing.payload_link_transactions;
@@ -309,6 +394,8 @@ void dram_t::account_descriptor_dense_load(data_type_t type, size_t elements) {
             timing.groups, u_read_cycle[type], u_transfer_cycle,
             multi_chip->u_write_cycle[type]);
     }
+    mosaic_stream(before, type, elements, false, multi_chip->exist_temporal_buffer,
+                  timing.destination_accesses*multi_chip->u_write_cycle[type]);
     multi_chip->skip_transfer[type] = false;
 }
 

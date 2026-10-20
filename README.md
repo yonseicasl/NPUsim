@@ -56,6 +56,13 @@ To build a specific NPUsim module, it can be executed as follows.
 
     $ ./npusim.sh build <module>
 
+### MOSAIC DRAM co-simulation
+
+On the `mosaic` branch NPUsim is the MOSAIC submodule `simulator/3rd/npusim`. Building with `MOSAIC_ROOT` set (a MOSAIC checkout whose `simulator/build/lib/libramulator.so` is built) links MOSAIC's Ramulator2 bridge; a run with `NPUSIM_MOSAIC_DRAM` set to a MOSAIC DRAM config then times every DRAM tile stream (loads and output write-backs) with Ramulator2 instead of the `[dram]` unit costs. Energies and the KV-cache/SFU operand streams stay analytical, and the timing build (`FUNCTIONAL=0`) is required. The report's `DRAM timing model` line states which model ran.
+
+    $ MOSAIC_ROOT=/path/to/MOSAIC ./npusim.sh build all
+    $ NPUSIM_MOSAIC_DRAM=/path/to/MOSAIC/configs/architecture/dram/hb_dram_16ch.yaml ./npusim.sh run gemmini gemm_64x64x64 ws
+
 ## Runtime data formats
 
 Data precision is selected at runtime in the `[accelerator]` section. `data_format` applies to all tensors; `input_format`, `weight_format`, and `output_format` override it. Supported storage/accounting formats are `fp32`, `fp16`, `bf16`, `int8`, `int4`, `int2`, `uint8`, `mxfp8`, and `mxfp4`. MXFP uses 32-element blocks with an 8-bit shared scale, and its scale metadata is included in PE local-buffer capacity accounting.

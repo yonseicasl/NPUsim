@@ -111,6 +111,18 @@ if [[ $DRAMSIM3 -eq 1 ]]; then
     ccopt+=" -DDRAMSIM3"
 fi
 
+# MOSAIC co-simulation: MOSAIC_ROOT=<MOSAIC checkout with simulator/build/lib/libramulator.so built>
+# compiles MOSAIC's CosimFrontend into libnpusim.so; a run with NPUSIM_MOSAIC_DRAM=<MOSAIC DRAM YAML>
+# then simulates the DRAM tile streams with MOSAIC's Ramulator2 (components/dram.h).
+MOSAIC_ROOT=${MOSAIC_ROOT:-}
+if [[ -n $MOSAIC_ROOT ]]; then
+    mosaicsrc=$MOSAIC_ROOT/simulator/src
+    mosaiclib=$MOSAIC_ROOT/simulator/build/lib
+    mosaicobj=$libdir/obj/mosaic
+    ccopt+=" -DNPUSIM_MOSAIC_DRAM -I$mosaicsrc"
+    mopt+=" LIBEXTRA=\"$mosaicobj/cosim_frontend.o $mosaicobj/dram_config.o $mosaiclib/libramulator.so $mosaiclib/libfmt.a -Wl,-rpath,$mosaiclib\""
+fi
+
 
 # Build profile (functional-sim plan G8): -DFUNCTIONAL changes data_t, so timing and
 # functional objects compile into separate obj/<profile>/ trees (see library/Makefile).
@@ -174,7 +186,27 @@ function build_dramsim3 {
     cd $dramsim3dir; make libdramsim3.so
 }
 
+function build_mosaic_dram {
+    [[ -n $MOSAIC_ROOT ]] || return 0
+    if [[ ! -f $mosaiclib/libramulator.so ]]; then
+        echo "Error: $mosaiclib/libramulator.so not found; build MOSAIC's simulator first" >&2
+        exit 1
+    fi
+    echo -e "\n# Build the MOSAIC DRAM bridge ($MOSAIC_ROOT)"
+    mkdir -p $mosaicobj
+    # CosimFrontend is C++20 (Ramulator2 headers); its header, included by NPUsim, is C++11-clean.
+    for src in cosim_frontend dram_config; do
+        $cc -O3 -fPIC -w -std=c++20 -DMOSAIC_SIMULATOR_SRC=\"$mosaicsrc\" -I$mosaicsrc \
+            -I$mosaicsrc/dram/ramulator2/src -I$mosaicsrc/dram/ramulator2/ext/fmt/include \
+            -I$MOSAIC_ROOT/simulator/3rd/yaml-cpp/include \
+            -c $mosaicsrc/dram/$src.cpp -o $mosaicobj/$src.o || exit 1
+    done
+    # The library Makefile does not track these objects: relink so a changed MOSAIC is picked up.
+    rm -f $libdir/obj/$profile/$(basename $lib)
+}
+
 function build_lib {
+    build_mosaic_dram
     # Build NPUsim library
     echo -e "\n# Build NPUsim library"
     cd $libdir; eval $mflag $ccflag $std make

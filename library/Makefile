@@ -31,8 +31,9 @@ default: install
 install: $(LIBARTIFACT)
 	@cmp -s $(LIBARTIFACT) $(LIB) 2>/dev/null || cp -f $(LIBARTIFACT) $(LIB)
 
+# LIBEXTRA: objects and libraries linked in as well (npusim.sh: the MOSAIC DRAM bridge).
 $(LIBARTIFACT): $(CCOBJ)
-	$(CC) -g -shared -Wl,-soname,$(LIB) -o $@ $(CCOBJ)
+	$(CC) -g -shared -Wl,-soname,$(LIB) -o $@ $(CCOBJ) $(LIBEXTRA)
 
 $(FLAGSTAMP): FORCE
 	@mkdir -p $(OBJDIR)

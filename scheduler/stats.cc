@@ -4280,9 +4280,14 @@ void stats_t::print_results(std::ofstream &m_output_file) {
     // for the analytical path -- those come from the declared [dram] keys and from nowhere else. So
     // a config naming an HBM2 part and a config naming a DDR3 part are charged identically unless
     // their keys differ, and the device name must not be read as provenance for the numbers.
-    m_output_file << "DRAM cost provenance  : the [dram] unit costs, verbatim. `dram_config` selects"
-                  << " a DRAMsim3 device model in a -DDRAMSIM3 build only and derives no cost here"
-                  << std::endl;
+    if(dram_timing_model.compare(0, 6, "MOSAIC") == 0) {
+        m_output_file << "DRAM cost provenance  : tile-stream cycles from MOSAIC's Ramulator2;"
+                      << " energies and the other cycles from the [dram] unit costs" << std::endl;
+    } else {
+        m_output_file << "DRAM cost provenance  : the [dram] unit costs, verbatim. `dram_config` selects"
+                      << " a DRAMsim3 device model in a -DDRAMSIM3 build only and derives no cost here"
+                      << std::endl;
+    }
     m_output_file << "  not modeled here    : " << dram_timing_limits << std::endl;
     m_output_file << "# of data transfer to multi chip (loads)" << std::endl;
     m_output_file << " * Input data         :" << std::setw(18)

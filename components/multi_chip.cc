@@ -612,6 +612,7 @@ void multi_chip_t::account_output_writeback_to_dram() {
     const datatype_transfer_timing_t timing = datatype_transfer_timing(
         data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], line_size[data_type_t::OUTPUT],
         dram->line_size[data_type_t::OUTPUT], dram->get_bitwidth());
+    const dram_t::cycles_snapshot_t before = dram->snapshot(data_type_t::OUTPUT);
     access_cycle[data_type_t::OUTPUT] += timing.source_accesses*u_read_cycle[data_type_t::OUTPUT];
     access_energy[data_type_t::OUTPUT] += timing.source_accesses*u_read_energy[data_type_t::OUTPUT];
     dram->access_cycle[data_type_t::OUTPUT] += timing.destination_accesses*dram->u_write_cycle[data_type_t::OUTPUT];
@@ -620,6 +621,9 @@ void multi_chip_t::account_output_writeback_to_dram() {
     dram->transfer_cycle[data_type_t::OUTPUT] += dram->u_transfer_cycle*timing.link_transactions;
     dram->transfer_energy[data_type_t::OUTPUT] += dram->u_transfer_energy*timing.link_transactions;
     dram->account_row_activations(data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT]);
+    // L8: an output write-back drives the bus in the write direction.
+    dram->account_bus_turnaround(data_type_t::OUTPUT, true);
+    dram->mosaic_stream(before, data_type_t::OUTPUT, tile_size[data_type_t::OUTPUT], true, true, 0.0);
     // RE1: the output is committed in OUTPUT precision here, exactly once per element (DR6/T1), so
     // this is where the final cast/pack is charged.
     // Phase-2 (plan_sfu.md): ... and therefore where a final_output_tile event fires --
@@ -635,8 +639,6 @@ void multi_chip_t::account_output_writeback_to_dram() {
         output_cast_cycle += cast_cycles;
         write_back_cycle += cast_cycles;
     }
-    // L8: an output write-back drives the bus in the write direction.
-    dram->account_bus_turnaround(data_type_t::OUTPUT, true);
     dram->payload_link_transactions[data_type_t::OUTPUT] += timing.payload_link_transactions;
     dram->metadata_link_transactions[data_type_t::OUTPUT] += timing.metadata_link_transactions;
     dram->storage_link_transactions[data_type_t::OUTPUT] += timing.link_transactions;

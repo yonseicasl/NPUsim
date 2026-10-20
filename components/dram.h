@@ -120,6 +120,17 @@ public:
     // L8: what the analytical model does NOT capture, for the report.
     std::string describe_timing_limits() const;
 
+    // MOSAIC co-simulation ($NPUSIM_MOSAIC_DRAM = a MOSAIC DRAM YAML, build with MOSAIC_ROOT set):
+    // MOSAIC's Ramulator2 replaces the analytical DRAM-side cycles of every dense tile stream
+    // (DRAM loads and output write-backs). Take a snapshot before the analytical accounting of a
+    // stream, then call mosaic_stream(); it is a no-op without $NPUSIM_MOSAIC_DRAM.
+    struct cycles_snapshot_t { double access, transfer, overlap; };
+    cycles_snapshot_t snapshot(data_type_t type) const;
+    // overlap: the stream feeds cycle_chip_dram, which becomes max(DRAM stream, sink_cycle).
+    void mosaic_stream(const cycles_snapshot_t &before, data_type_t type, size_t elements,
+                       bool is_write, bool overlap, double sink_cycle);
+    std::string mosaic_dram_config;
+
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory
 
