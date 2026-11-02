@@ -217,6 +217,12 @@ public:
     //     GLB's shared/separate port rule (T10).
     bool writeback_injection_parallel;
     bool array_fabric_separate;
+    //   streams_pipelined -- the array's distribution and write-back streams flow tile after tile
+    //     without draining (weight registers double-buffered, as in a TPU MXU), so neither the
+    //     route-depth fill per transfer (the GLB's streams_pipelined rule) nor the analytical
+    //     accumulation drain per weight tile is charged. false = charge both. A calibrated
+    //     weight_fold_fill_cycle still applies.
+    bool streams_pipelined;
     void set_psum_retention_scope(scheduler_t *m_scheduler);
 
     // E20-3b: one psum store into the GLB, and the end-of-layer flush of the last resident tile.

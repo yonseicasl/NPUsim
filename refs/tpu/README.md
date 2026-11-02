@@ -82,6 +82,8 @@ PaLM 62B (Table 3)
 | High-throughput | Prefill | 32 | 512 | WG XYZ | Batch | bf16 | 73% | 20.2 s |
 | High-throughput | Decode | 8 | 512 | WS 2D | Batch | bf16 | 37% | 5.1 s |
 
+NPUsim 비교: `validation/palm/` (decode 4점, 결과와 해석은 그 README).
+
 본문: 540B, 64칩, batch 64 decode는 int8 28.5 ms/token, bf16 36.9 ms/token. 모델 하이퍼파라미터는
 Table D.1. 다중 칩 분할(partitioning)과 ICI 통신이 포함된 값이므로 단일 칩 모델과 비교하려면
 분할 방식과 통신을 함께 모델링해야 한다.

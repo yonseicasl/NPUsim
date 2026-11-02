@@ -526,8 +526,8 @@ public:
     // accumulator at the array edge. Reported on the array's row, not the PE's.
     double pe_array_accumulator_energy;
 
-    std::vector<unsigned> num_request_pe;                               // Number of request to local buffer of PE.
-    std::vector<unsigned> num_data_transfer_pe;                         // Number of data transfer to MAC unit of PE.
+    std::vector<size_t> num_request_pe;                                 // Number of request to local buffer of PE.
+    std::vector<size_t> num_data_transfer_pe;                           // Number of data transfer to MAC unit of PE.
 
     std::vector<double> access_cycle_mac;                               // Total access cycle to MAC unit of PE.
     std::vector<double> max_access_cycle_mac;
@@ -555,8 +555,8 @@ public:
     std::vector<double> static_energy_pe_array;                         // Static (leakage) energy of the PE-array temporal buffer
 
     /* PE array */
-    std::vector<unsigned> num_request_pe_array;                         // Number of request to PE array (from PE).
-    std::vector<unsigned> num_data_transfer_pe_array;                   // Number of data transfer from PE array (to PE).
+    std::vector<size_t> num_request_pe_array;                           // Number of request to PE array (from PE).
+    std::vector<size_t> num_data_transfer_pe_array;                     // Number of data transfer from PE array (to PE).
 
     std::vector<double> access_cycle_pe_array;                          // Total access cycle to PE array.
     std::vector<double> access_energy_pe_array;                         // Total access energy to PE array.
@@ -648,8 +648,8 @@ public:
     // partial rollup as an end-to-end network latency.
     unsigned network_timing_layers;
     unsigned excluded_timing_layers;
-    std::vector<unsigned> num_request_global_buffer;                    // Number of request to global buffer (from PE array).
-    std::vector<unsigned> num_data_transfer_global_buffer;              // Number of data transfer from global buffer (to PE array).
+    std::vector<size_t> num_request_global_buffer;                      // Number of request to global buffer (from PE array).
+    std::vector<size_t> num_data_transfer_global_buffer;                // Number of data transfer from global buffer (to PE array).
     size_t psum_writeback_events_global_buffer;                        // E20-3b: psum stores (PE array -> GLB); its twin load is num_data_transfer_global_buffer[OUTPUT].
     // Link transactions are reported as logical payload/metadata and physical storage streams.
     std::vector<size_t> payload_link_transactions_global_buffer;
@@ -670,8 +670,8 @@ public:
     std::vector<double> static_energy_global_buffer;                    // Static energy the global buffer
 
     /* Multi chip */
-    std::vector<unsigned> num_request_multi_chip;                       // Number of request to Multi-chip (from global buffer).
-    std::vector<unsigned> num_data_transfer_multi_chip;                 // Number of data transfer from Multi-chip (to global buffer).
+    std::vector<size_t> num_request_multi_chip;                         // Number of request to Multi-chip (from global buffer).
+    std::vector<size_t> num_data_transfer_multi_chip;                   // Number of data transfer from Multi-chip (to global buffer).
     std::vector<size_t> payload_link_transactions_multi_chip;
     std::vector<size_t> metadata_link_transactions_multi_chip;
     std::vector<size_t> storage_link_transactions_multi_chip;
@@ -686,8 +686,8 @@ public:
     std::vector<double> static_energy_multi_chip;                       // Static (leakage) energy of the Multi-chip temporal buffer.
 
     /* DRAM */
-    std::vector<unsigned> num_request_dram;                             // Number of request to DRAM (from Multi-chip).
-    std::vector<unsigned> num_data_transfer_dram;                       // Number of data transfer from DRAM (to Multi-chip).
+    std::vector<size_t> num_request_dram;                               // Number of request to DRAM (from Multi-chip).
+    std::vector<size_t> num_data_transfer_dram;                         // Number of data transfer from DRAM (to Multi-chip).
     std::vector<size_t> payload_link_transactions_dram;
     std::vector<size_t> metadata_link_transactions_dram;
     std::vector<size_t> storage_link_transactions_dram;

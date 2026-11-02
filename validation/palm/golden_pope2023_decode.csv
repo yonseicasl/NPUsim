@@ -1,0 +1,5 @@
+model,chips,batch,weights,mfu,latency_s_64_tokens,source
+palm540b,64,64,int8,0.14,1.82,Pope et al. MLSys 2023 Table 2 (low-latency decode)
+palm540b,64,512,bf16,0.33,6.0,Pope et al. MLSys 2023 Table 2 (high-throughput decode)
+palm62b,16,32,int8,0.08,0.73,Pope et al. MLSys 2023 Table 3 (low-latency decode)
+palm62b,8,512,bf16,0.37,5.1,Pope et al. MLSys 2023 Table 3 (high-throughput decode)

@@ -25,6 +25,7 @@ pe_array_t::pe_array_t(section_config_t /*m_section_config*/) :
     u_layer_setup_cycle(0.0),
     writeback_injection_parallel(false),
     array_fabric_separate(false),
+    streams_pipelined(false),
     u_stripe_transition_cycle(0.0),
     u_stripe_transition_energy(0.0),
     stripe_transitions(0),
@@ -140,6 +141,7 @@ void pe_array_t::initialize_temporal_buffer(section_config_t m_section_config) {
     m_section_config.get_setting("layer_setup_cycle", &u_layer_setup_cycle);
     m_section_config.get_setting("writeback_injection_parallel", &writeback_injection_parallel);
     m_section_config.get_setting("array_fabric_separate", &array_fabric_separate);
+    m_section_config.get_setting("streams_pipelined", &streams_pipelined);
     m_section_config.get_setting("stripe_transition_cycle", &u_stripe_transition_cycle);
     m_section_config.get_setting("stripe_transition_energy", &u_stripe_transition_energy);
     // V3: array-edge output accumulation (Gemmini-style accumulator).
@@ -178,6 +180,7 @@ double pe_array_t::modeled_elapsed_cycles() const {
 void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
                                                         double link_cycle, double link_energy,
                                                         double link_fill_cycles) {
+    if(streams_pipelined) link_fill_cycles = 0.0;
     if(m_scheduler->compression_type != compression_type_t::DENSE) {
         std::cerr << "Error: timing PE array supports dense descriptor traffic only" << std::endl;
         exit(1);
@@ -247,14 +250,14 @@ void pe_array_t::account_descriptor_dense_distribution(scheduler_t *m_scheduler,
                         static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT]);
                     fold_fill_cycle += u_weight_fold_fill_cycle*folds;
                     weight_fold_events += folds;
-                } else {
+                } else if(!streams_pipelined) {   // double-buffered weights switch without a drain
                     fold_fill_cycle += weight_fold_bubble_cycles();
                     if(weight_fold_bubble_cycles() > 0.0) weight_fold_events += 1.0;
                 }
                 weight_fold_energy += u_weight_fold_fill_energy*
                     (u_weight_fold_fill_cycle > 0.0
                         ? static_cast<double>(pes[0]->tile_size_lb[data_type_t::WEIGHT])
-                        : (weight_fold_bubble_cycles() > 0.0 ? 1.0 : 0.0));
+                        : (!streams_pipelined && weight_fold_bubble_cycles() > 0.0 ? 1.0 : 0.0));
             }
             // PA1: operands shared by several PEs are read from the temporal buffer and
             // streamed over the fabric ONCE -- the array-level tile is the distinct data
@@ -354,7 +357,7 @@ void pe_array_t::account_descriptor_dense_writeback(pe_t *source_pe, size_t elem
     const spatial_noc_cost_t topology_cost = spatial_noc_cost(writeback_noc_type(), num_active_pe_y, num_active_pe_x,
                                                        /* multicast = */ false);
     const double topology_energy = noc_energy*topology_cost.link_traversals;
-    const double link_fill_cycles = topology_cost.latency_fill_hops*noc_cycle;
+    const double link_fill_cycles = streams_pipelined ? 0.0 : topology_cost.latency_fill_hops*noc_cycle;
     // Parallel injection: the per-PE write-back links operate simultaneously, so the pass's
     // wall time is ONE PE's stream, not the concatenation of all of them. Charging it on the
     // first PE's call (every active pass includes pes[0]) gives exactly max-over-PEs time.
