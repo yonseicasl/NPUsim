@@ -89,16 +89,22 @@ def run_gemm(args):
     return float(re.search(r"Critical-path latency\s*:\s*([\d.]+)", text).group(1)) / CLOCK_HZ
 
 
-def main():
-    golden = list(csv.DictReader(open(os.path.join(HERE, "golden_pope2023_decode.csv"))))
+def workdir(accels):
+    """(tmp, config root, run dir) holding copies of configs/accelerators/<accels>.cfg."""
     tmp = tempfile.mkdtemp(prefix="palm_")
     cfgroot, rundir = os.path.join(tmp, "configs"), os.path.join(tmp, "run")
     for d in ("accelerators", "networks", "mappings"):
         os.makedirs(os.path.join(cfgroot, d))
     os.makedirs(os.path.join(rundir, "weights"))
     os.symlink(os.path.join(ROOT, "models", "datasets"), os.path.join(rundir, "datasets"))
-    for a in ("tpu_v4", "tpu_v4_int8w"):
+    for a in accels:
         shutil.copy(os.path.join(ROOT, "configs", "accelerators", f"{a}.cfg"), os.path.join(cfgroot, "accelerators"))
+    return tmp, cfgroot, rundir
+
+
+def main():
+    golden = list(csv.DictReader(open(os.path.join(HERE, "golden_pope2023_decode.csv"))))
+    tmp, cfgroot, rundir = workdir(("tpu_v4", "tpu_v4_int8w"))
 
     cases, jobs = [], []
     for g in golden:
