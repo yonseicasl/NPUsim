@@ -41,3 +41,6 @@ validation/fidelity/fidelity_report.csv
 library/obj/
 models/obj/
 models/weights/*.wgh
+
+# Reference PDFs (refs/*/fetch.sh downloads them)
+refs/*/pdf/
