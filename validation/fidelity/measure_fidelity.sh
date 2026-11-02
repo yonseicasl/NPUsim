@@ -36,6 +36,7 @@ log "running Gemmini 16x16 WS GEMM points ..."
 for w in gemm_64x64x64 gemm_128x128x128 gemm_256x256x256 \
          gemm_16x512x512 gemm_512x512x64 gemm_512x512x512; do
     ./npusim.sh run gemmini "$w" ws >/dev/null
+    ./npusim.sh run gemmini_rtl "$w" ws >/dev/null   # critical path vs the same RTL golden
 done
 log "running Eyeriss AlexNet (silicon reference) ..."
 ./npusim.sh run eyeriss alexnet silicon >/dev/null
@@ -57,6 +58,7 @@ done
 
 log "comparing against Gemmini RTL / Eyeriss silicon golden ..."
 cyc_out=$(python3 validation/check_timing.py --check-baseline 2>&1 || true)
+crit_out=$(python3 validation/phase2/check_critical_path.py gemmini_rtl 2>&1 || true)
 
 log "comparing against NVDLA nv_small RTL golden ..."
 nvdla_out=$(python3 validation/nvdla/compare_full.py 2>&1 || true)
@@ -66,6 +68,7 @@ python3 - "$here" <<PY
 import os, re, sys, csv
 here = sys.argv[1]
 cyc = """$cyc_out"""
+crit = """$crit_out"""
 nv  = """$nvdla_out"""
 
 def mape_max(text, label):
@@ -76,6 +79,9 @@ rows = []
 g = mape_max(cyc, "Gemmini RTL:")
 rows.append(["Gemmini",  "16x16", "weight-stationary", "Gemmini RTL (Verilator, 6 GEMM)",
              "cycles", g[0], g[1]])
+c = mape_max(crit, "Gemmini critical path")
+rows.append(["Gemmini",  "16x16", "weight-stationary", "same RTL, memory-inclusive critical path (gemmini_rtl)",
+             "crit", c[0], c[1]])
 e = mape_max(cyc, "Eyeriss silicon latency:")
 rows.append(["Eyeriss",  "12x14", "row-stationary",    "silicon (AlexNet)",
              "latency", e[0], e[1]])

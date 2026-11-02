@@ -1,0 +1,36 @@
+diff --git a/models/networks/convolutional.cc b/models/networks/convolutional.cc
+index bd1335a..a24ea06 100644
+--- a/models/networks/convolutional.cc
++++ b/models/networks/convolutional.cc
+@@ -330,8 +330,11 @@ void convolutional_t::load_data(const unsigned m_batch_index) {
+                     }
+                 }
+ 
+-                for(unsigned i = 0; i < height * width; i++) {
+-                    cv::swap(data[i], data[i + 2 * width * height]);
++                // BGR -> RGB; a 1-channel image has no third plane to swap with.
++                if(channel == 3) {
++                    for(unsigned i = 0; i < height * width; i++) {
++                        cv::swap(data[i], data[i + 2 * width * height]);
++                    }
+                 }
+ 
+                 memcpy(input_data + i * input_size, data,
+diff --git a/models/networks/fully_connected.cc b/models/networks/fully_connected.cc
+index 77fe1c2..e497a2b 100644
+--- a/models/networks/fully_connected.cc
++++ b/models/networks/fully_connected.cc
+@@ -325,8 +325,11 @@ void fully_connected_t::load_data(const unsigned m_batch_index) {
+                     }
+                 }
+ 
+-                for(unsigned i = 0; i < height * width; i++) {
+-                    cv::swap(data[i], data[i + 2 * width * height]);
++                // BGR -> RGB; a 1-channel image has no third plane to swap with.
++                if(channel == 3) {
++                    for(unsigned i = 0; i < height * width; i++) {
++                        cv::swap(data[i], data[i + 2 * width * height]);
++                    }
+                 }
+ 
+                 memcpy(input_data + i * input_size, data,

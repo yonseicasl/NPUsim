@@ -167,6 +167,10 @@ function build_nebula {
         cd $extdir; git clone --branch npusim --single-branch https://github.com/yonsei-icsl/nebula
     fi
     pin_dependency "$nebuladir" npusim "origin/npusim"
+    # Local Nebula fix (until upstream): the BGR->RGB swap of the input loader ran on 1-channel
+    # inputs too, writing past the image buffer (heap corruption on every channels=1 network).
+    git -C "$nebuladir" apply --reverse --check "$npusimdir/patches/nebula-gray-input.patch" 2>/dev/null \
+        || git -C "$nebuladir" apply "$npusimdir/patches/nebula-gray-input.patch" || exit 1
 
     # Build Nebula library
     echo -e "\n# Build Nebula software framework"

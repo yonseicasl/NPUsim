@@ -73,6 +73,34 @@ setup 지배) — double-buffered DMA가 compute를 완전히 숨기는 것으�
    해제해 Gemmini의 edge-accumulator weight residency(`b_pe=M`)를 매핑으로 표현
    — weight 재스트리밍 3~4× 과대 문제 해소, fold 수가 RTL과 일치하게 됨.
 
+## Critical path (메모리 포함) vs 같은 RTL golden
+
+RTL golden은 DMA를 포함한 `tiled_matmul_auto` 전 구간이므로, 위 compute-schedule만이 아니라
+메모리를 포함한 `Critical-path latency`도 같은 값과 비교된다
+(`python3 validation/phase2/check_critical_path.py [accelerator]`, `measure_fidelity.sh`의 `crit` 행).
+
+| config | critical path MAPE | max |
+|---|---|---|
+| `gemmini.cfg` | 1,866% | +2,625% |
+| `gemmini_rtl.cfg` | 47.6% | +111% (16×512×512) |
+
+`gemmini.cfg`는 PE마다 출력 write-back을 공유 매체에 직렬로 싣고 그때마다 메시 경로 fill
+(16×16에서 ~30 hop)을 다시 과금하며, `[dram]`이 Eyeriss 값(1 B 라인 × 3 cycle)이라
+critical path가 RTL의 15~27배다. `gemmini_rtl.cfg`는 compute schedule을 바꾸지 않는 구조
+선언만 RTL 소스에서 가져와 더한다(NVDLA의 2026-08-26 array streaming granularity와 같은
+옵션): 열별 병렬 출력과 분리된 A/B/C 배선(`writeback_injection_parallel`,
+`array_fabric_separate`, `operand_streams_pipelined`), scratchpad와 accumulator의 분리
+SRAM(`fabric_separate`, `streams_pipelined`), DMA `dma_buswidth=128`(128-bit beat/cycle)과
+`max_in_flight_mem_reqs=16`. 매핑은 `gemmini`와 공유한다.
+
+남은 오차: (1) multi-chip → GLB 경계가 단일 버퍼라 두 단계가 타일마다 직렬로 합산된다
+(16×512×512: 34,816 + 32,768 ≈ 68,660). RTL의 WS `tiled_matmul_auto`는 scratchpad와
+accumulator를 반으로 나눠 double buffering하지만(`gemmini.h`, `double_buffered = WS`),
+`[separate] double_buffer = 1`은 GLB 용량을 절반으로 계산해 256³ 이상의 기존 매핑(accumulator
+64 KB 전체 사용)을 거부한다. 매핑을 32 KB 기준으로 다시 만들면 fold 수가 바뀌어 compute
+schedule 보정(fill 14, setup 2,270)을 다시 해야 한다. (2) 큰 타일의 파이프라인 fill.
+M=1 decode GEMV는 RTL 점이 없어 검증 범위 밖이다.
+
 ## 인프라 트러블슈팅 기록 (재현자 참고)
 
 1. **머신의 산발적 데이터 손상**: 대용량 HTTPS 다운로드 바이트 플립(동일 크기·
