@@ -79,8 +79,11 @@ rows = []
 g = mape_max(cyc, "Gemmini RTL:")
 rows.append(["Gemmini",  "16x16", "weight-stationary", "Gemmini RTL (Verilator, 6 GEMM)",
              "cycles", g[0], g[1]])
+s = mape_max(crit, "Gemmini compute schedule")
+rows.append(["Gemmini",  "16x16", "weight-stationary", "same RTL, gemmini_rtl (RTL tiling, refit fold fill)",
+             "cycles", s[0], s[1]])
 c = mape_max(crit, "Gemmini critical path")
-rows.append(["Gemmini",  "16x16", "weight-stationary", "same RTL, memory-inclusive critical path (gemmini_rtl)",
+rows.append(["Gemmini",  "16x16", "weight-stationary", "same RTL, gemmini_rtl memory-inclusive critical path",
              "crit", c[0], c[1]])
 e = mape_max(cyc, "Eyeriss silicon latency:")
 rows.append(["Eyeriss",  "12x14", "row-stationary",    "silicon (AlexNet)",

@@ -18,7 +18,7 @@ consolidated table (also written to `fidelity_report.csv`).
 | config | array | dataflow | reference (golden) | metric | result |
 |---|---|---|---|---|---|
 | **Gemmini** | 16×16 | weight-stationary | Chipyard `GemminiRocketConfig`, Verilator cycle-exact RTL, 6 GEMM points (`validation/phase2/`) | cycles | MAPE 4.40% / max 7.86% |
-| **Gemmini** (`gemmini_rtl`) | 16×16 | weight-stationary | same RTL, memory-inclusive critical path (`validation/phase2/check_critical_path.py`) | critical path | MAPE 47.6% / max +111% (`gemmini.cfg`: 1,866%) |
+| **Gemmini** (`gemmini_rtl`) | 16×16 | weight-stationary | same RTL; RTL tiling and refit fold fill (`validation/phase2/check_critical_path.py`) | cycles / critical path | MAPE 9.7% / max 11.8%; critical path MAPE 11.0% / max +18.9% (`gemmini.cfg`: 1,866%) |
 | **Eyeriss** | 12×14 | row-stationary | published silicon latency, AlexNet (`validation/phase3/`) | latency | MAPE 4.26% / max 6.39% |
 | **NVDLA** | nv_small | — | official `dc_*` RTL traces, CRC-verified, cycle **holdout** + DRAM traffic (`validation/nvdla/`) | cycles | MAPE 0.55% / max 0.75% |
 

@@ -6,12 +6,59 @@ mirroring Gemmini's 16x16 WS array.
 - mapping: WS, 16x16 filled with PE_X=K16 / PE_Y=C16, B kept inner (PE temporal)
   so weights are reused across the batch like Gemmini's WS schedule.
 - weights: zero-filled bias[N] + weight[K*N] floats.
-Usage: gen_workload.py M K N  ->  net gemm_MxKxN, mapping ws.map
+Usage: gen_workload.py [--rtl] M K N  ->  net gemm_MxKxN, mapping ws.map
+  --rtl: the gemmini_rtl mapping instead (rtl_rows below), under configs/mappings/gemmini_rtl.
 """
-import os, sys
+import math, os, sys
 
 DIM = 16
 ROOT = os.path.dirname(os.path.abspath(__file__)) + "/../.."
+
+# Gemmini RTL (GemminiRocketConfig, DIM=16): 256 KB scratchpad in 4 banks, 64 KB accumulator.
+BANK_NUM, BANK_ROWS, ACC_ROWS = 4, 4096, 1024
+
+def rtl_tiles(m, k, n):
+    """(tile_I, tile_J, tile_K) in DIM blocks, as gemmini.h tiled_matmul_auto picks them for WS:
+    scratchpad and accumulator double-buffered (halves), then grown greedily J, I, K."""
+    spad = lambda i, j, kk: (i * kk + kk * j) * DIM
+    acc = lambda i, j: i * j * DIM
+    max_spad, max_acc = BANK_NUM * BANK_ROWS // 2, ACC_ROWS // 2
+    max_ij = int(math.sqrt(max_acc // DIM))
+    max_k = (max_spad // 2 // DIM) // max_ij
+    di, dj, dk = -(-m // DIM) * DIM, -(-n // DIM) * DIM, -(-k // DIM) * DIM
+    ti, tj, tk = min(di // DIM, max_ij), min(dj // DIM, max_ij), min(dk // DIM, max_k)
+    while True:
+        grown = False
+        if spad(ti, tj + 1, tk) <= max_spad and acc(ti, tj + 1) <= max_acc and (tj + 1) * DIM <= dj:
+            tj += 1; grown = True
+        if spad(ti + 1, tj, tk) <= max_spad and acc(ti + 1, tj) <= max_acc and (ti + 1) * DIM <= di:
+            ti += 1; grown = True
+        if spad(ti, tj, tk + 1) <= max_spad and (tk + 1) * DIM <= dk:
+            tk += 1; grown = True
+        if not grown:
+            return ti, tj, tk
+
+def largest_divisor(total, cap):
+    return max(d for d in range(1, min(total, cap) + 1) if total % d == 0)
+
+def rtl_rows(m, k, n):
+    """gemmini_rtl mapping: the RTL's i0 (rows of A) and j0 (weight-column blocks) tiles at the GLB,
+    so weights are preloaded once per (i0, j, k) block as in the RTL (folds = I0 * N/16 * K/16).
+    NPUsim tiles split a dimension evenly: the largest divisor not above the RTL tile is used
+    (512^3: 64 rows, I0 = 8, where the RTL runs 7 tiles of up to 80 rows)."""
+    ti, tj, _ = rtl_tiles(m, k, n)
+    b = largest_divisor(m, ti * DIM)
+    j = largest_divisor(n // DIM, tj)
+    return {
+        "MAC":     [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1],
+        "PE":      [j, b, 1, 1, 1, 1, 1, 0, 0, 1, 1],
+        "PE_X":    [DIM, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1],
+        "PE_Y":    [1, 1, 1, 1, DIM, 1, 1, 0, 0, 1, 1],
+        "GLB":     [n // DIM // j, m // b, 1, 1, k // DIM, 1, 1, 0, 0, 1, 1],
+        "CHIPS_X": [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1],
+        "CHIPS_Y": [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1],
+        "DRAM":    [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1],
+    }
 
 def factor_hw(k):
     h = 1
@@ -20,7 +67,7 @@ def factor_hw(k):
             return cand, k // cand
     return 1, k
 
-def emit(m, k, n):
+def emit(m, k, n, rtl=False):
     name = f"gemm_{m}x{k}x{n}"
     assert m % 1 == 0 and k % DIM == 0 and n % DIM == 0, "K,N must be multiples of 16"
     h, w = factor_hw(k)
@@ -86,8 +133,11 @@ type=l2
     tot_c = DIM * c_glb
     assert tot_k == n and tot_b == m and tot_c == k, (tot_k, tot_b, tot_c)
 
-    os.makedirs(f"{ROOT}/configs/mappings/gemmini/{name}", exist_ok=True)
-    with open(f"{ROOT}/configs/mappings/gemmini/{name}/ws.map", "w") as f:
+    accelerator = "gemmini_rtl" if rtl else "gemmini"
+    if rtl:
+        rows = rtl_rows(m, k, n)
+    os.makedirs(f"{ROOT}/configs/mappings/{accelerator}/{name}", exist_ok=True)
+    with open(f"{ROOT}/configs/mappings/{accelerator}/{name}/ws.map", "w") as f:
         f.write("# K, B, P, Q, C, R, S, H, W, GROUP, STRIDE\n\n[connected]\n")
         f.write(f"# {n}, {m}, 1, 1, {k}, 1, 1, 0, 0, 1, 1,\n")
         for lv, r in rows.items():
@@ -97,12 +147,14 @@ type=l2
     n_floats = n + k * n
     with open(f"{ROOT}/models/weights/{name}.wgh", "wb") as f:
         f.write(b"\x00" * (4 * n_floats))
-    print(f"{name}: h*w={h}x{w}, PE(B{b_pe},K{k_pe}), GLB(K{max(1,k_glb)},B{b_glb},C{c_glb})")
+    print(f"{name} ({accelerator}): PE {rows['PE'][:2]} (K, B), GLB {rows['GLB'][:2]} (K, B), DRAM {rows['DRAM'][0]} (K)")
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4:
-        emit(int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]))
+    rtl = "--rtl" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--rtl"]
+    if len(args) == 3:
+        emit(int(args[0]), int(args[1]), int(args[2]), rtl)
     else:
         for m, k, n in [(64,64,64),(128,128,128),(256,256,256),(512,512,512),
                         (16,512,512),(512,512,64)]:
-            emit(m, k, n)
+            emit(m, k, n, rtl)
