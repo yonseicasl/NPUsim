@@ -1,0 +1,8 @@
+m,k,n,rtl_cycles,source
+64,64,64,4148,GemminiRocketConfig Verilator +dramsim gemm_sweep_cold read_cycles (cold L2)
+128,128,128,12412,GemminiRocketConfig Verilator +dramsim gemm_sweep_cold read_cycles (cold L2)
+256,256,256,74327,GemminiRocketConfig Verilator +dramsim gemm_sweep_cold read_cycles (cold L2)
+16,512,512,49892,GemminiRocketConfig Verilator +dramsim gemm_sweep_cold read_cycles (cold L2)
+512,512,64,76610,GemminiRocketConfig Verilator +dramsim gemm_sweep_cold read_cycles (cold L2)
+16,16,16384,112929,GemminiRocketConfig Verilator +dramsim gemm_sweep_cold read_cycles (cold L2; memory-bound)
+16,16,65536,789328,GemminiRocketConfig Verilator +dramsim gemm_sweep_cold read_cycles (cold L2; memory-bound; footprint > L2)

@@ -112,6 +112,37 @@ schedule max 12%, critical path max 20%)는 이 수준의 회귀 방지선이다
 행 수로 모델링하려면 행 수를 바꾼 RTL 점이 더 필요하다. M=1 decode GEMV는 RTL 점이 없어
 검증 범위 밖이다.
 
+## Cold-L2 RTL 재측정과 DRAM 경로 (2026-11-02)
+
+위 golden(`gemm_sweep.c`)은 6점이 같은 A/B/C를 재사용해 첫 점 이후 트래픽 일부가 512 KB L2에
+맞고, 6점이 모두 연산 바운드라 DRAM 모델을 검증하지 않는다. `gemm_sweep_cold.c`는 점마다 한 번도
+접근하지 않은 버퍼를 써서(bare-metal crt는 .bss를 지우지 않는다) 모든 DMA 읽기가 L2 miss로 SimDRAM
+(DRAMSim2 DDR3-1333, `+dramsim`)에 가게 하고, K = 16인 메모리 바운드 2점을 더했다. RTL은
+GemminiRocketConfig Verilator(코어·버스 500 MHz, L2 ↔ SimDRAM AXI 64 bit)를 Ubuntu 24.04 컨테이너에서
+돌렸다(`rtl_cycles_cold.txt`, `golden_rtl_cycles_cold.csv`).
+
+NPUsim은 `compare_cold.py`로 세 설정을 비교한다: A `gemmini_rtl`, B `gemmini_rtl_mem`(500 MHz, 64-bit
+메모리 포트), C = B + MOSAIC Ramulator2 `ddr3_1333_simdram.yaml`(SimDRAM과 같은 DDR3, 순차 스트림
+10.4 GB/s; NPUsim을 MOSAIC_ROOT로 빌드).
+
+| M x K x N | RTL warm | RTL cold | A | B | C |
+|---|---|---|---|---|---|
+| 64x64x64 | 3,810 | 4,148 | +2.5% | +5.6% | +5.1% |
+| 128x128x128 | 10,530 | 12,412 | +0.8% | +1.9% | +1.7% |
+| 256x256x256 | 69,653 | 74,327 | +5.8% | +6.0% | +6.0% |
+| 16x512x512 | 32,506 | 49,892 | -41.4% | -28.9% | -28.9% |
+| 512x512x64 | 74,413 | 76,610 | -3.6% | -3.4% | -3.4% |
+| 16x16x16384 | - | 112,929 | -53.8% | -39.3% | -39.4% |
+| 16x16x65536 | - | 789,328 | -74.7% | -66.4% | -66.4% |
+
+- L2가 비면 RTL이 3~54% 느려진다(16x512x512 +53%): 기존 golden은 L2 효과를 포함한다.
+- 연산 바운드 4점은 세 설정 모두 ±6%. 메모리 바운드 점은 RTL 실효 대역폭이 4.6 B/cycle(512 KB),
+  2.7 B/cycle(2 MB, 데이터가 L2보다 커서 dirty C의 write-back이 겹친다)로 64-bit 포트(8 B/cycle)와
+  DDR3보다 낮다. C가 B와 같은 이유: NPUsim의 병목은 포트 폭인데 RTL의 병목은 Gemmini DMA의 동시
+  요청 수(`max_in_flight_mem_reqs` = 16 x 64 B)와 L2 miss 왕복 지연(Little's law, 약 190 cycle)이다.
+  이를 맞추려면 MOSAIC DRAM 스트림에 동시 요청 수 상한과 L2 경로 지연, L2 write-back을 넣어야 한다
+  (미구현).
+
 ## 인프라 트러블슈팅 기록 (재현자 참고)
 
 1. **머신의 산발적 데이터 손상**: 대용량 HTTPS 다운로드 바이트 플립(동일 크기·

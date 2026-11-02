@@ -1,0 +1,16 @@
+%Warning: System has stack size 8192 kb which may be too small; suggest 'ulimit -c 15363' or larger
+[UART] UART0 is here (stdin/stdout).
+== Loading device model file '/home/bogil/npusim/ext/chipyard/generators/testchipip/src/main/resources/dramsim2_ini/DDR3_micron_64M_8B_x4_sg15.ini' == 
+== Loading system model file '/home/bogil/npusim/ext/chipyard/generators/testchipip/src/main/resources/dramsim2_ini/system.ini' == 
+===== MemorySystem 0 =====
+CH. 0 TOTAL_STORAGE : 4096MB | 1 Ranks | 16 Devices per rank
+DRAMSim2 Clock Frequency =666666666Hz, CPU Clock Frequency=500000000Hz
+GEMMPOINT M=64 K=64 N=64 cycles=4148 cold=1
+GEMMPOINT M=128 K=128 N=128 cycles=12412 cold=1
+GEMMPOINT M=256 K=256 N=256 cycles=74327 cold=1
+GEMMPOINT M=16 K=512 N=512 cycles=49892 cold=1
+GEMMPOINT M=512 K=512 N=64 cycles=76610 cold=1
+GEMMPOINT M=16 K=16 N=16384 cycles=112929 cold=1
+GEMMPOINT M=16 K=16 N=65536 cycles=789328 cold=1
+SWEEP DONE
+- /home/bogil/npusim/ext/chipyard/sims/verilator/generated-src/chipyard.harness.TestHarness.GemminiRocketConfig/gen-collateral/TestDriver.v:158: Verilog $finish
