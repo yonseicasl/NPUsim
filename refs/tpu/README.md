@@ -150,4 +150,4 @@ TPU VM 가격에는 호스트가 포함된다. 디스크·네트워크 비용은
 무료 경로:
 
 - [TPU Research Cloud](https://sites.research.google/trc/about/): 연구자 대상 무료 Cloud TPU 지원(신청제). 현재 v5e/v6e 포함 여부와 조건은 신청 페이지에서 확인할 것. 스토리지·VM 비용은 별도라는 보고가 있다.
-- Kaggle Notebooks: 주당 TPU 20시간(세션 최대 9시간). 하드웨어는 최근 보고상 v5e-8이지만 v3-8이라는 자료도 있어 확인 필요. 노트북 환경에서 profiler 사용 가능 여부도 확인 필요.
+- Kaggle Notebooks: [Kaggle TPU 문서](https://www.kaggle.com/docs/tpu) "up to 20 hours per week of TPUs and up to 9h at a time in a single session"(오래된 문서). 2026-10 사용자 보고([GitHub issue](https://github.com/TranBaDat2607/claude-code-kaggle-grandmaster/issues/18))에서 `kaggle quota` 출력이 "TPU 0.00h used, 20.00h remaining", 머신은 `TpuV5E8`(v5e 8칩), batch 세션 8.8시간 상한, TPU batch 세션 동시 1개. `TpuV5E1`/`TpuV6E1` 요청은 `TpuV5E8`로 바뀌어 v6e는 쓸 수 없다. profiler 사용 가능 여부는 확인 필요.
