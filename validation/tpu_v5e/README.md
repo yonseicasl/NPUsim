@@ -95,3 +95,25 @@ two whole layers incl. KV cache). `compare_v5e.py` now also reports the module t
   (refresh, bank and row effects) that the ideal `[dram]` model does not have, not a parameter to fit.
   It is the expected source of the -2..-9% HBM-bound errors; MOSAIC's Ramulator2 DRAM co-simulation is
   the way to model it. Open: attention's KV-read efficiency (~0.75-0.8 of roofline) in validation/palm.
+
+### NPUsim on MOSAIC's Ramulator 2.1 (same rotated results)
+
+`compare_v5e.py --dram validation/tpu_v5e/hbm2e_v5e.yaml` times NPUsim's DRAM tile streams on MOSAIC's
+Ramulator2 (`NPUSIM_MOSAIC_DRAM`; the binary must be built with `MOSAIC_ROOT`). `hbm2e_v5e.yaml`: v5e's
+HBM2e as 32 64-bit pseudo channels at 3.2 Gbps (819.2 GB/s), HBM2 timings in ns, nBL 1 as in MOSAIC's
+HBM3 configs. MOSAIC's `dram_bw_probe` (sequential reads, 16 MB) sustains 674.8 GB/s on it, 82% of
+nominal -- the same 82% as MOSAIC's calibrated HBM3 -- against the TPU's measured ~750 GB/s (92%).
+
+Fixed on the way: with Ramulator the first weight strip's DRAM fill is exposed and partly hidden from
+the second strip on, so extrapolating from 1 and 2 strips put 8192^3 under the compute roofline.
+`compare_v5e.py` now extrapolates from 2 and 4 strips (analytic results move by < 3%).
+
+| | analytic `[dram]` (819 GB/s, ideal) | Ramulator2 HBM2e (82% sustained) |
+|---|---|---|
+| compute-bound GEMMs, kernel | -0..+7% (2048^3 +15%) | same (DRAM hidden): -0..+7% |
+| HBM-streaming GEMMs (M = 1, 235 MB weight; 10 points) | -6.4..-1.9% | +5.2..+10.3% |
+| decode layer GEMMs (tp=1, 12 cases), mean abs | 5.8% (-12.4..-2.9%) | 6.3% (-1.3..+9.3%) |
+
+The two DRAM models bracket the TPU: ideal streaming is ~8% fast, Ramulator's HBM2e ~8-10% slow. The
+gap is the DRAM controller's sustained efficiency (82% vs 92%: refresh policy, address mapping, row
+handling), which is DRAM modeling with the TPU's 750 GB/s as its evidence, not an NPUsim parameter.

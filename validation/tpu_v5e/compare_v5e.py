@@ -2,15 +2,15 @@
 """NPUsim (configs/accelerators/tpu_v5e.cfg) vs Cloud TPU v5e measurements from measure_tpu.py.
 
   GEMM    every gemm.csv shape on NPUsim with validation/palm's mapping (output columns over the 4 MXUs
-          in 128-column weight strips). Rows go in tiles of <= 512; one tile is simulated at 1 and 2
-          strips and scaled, since the time is linear in strips (palm_decode.py) and in row tiles
-          (1024 rows = 2 x 512 to 1.5%). Against the measured device time (wall time without a trace).
+          in 128-column weight strips). Rows go in tiles of <= 512; one tile is simulated at 2 and 4
+          strips (1 or 2 when that is all) and scaled, since the time is linear in strips from the
+          second on and in row tiles (1024 rows = 2 x 512 to 1.5%). Against the measured device time (wall time without a trace).
   decode  decode.csv per-scope times: the four projection GEMMs vs the rest (attention, norms, SwiGLU,
           psum) -- the time NPUsim's PaLM model leaves out -- and, at tp=1, NPUsim's projection GEMMs
           against the measured GEMM scopes.
 
-Usage: python3 validation/tpu_v5e/compare_v5e.py RESULTS_DIR [-j 16]   (needs models/model built)
-Writes RESULTS_DIR/compare_gemm.csv.
+Usage: python3 validation/tpu_v5e/compare_v5e.py RESULTS_DIR [-j 16] [--dram hbm2e_v5e.yaml]   (needs models/model)
+Writes RESULTS_DIR/compare_gemm.csv (compare_gemm_ramulator.csv with --dram).
 """
 import argparse
 import csv
@@ -39,20 +39,31 @@ def simulate(shapes, jobs):
     """{(M, K, N): seconds} on NPUsim."""
     tmp, cfgroot, rundir = palm.workdir((ACCEL,))
     plan, todo = {}, {}
+    name = lambda mtile, K, s: f"v5e_{mtile}x{K}x{s * palm.MXUS * DIM}"
     for M, K, N in shapes:
         mt = math.ceil(M / MTILE)
         mtile = math.ceil(M / mt)
-        names = [f"v5e_{mtile}x{K}x{s * palm.MXUS * DIM}" for s in (1, 2)]
-        for s, name in zip((1, 2), names):
-            if name not in todo:
-                palm.gemm_files(cfgroot, rundir, name, ACCEL, mtile, K, s * palm.MXUS * DIM)
-                todo[name] = (cfgroot, rundir, name, ACCEL)
-        plan[M, K, N] = (mt, names, math.ceil(math.ceil(N / DIM) / palm.MXUS))
+        strips = math.ceil(math.ceil(N / DIM) / palm.MXUS)
+        # 1 or 2 strips are simulated as is; more are extrapolated from 2 and 4 strips. Not from 1 and 2: with
+        # Ramulator the first strip's DRAM fill is exposed and partly hidden from the second strip on, so the
+        # 1 -> 2 step is below the steady per-strip time (8192^3 extrapolated under the compute roofline).
+        sims = (strips,) if strips <= 2 else (2, 4)
+        for s in sims:
+            if name(mtile, K, s) not in todo:
+                palm.gemm_files(cfgroot, rundir, name(mtile, K, s), ACCEL, mtile, K, s * palm.MXUS * DIM)
+                todo[name(mtile, K, s)] = (cfgroot, rundir, name(mtile, K, s), ACCEL)
+        plan[M, K, N] = (mt, [name(mtile, K, s) for s in sims], strips)
     print(f"NPUsim: {len(todo)} runs on {jobs} threads ...", flush=True)
     with ThreadPoolExecutor(jobs) as ex:
         sim = dict(zip(todo, ex.map(palm.run_gemm, todo.values())))
     shutil.rmtree(tmp)
-    return {k: mt * (sim[a] + (strips - 1) * (sim[b] - sim[a])) for k, (mt, (a, b), strips) in plan.items()}
+
+    def scale(mt, names, strips):
+        if len(names) == 1:
+            return mt * sim[names[0]]
+        t2, t4 = sim[names[0]], sim[names[1]]
+        return mt * (t2 + (strips - 2) * (t4 - t2) / 2)
+    return {k: scale(*v) for k, v in plan.items()}
 
 
 def roofline(M, K, N):
@@ -63,7 +74,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("results")
     ap.add_argument("-j", "--jobs", type=int, default=16)
+    ap.add_argument("--dram", help="MOSAIC DRAM yaml (e.g. validation/tpu_v5e/hbm2e_v5e.yaml): NPUsim's DRAM tile "
+                    "streams on MOSAIC's Ramulator2 instead of the analytical [dram] (needs a MOSAIC build)")
     a = ap.parse_args()
+    palm.MOSAIC_DRAM = a.dram and os.path.abspath(a.dram)
     gemm = list(csv.DictReader(open(os.path.join(a.results, "gemm.csv"))))
     dpath = os.path.join(a.results, "decode.csv")
     decode = list(csv.DictReader(open(dpath))) if os.path.exists(dpath) else []
@@ -94,7 +108,8 @@ def main():
         print(f"{M:5d} {K:6d} {N:6d} | {meas:9.2f} {copy:7.2f} {kern:8.2f} {s:9.2f} {roof:9.2f}    | {err:+6.1f}%"
               f" {errk:+6.1f}%  {src}")
     print("MAPE " + ", ".join(f"{k} {statistics.mean(v):.1f}% (n={len(v)})" for k, v in errs.items()))
-    with open(os.path.join(a.results, "compare_gemm.csv"), "w", newline="") as fh:
+    with open(os.path.join(a.results, "compare_gemm_ramulator.csv" if a.dram else "compare_gemm.csv"), "w",
+              newline="") as fh:
         w = csv.DictWriter(fh, list(out[0]))
         w.writeheader()
         w.writerows(out)

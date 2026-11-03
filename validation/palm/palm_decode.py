@@ -41,6 +41,7 @@ HBM_BPS = 1200e9
 ICI_BPS = 270e9            # per-chip interconnect bandwidth quoted by the paper
 ACT_BYTES = 2              # bf16 activations and KV cache
 DIM, MXUS = 128, 8
+MOSAIC_DRAM = None         # a MOSAIC DRAM yaml: NPUsim's DRAM streams on Ramulator2 (needs a MOSAIC build)
 CONTEXT = 2048 + 32        # mean context while generating 64 tokens after a 2048-token prompt
 
 MODELS = {  # PaLM (Chowdhery et al. 2022; 540B also in Pope et al. Table D.1)
@@ -81,6 +82,8 @@ def run_gemm(args):
     cfgroot, rundir, name, accel = args
     env = dict(os.environ, NPUSIM_CONFIG_ROOT=cfgroot)
     env.pop("NPUSIM_MOSAIC_DRAM", None)
+    if MOSAIC_DRAM:                                   # time the DRAM tile streams on MOSAIC's Ramulator2
+        env["NPUSIM_MOSAIC_DRAM"] = MOSAIC_DRAM
     p = subprocess.run([os.path.join(ROOT, "models", "model"), "run", accel, name, "ws"], cwd=rundir, env=env,
                        capture_output=True, text=True)
     if p.returncode:
