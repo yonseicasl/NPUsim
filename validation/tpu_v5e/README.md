@@ -91,5 +91,7 @@ two whole layers incl. KV cache). `compare_v5e.py` now also reports the module t
 - Decode layer (Llama-3-8B, tp=1), where the copies run inside the layer program: NPUsim's four GEMMs
   are -3..-9% of the measured GEMM scopes plus the unattributed ops (the copies), -4..-12% at B = 1.
   Attention 1.25-1.35x its KV-read roofline; norms, SwiGLU, residual 4-6 us (~1%).
-- Calibration candidates with their own evidence, not applied: sustained HBM bandwidth ~750 GB/s
-  (`[dram]` read cycle), KV-read efficiency ~0.75-0.8 for attention in validation/palm.
+- `tpu_v5e.cfg` keeps the specified 819 GB/s: the 8% gap to the sustained ~750 GB/s is DRAM behavior
+  (refresh, bank and row effects) that the ideal `[dram]` model does not have, not a parameter to fit.
+  It is the expected source of the -2..-9% HBM-bound errors; MOSAIC's Ramulator2 DRAM co-simulation is
+  the way to model it. Open: attention's KV-read efficiency (~0.75-0.8 of roofline) in validation/palm.
