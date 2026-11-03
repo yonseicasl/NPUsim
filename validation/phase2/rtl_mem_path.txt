@@ -1,0 +1,15 @@
+# validation/phase2/mem_path.c on GemminiRocketConfig (DIM16, 500 MHz, 512 KB 8-way L2, 64-bit AXI,
+# +dramsim DDR3-1333): stream, bytes moved, cycles from the first command to the fence, bytes/cycle x100
+MEMPATH read bytes=65536 cycles=8488 B_per_cycle_x100=772
+MEMPATH read bytes=262144 cycles=36214 B_per_cycle_x100=723
+MEMPATH read_warm bytes=262144 cycles=19997 B_per_cycle_x100=1310
+MEMPATH read bytes=1048576 cycles=171796 B_per_cycle_x100=610
+MEMPATH read bytes=4194304 cycles=717345 B_per_cycle_x100=584
+MEMPATH write bytes=262144 cycles=150755 B_per_cycle_x100=173
+MEMPATH write bytes=1048576 cycles=602317 B_per_cycle_x100=174
+MEMPATH write_strided bytes=262144 cycles=129577 B_per_cycle_x100=202
+MEMPATH write_strided64k bytes=262144 cycles=475618 B_per_cycle_x100=55
+MEMPATH mixed bytes=131072 cycles=29905 B_per_cycle_x100=438
+MEMPATH mixed bytes=524288 cycles=112720 B_per_cycle_x100=465
+MEMPATH mixed bytes=2097152 cycles=429405 B_per_cycle_x100=488
+MEMPATH DONE
