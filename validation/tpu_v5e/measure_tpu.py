@@ -77,26 +77,32 @@ def parse_trace(d):
     return mods, ops
 
 
-def bench(f, args, tag):
-    """dict(wall_us, device_us, ops) for one call of jitted f(*args)."""
-    out = f(*args)
+def bench(f, sets, tag):
+    """dict(wall_us, device_us, ops) for one call of jitted f. sets: argument tuples used in turn, so that no
+    call reuses the previous call's buffers (XLA keeps an unchanged input on chip across executions: decode
+    GEMMs with <= ~118 MB of weights ran 3-4x faster than HBM allows when called on the same buffers)."""
+    sets = sets if isinstance(sets, list) else [sets]
+    k = iter(range(10 ** 9))
+    call = lambda: f(*sets[next(k) % len(sets)])
+    out = call()
     jax.block_until_ready(out)
     t = time.perf_counter()
-    jax.block_until_ready(f(*args))
+    jax.block_until_ready(call())
     n = max(5, min(ARGS.max_iters, int(0.3 / max(time.perf_counter() - t, 1e-6))))
     for _ in range(3):
-        out = f(*args)
+        out = call()
     jax.block_until_ready(out)
     t = time.perf_counter()
     for _ in range(n):
-        out = f(*args)
+        out = call()
     jax.block_until_ready(out)
-    res = {"wall_us": (time.perf_counter() - t) / n * 1e6, "device_us": None, "ops": None, "iters": n}
+    res = {"wall_us": (time.perf_counter() - t) / n * 1e6, "device_us": None, "ops": None, "iters": n,
+           "sets": len(sets)}
     d = os.path.join(ARGS.out, "traces", tag)
     try:
         with jax.profiler.trace(d, create_perfetto_trace=True):
             for _ in range(n):
-                out = f(*args)
+                out = call()
             jax.block_until_ready(out)
         parsed = parse_trace(d)
         if parsed and parsed[0]:
@@ -126,6 +132,13 @@ def rnd(key, shape, sharding=None):
     return jax.device_put(x, sharding) if sharding else x
 
 
+def nsets(set_bytes):
+    """Distinct argument sets to rotate: >= --rotate-mb in total, 2..64 (1 with --rotate-mb 0: warm reuse)."""
+    if ARGS.rotate_mb <= 0:
+        return 1
+    return max(2, min(64, math.ceil(ARGS.rotate_mb * 2 ** 20 / set_bytes)))
+
+
 def fmt(r):
     dev = f"{r['device_us']:9.1f}" if r["device_us"] is not None else "        -"
     return f"wall {r['wall_us']:9.1f} us  device {dev} us"
@@ -144,10 +157,11 @@ def gemm():
     f = jax.jit(lambda a, b: a @ b)
     rows = []
     for M, K, N in shapes:
-        a, b = jax.device_put(rnd(1, (M, K)), dev), jax.device_put(rnd(2, (K, N)), dev)
-        r = bench(f, (a, b), f"gemm_{M}x{K}x{N}")
+        sets = [(jax.device_put(rnd(2 * i + 1, (M, K)), dev), jax.device_put(rnd(2 * i + 2, (K, N)), dev))
+                for i in range(nsets(2 * (M * K + K * N)))]
+        r = bench(f, sets, f"gemm_{M}x{K}x{N}")
         t = r["device_us"] or r["wall_us"]
-        rows.append(dict(M=M, K=K, N=N, dtype="bf16", wall_us=round(r["wall_us"], 2),
+        rows.append(dict(M=M, K=K, N=N, dtype="bf16", sets=r["sets"], wall_us=round(r["wall_us"], 2),
                          device_us=r["device_us"] and round(r["device_us"], 2),
                          tflops=round(2 * M * K * N / t / 1e6, 2),
                          ops=r["ops"] and ";".join(f"{k}={v:.2f}" for k, v in list(r["ops"].items())[:4])))
@@ -168,9 +182,9 @@ def vector():
     rows = []
     for M in ((8,) if ARGS.quick else (8, 128, 2048)):
         for D in ((4096,) if ARGS.quick else (4096, 14336)):
-            x, y = rnd(3, (M, D)), rnd(4, (M, D))
+            sets = [(rnd(2 * i + 3, (M, D)), rnd(2 * i + 4, (M, D))) for i in range(nsets(4 * M * D))]
             for name, fn in fns.items():
-                r = bench(jax.jit(fn), (x, y), f"vec_{name}_{M}x{D}")
+                r = bench(jax.jit(fn), sets, f"vec_{name}_{M}x{D}")
                 rows.append(dict(op=name, M=M, D=D, wall_us=round(r["wall_us"], 2),
                                  device_us=r["device_us"] and round(r["device_us"], 2)))
                 print(f"vector {name:8s} {M:5d} x {D:5d}  {fmt(r)}")
@@ -247,22 +261,25 @@ def decode():
                     kc=P(None, None, "x", None), vc=P(None, None, "x", None))
         f = jax.jit(shard_map(layer, mesh=mesh, in_specs=tuple(spec.values()), out_specs=P()) if tp > 1 else layer)
         put = lambda k, a, name: rnd(k, a, NamedSharding(mesh, spec[name]))
-        w = [put(11, (1, D), "g1"), put(12, (D, tp * (h + 2 * hkv) * DH), "wqkv"), put(13, (H * DH, D), "wo"),
-             put(14, (1, D), "g2"), put(15, (D, 2 * F), "wgu"), put(16, (F, D), "wd")]
+        # consecutive calls use different layers' weights and KV cache, as a real decode step does
+        nl = nsets(2 * (D * (H + 2 * HKV) * DH + H * DH * D + 3 * D * F) // tp)
+        ws = [[put(20 * i + 11, (1, D), "g1"), put(20 * i + 12, (D, tp * (h + 2 * hkv) * DH), "wqkv"),
+               put(20 * i + 13, (H * DH, D), "wo"), put(20 * i + 14, (1, D), "g2"),
+               put(20 * i + 15, (D, 2 * F), "wgu"), put(20 * i + 16, (F, D), "wd")] for i in range(nl)]
         for B, L in grid:
-            kc, vc = put(17, (B, L, HKV, DH), "kc"), put(18, (B, L, HKV, DH), "vc")
+            kv = [(put(20 * i + 17, (B, L, HKV, DH), "kc"), put(20 * i + 18, (B, L, HKV, DH), "vc")) for i in range(nl)]
             x = put(19, (B, D), "x")
             tag = f"decode_tp{tp}_b{B}_l{L}"
-            r = bench(f, (x, *w, kc, vc), tag)
+            r = bench(f, [(x, *ws[i], *kv[i]) for i in range(nl)], tag)
             scoped = {}
             for k, v in (r["ops"] or {}).items():
                 scoped[k.split("|")[0]] = scoped.get(k.split("|")[0], 0.0) + v
-            rows.append(dict(tp=tp, batch=B, context=L, wall_us=round(r["wall_us"], 2),
+            rows.append(dict(tp=tp, batch=B, context=L, sets=r["sets"], wall_us=round(r["wall_us"], 2),
                              device_us=r["device_us"] and round(r["device_us"], 2),
                              **{f"{s}_us": round(scoped[s], 2) for s in (*SCOPES, "-") if s in scoped}))
             ops_all[tag] = r["ops"]
             print(f"decode tp{tp} B{B:<4d} L{L:<5d} {fmt(r)}  " + " ".join(f"{s}={v:.1f}" for s, v in scoped.items()))
-            del kc, vc
+            del kv
     write("decode.csv", rows)
     json.dump(ops_all, open(os.path.join(ARGS.out, "decode_ops.json"), "w"), indent=1)
 
@@ -275,6 +292,8 @@ def main():
     ap.add_argument("--keep-traces", action="store_true")
     ap.add_argument("--only", default="gemm,vector,collectives,decode")
     ap.add_argument("--max-iters", type=int, default=200)
+    ap.add_argument("--rotate-mb", type=float, default=512,
+                    help="rotate distinct input buffers totalling this much (0: reuse one set, warm on-chip)")
     ap.add_argument("--device-match", default=r"TPU:0\b", help="regex for the trace process to read")
     ARGS = ap.parse_args()
     os.makedirs(ARGS.out, exist_ok=True)
