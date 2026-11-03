@@ -67,3 +67,10 @@ python3 validation/tpu_v5e/colab_summary.py results/<dir> [--isolated results/20
 
 `gemm.csv` there is in measure_tpu.py's format (device_us = loop slope), so compare_v5e.py takes it as is and
 writes `compare_gemm.csv`, which colab_summary.py then uses for the NPUsim columns.
+
+## Raw Colab archives
+
+`results/2026-11-03_colab_v5e1_warm.zip` (one input buffer reused) and `results/2026-11-03_colab_v5e1_rot.zip`
+(rotated buffers) are the archives the two Colab v5e-1 runs of `measure_tpu.py` produced, unchanged
+(gemm/vector/decode CSVs, decode_ops.json, env.json; no traces kept). Branch `tpu-measure` has them unpacked
+under `results/2026-11-03_colab_v5e1_{warm,rot}/` with their comparisons.
