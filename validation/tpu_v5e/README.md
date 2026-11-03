@@ -151,3 +151,29 @@ GEMMs, an HBM read test.
   and relayouts it (`copy_bitcast_fusion`, layout {3,1,2,0}), presumably through HBM once it exceeds the
   on-chip memory. Implementation-dependent; not used for NPUsim.
 - `hbm_read` is invalid (64 MB at 94 GB/s, 4 GB in 1 us: the read was elided or not timed on device).
+
+### 2026-11-03, Colab TPU v5e-1, follow-up 2 (`results/2026-11-03_colab_v5e1_followup2/`)
+
+The follow-up script re-run with the stacked artifacts removed: the decode stack now passes each layer
+its own weight and KV buffers (no `while`/`dynamic_slice`) with head-major KV `[B, Hkv, L, D]`, and
+attention runs unrolled. `compare_stack.py` compares the layers; `compare_v5e.py --accel tpu_v5e_int8w
+--gemm gemm_int8.csv` the int8-weight GEMMs (`tpu_v5e_int8w.cfg`: int8 weights, bf16 activations).
+
+| | analytic `[dram]` | Ramulator2 HBM2e |
+|---|---|---|
+| decode layer, full (GEMMs + KV at 819 GB/s; 12 B x L) | mean -8.4%, MAPE 8.4% | mean -0.5%, MAPE 3.8% |
+| decode layer, gemm_only (12) | mean -8.1%, MAPE 8.1% | mean +3.5%, MAPE 3.9% |
+| streamed decode GEMMs, bf16 (20; mean of both runs) | mean -4.3%, MAPE 4.8% | mean +5.2%, MAPE 6.1% |
+| streamed GEMMs, int8 weights, M <= 128 (16) | MAPE 8.3% | MAPE 3.5% |
+| streamed GEMMs, int8 weights, M = 512 (4) | MAPE 1.7% | MAPE 1.7% |
+| odd small GEMMs (35; mean of both runs) | mean -15.1%, MAPE 15.3% | mean -7.4%, MAPE 9.9% |
+
+- Attention alone (head-major KV) runs at 1.10x the KV read at 819 GB/s (~745 GB/s) from 67 MB of KV
+  up, the HBM rate the weight streams sustain; small cases are latency-bound (x1.7 at 1 MB). The 1.25-1.35x
+  in the rotated `measure_tpu.py` run and the 3.6x of the first follow-up came from the KV layout
+  (`[B, L, Hkv, D]`) and the stacked slicing, not from the hardware.
+- Run to run (the 55 GEMMs measured twice): streamed 1.4% mean (max 6.8%), odd small kernels 4.8% (max
+  35%), which bounds what the small-kernel errors can say.
+- int8 weights stream at 650-740 GB/s of weight bytes; at M = 512 the int8 GEMMs take the bf16 time
+  (~180 TFLOPS), i.e. the MXU runs bf16 after dequantization, as `tpu_v5e_int8w.cfg` assumes.
+- `hbm_read` is still invalid (64 MB in 0.69 us).

@@ -10,7 +10,7 @@
           against the measured GEMM scopes.
 
 Usage: python3 validation/tpu_v5e/compare_v5e.py RESULTS_DIR [-j 16] [--dram hbm2e_v5e.yaml]   (needs models/model)
-Writes RESULTS_DIR/compare_gemm.csv (compare_gemm_<yaml name>.csv with --dram).
+Writes RESULTS_DIR/compare_<gemm csv>[_<accel>][_<yaml name>].csv.
 """
 import argparse
 import csv
@@ -67,18 +67,23 @@ def simulate(shapes, jobs):
 
 
 def roofline(M, K, N):
-    return max(2 * M * K * N / PEAK, 2 * (M * K + K * N + M * N) / HBM)
+    wbytes = 1 if ACCEL.endswith("int8w") else 2           # int8 weights, bf16 activations
+    return max(2 * M * K * N / PEAK, (2 * M * K + wbytes * K * N + 2 * M * N) / HBM)
 
 
 def main():
+    global ACCEL
     ap = argparse.ArgumentParser()
     ap.add_argument("results")
     ap.add_argument("-j", "--jobs", type=int, default=16)
     ap.add_argument("--dram", help="MOSAIC DRAM yaml (e.g. validation/tpu_v5e/hbm2e_v5e.yaml): NPUsim's DRAM tile "
                     "streams on MOSAIC's Ramulator2 instead of the analytical [dram] (needs a MOSAIC build)")
+    ap.add_argument("--accel", default=ACCEL, help="configs/accelerators/<name>.cfg (tpu_v5e_int8w: int8 weights)")
+    ap.add_argument("--gemm", default="gemm.csv", help="GEMM measurements in RESULTS_DIR")
     a = ap.parse_args()
+    ACCEL = a.accel
     palm.MOSAIC_DRAM = a.dram and os.path.abspath(a.dram)
-    gemm = list(csv.DictReader(open(os.path.join(a.results, "gemm.csv"))))
+    gemm = list(csv.DictReader(open(os.path.join(a.results, a.gemm))))
     dpath = os.path.join(a.results, "decode.csv")
     decode = list(csv.DictReader(open(dpath))) if os.path.exists(dpath) else []
     shapes = {(int(r["M"]), int(r["K"]), int(r["N"])) for r in gemm}
@@ -108,8 +113,9 @@ def main():
         print(f"{M:5d} {K:6d} {N:6d} | {meas:9.2f} {copy:7.2f} {kern:8.2f} {s:9.2f} {roof:9.2f}    | {err:+6.1f}%"
               f" {errk:+6.1f}%  {src}")
     print("MAPE " + ", ".join(f"{k} {statistics.mean(v):.1f}% (n={len(v)})" for k, v in errs.items()))
-    tag = "_" + os.path.splitext(os.path.basename(a.dram))[0] if a.dram else ""
-    with open(os.path.join(a.results, f"compare_gemm{tag}.csv"), "w", newline="") as fh:
+    tag = ("_" + a.accel if a.accel != "tpu_v5e" else "") + \
+        ("_" + os.path.splitext(os.path.basename(a.dram))[0] if a.dram else "")
+    with open(os.path.join(a.results, f"compare_{os.path.splitext(a.gemm)[0]}{tag}.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, list(out[0]))
         w.writeheader()
         w.writerows(out)
