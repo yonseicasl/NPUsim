@@ -15,9 +15,15 @@
 # Timing: each op runs n and 2n times inside one jitted fori_loop whose iterations depend on each
 # other (no hoisting, no host dispatch in the loop); time per iteration = (t(2n) - t(n)) / n, the
 # median of several runs.
+#
+# Cold operands: TPU v5e keeps an operand of up to ~128 MiB on chip when every iteration reads the same
+# buffer, so a loop over one weight measures on-chip reuse, not HBM. Iteration i reads copy i % R of a
+# stack of R distinct buffers (weights, KV cache, streamed arrays) totalling >= TPU_BENCH_ROTATE_MB
+# (default 512 MB), as consecutive layers of a real model do. TPU_BENCH_ROTATE_MB=0 reuses one buffer
+# (warm). Each result records its `copies`.
 
 # %%
-import json, os, platform, statistics, sys, time, traceback
+import json, math, os, platform, statistics, sys, time, traceback
 from functools import partial
 
 import jax
@@ -43,11 +49,12 @@ def shard_map(f, **kw):
 
 OUT = os.environ.get("TPU_BENCH_OUT", "/kaggle/working")
 QUICK = os.environ.get("TPU_BENCH_QUICK") == "1"    # tiny sizes (CPU smoke test)
+ROTATE_MB = float(os.environ.get("TPU_BENCH_ROTATE_MB", "512"))
 os.makedirs(OUT, exist_ok=True)
 devs = jax.devices()
 RESULTS = {"env": {"jax": jax.__version__, "python": sys.version.split()[0], "platform": platform.platform(),
                    "devices": [str(d) for d in devs], "device_kind": devs[0].device_kind,
-                   "n_devices": len(devs), "quick": QUICK},
+                   "n_devices": len(devs), "quick": QUICK, "rotate_mb": ROTATE_MB},
            "gemm": [], "hbm": [], "collective": [], "decode_layer": [], "errors": []}
 print(RESULTS["env"])
 
@@ -68,6 +75,28 @@ def per_iter(run, *args, n=20, repeats=5):
     t1 = statistics.median(wall(n) for _ in range(repeats))
     t2 = statistics.median(wall(2 * n) for _ in range(repeats))
     return max(t2 - t1, 0.0) / n
+
+
+def copies(nbytes):
+    """How many distinct copies of an operand of nbytes (per chip) to cycle through: >= ROTATE_MB in total, so
+    no copy is still on chip when it is read again; 1 if one copy is already that large or ROTATE_MB is 0."""
+    return 1 if ROTATE_MB <= 0 or nbytes >= ROTATE_MB * 2 ** 20 else math.ceil(ROTATE_MB * 2 ** 20 / nbytes)
+
+
+def make(shape, dtype, sharding, seed, fill=None):
+    """A random (or constant) array generated on the device(s), so large stacks never pass through the host."""
+    def gen(k):
+        if fill is not None:
+            return jnp.full(shape, fill, dtype)
+        if dtype == jnp.int8:
+            return jax.random.randint(k, shape, -8, 8, jnp.int8)
+        return (jax.random.normal(k, shape, jnp.float32) * 0.02).astype(dtype)
+    return jax.jit(gen, out_shardings=sharding)(jax.random.PRNGKey(seed))
+
+
+def pick(stack, i):
+    """Copy i % R of a stack of R copies (dynamic, so XLA cannot hoist it out of the loop)."""
+    return lax.dynamic_index_in_dim(stack, i % stack.shape[0], keepdims=False)
 
 
 def guarded(section, params, fn):
@@ -91,21 +120,23 @@ rng = np.random.default_rng(0)
 
 
 @partial(jax.jit, static_argnums=0)
-def gemm_loop(n, x, w):
+def gemm_loop(n, x, ws):
     def body(i, c):
-        y = (x + c.astype(x.dtype)) @ w.astype(jnp.bfloat16)
+        y = (x + c.astype(x.dtype)) @ pick(ws, i).astype(jnp.bfloat16)
         return c + y[0, 0].astype(jnp.float32) * 1e-6
     return lax.fori_loop(0, n, body, jnp.float32(0))
 
 
 def gemm(M, K, N, wdtype):
     x = jax.device_put(jnp.asarray(rng.standard_normal((M, K), dtype=np.float32), jnp.bfloat16), dev0)
-    w = rng.integers(-8, 8, (K, N), dtype=np.int8) if wdtype == "int8" else rng.standard_normal((K, N), dtype=np.float32)
-    w = jax.device_put(jnp.asarray(w, jnp.int8 if wdtype == "int8" else jnp.bfloat16), dev0)
-    s = per_iter(gemm_loop, x, w, n=10 if M * K * N > 2 ** 33 else 40)
+    wt = jnp.int8 if wdtype == "int8" else jnp.bfloat16
     wbytes = K * N * (1 if wdtype == "int8" else 2)
+    R = copies(wbytes)
+    ws = make((R, K, N), wt, jax.sharding.SingleDeviceSharding(dev0), seed=K + N + M)
+    s = per_iter(gemm_loop, x, ws, n=10 if M * K * N > 2 ** 33 else 40)
+    del ws
     return {"seconds": s, "tflops": 2 * M * K * N / s / 1e12 if s else None,
-            "weight_gbps": wbytes / s / 1e9 if s else None}
+            "weight_gbps": wbytes / s / 1e9 if s else None, "copies": R}
 
 
 KN = [(1024, 1024)] if QUICK else [(4096, 4096), (8192, 8192), (8192, 28672), (28672, 8192)]
@@ -123,17 +154,19 @@ for S in ([256] if QUICK else [1024, 2048, 4096, 8192]):
 
 # %%
 @partial(jax.jit, static_argnums=0)
-def stream_loop(n, a):
+def stream_loop(n, stack):
     def body(i, c):
-        b = a * (1 + c).astype(a.dtype)             # read a, write b
+        b = pick(stack, i) * (1 + c).astype(stack.dtype)   # read a copy, write b
         return c + b[0].astype(jnp.float32) * 1e-9
     return lax.fori_loop(0, n, body, jnp.float32(0))
 
 
 def hbm(mbytes):
-    a = jax.device_put(jnp.ones((mbytes * 2 ** 20 // 2,), jnp.bfloat16), dev0)
-    s = per_iter(stream_loop, a, n=20)
-    return {"seconds": s, "gbps_read_plus_write": 2 * mbytes * 2 ** 20 / s / 1e9 if s else None}
+    R = copies(mbytes * 2 ** 20)
+    stack = make((R, mbytes * 2 ** 20 // 2), jnp.bfloat16, jax.sharding.SingleDeviceSharding(dev0), 0, fill=1)
+    s = per_iter(stream_loop, stack, n=20)
+    del stack
+    return {"seconds": s, "gbps_read_plus_write": 2 * mbytes * 2 ** 20 / s / 1e9 if s else None, "copies": R}
 
 
 for mb in ([1, 8] if QUICK else [1, 16, 128, 1024, 4096]):
@@ -185,21 +218,19 @@ def decode_layer(B, wdtype, comm=True, attn=True, vector=True, n_layers=4, trace
     E, F, H, KVH, DH, CTX = (CFG[k] for k in ("E", "F", "H", "KVH", "DH", "CTX"))
     h, kvh = H // ND, max(KVH // ND, 1)             # heads per chip
     wt = jnp.int8 if wdtype == "int8" else jnp.bfloat16
-    def W(*shape):                                   # global weight, sharded by the spec given at use
-        return np.asarray(rng.integers(-8, 8, shape, dtype=np.int8) if wdtype == "int8" else rng.standard_normal(shape, dtype=np.float32) * 0.02)
     sh = lambda spec: jax.sharding.NamedSharding(mesh, spec)
-    params = {
-        "wqkv": jax.device_put(jnp.asarray(W(E, ND * (h + 2 * kvh) * DH), wt), sh(P(None, "i"))),
-        "wo": jax.device_put(jnp.asarray(W(ND * h * DH, E), wt), sh(P("i", None))),
-        "wg": jax.device_put(jnp.asarray(W(E, F), wt), sh(P(None, "i"))),
-        "wu": jax.device_put(jnp.asarray(W(E, F), wt), sh(P(None, "i"))),
-        "wd": jax.device_put(jnp.asarray(W(F, E), wt), sh(P("i", None))),
-        "k": jax.device_put(jnp.ones((B, ND * kvh, CTX, DH), jnp.bfloat16), sh(P(None, "i"))),
-        "v": jax.device_put(jnp.ones((B, ND * kvh, CTX, DH), jnp.bfloat16), sh(P(None, "i"))),
-    }
+    # one layer's global shapes and shardings; R layers of them stacked on a leading axis, iteration i
+    # running layer i % R (distinct weights and KV cache, as consecutive layers of the model)
+    shapes = {"wqkv": ((E, ND * (h + 2 * kvh) * DH), wt, P(None, "i")), "wo": ((ND * h * DH, E), wt, P("i", None)),
+              "wg": ((E, F), wt, P(None, "i")), "wu": ((E, F), wt, P(None, "i")), "wd": ((F, E), wt, P("i", None)),
+              "k": ((B, ND * kvh, CTX, DH), jnp.bfloat16, P(None, "i")),
+              "v": ((B, ND * kvh, CTX, DH), jnp.bfloat16, P(None, "i"))}
+    per_chip = sum(math.prod(s) * jnp.dtype(t).itemsize for s, t, _ in shapes.values()) // ND
+    R = copies(per_chip)
+    specs = {name: P(None, *spec) for name, (_, _, spec) in shapes.items()}
+    params = {name: make((R, *s), t, sh(specs[name]), seed, fill=1 if name in ("k", "v") else None)
+              for seed, (name, (s, t, _)) in enumerate(shapes.items())}
     x0 = jax.device_put(jnp.ones((B, E), jnp.bfloat16) * 0.01, sh(P()))
-    specs = {"wqkv": P(None, "i"), "wo": P("i", None), "wg": P(None, "i"), "wu": P(None, "i"),
-             "wd": P("i", None), "k": P(None, "i"), "v": P(None, "i")}
     red = (lambda v: lax.psum(v, "i")) if comm else (lambda v: v)
     norm = (lambda v: v * lax.rsqrt(jnp.mean(v.astype(jnp.float32) ** 2, -1, keepdims=True) + 1e-6).astype(v.dtype)) \
         if vector else (lambda v: v)
@@ -223,7 +254,7 @@ def decode_layer(B, wdtype, comm=True, attn=True, vector=True, n_layers=4, trace
     @partial(jax.jit, static_argnums=0)
     def run(n, x, params):
         def local(x, p):
-            return lax.fori_loop(0, n, lambda i, xx: layer(xx, p), x)
+            return lax.fori_loop(0, n, lambda i, xx: layer(xx, jax.tree_util.tree_map(lambda a: pick(a, i), p)), x)
         return shard_map(local, mesh=mesh, in_specs=(P(), specs), out_specs=P())(x, params)
 
     s = per_iter(run, x0, params, n=n_layers)
@@ -231,7 +262,8 @@ def decode_layer(B, wdtype, comm=True, attn=True, vector=True, n_layers=4, trace
         jax.profiler.start_trace(os.path.join(OUT, "trace"))
         jax.block_until_ready(run(n_layers, x0, params))
         jax.profiler.stop_trace()
-    return {"seconds_per_layer": s}
+    del params
+    return {"seconds_per_layer": s, "copies": R}
 
 
 for wd in ("bf16", "int8"):
