@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summary of colab_v5e1_bench.py results: cold vs warm and int8 GEMMs, decode layers vs their GEMMs (and NPUsim's,
+"""Summary of tpu_v5e1_stream_bench.py results: cold vs warm and int8 GEMMs, decode layers vs their GEMMs (and NPUsim's,
 if compare_v5e.py has written compare_gemm.csv in the same directory), attention and HBM read bandwidth.
 
 Usage: python3 validation/tpu_v5e/colab_summary.py RESULTS_DIR [--isolated OTHER_RESULTS_DIR]

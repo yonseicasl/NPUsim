@@ -39,7 +39,7 @@ KV cache, streamed array; a decode iteration runs layer i % R), R chosen so the 
 
 # TPU v5e-1 follow-up (Colab)
 
-`colab_v5e1_bench.py` / `.ipynb` follows up the isolated Colab runs of `measure_tpu.py` (one GEMM or one decode
+`tpu_v5e1_stream_bench.py` / `.ipynb` follows up the isolated Colab runs of `measure_tpu.py` (one GEMM or one decode
 layer per XLA program; `results/2026-11-03_colab_v5e1_*` on branch `tpu-measure`). With fresh buffers such a
 program copies an operand HBM -> on-chip memory and then runs the fusion, serially, so it overstates an HBM-bound
 GEMM; a decode step streams many different weights inside one program. Here everything runs inside one program
