@@ -467,6 +467,7 @@ void stats_t::init() {
 
     // Initialize transfer cycle between the off-chip memory and on-chip processor
     transfer_cycle_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
+    write_port_cycle_dram = 0.0;
 
     // Initialize transfer energy between the off-chip memory and on-chip processor
     transfer_energy_dram.assign(data_type_t::NUM_DATA_TYPES, 0.0);
@@ -1112,6 +1113,7 @@ void stats_t::update_stats(std::vector<pe_array_t*> m_pe_array, std::vector<glob
 
         // Update transfer cost between the off-chip memory and chip-level processor
         transfer_cycle_dram[i] = m_dram->transfer_cycle[i];
+        if(i == data_type_t::OUTPUT) write_port_cycle_dram = m_dram->mosaic_write_port_cycle;
         transfer_energy_dram[i] = m_dram->transfer_energy[i];
 
         // Update overlapped cycle between the off-chip memory and chip-level processor
@@ -1461,6 +1463,7 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
         access_energy_dram[i] *= repetitions;
         cycle_chip_dram[i] *= repetitions;
         transfer_cycle_dram[i] *= repetitions;
+        if(i == data_type_t::OUTPUT) write_port_cycle_dram *= repetitions;
         transfer_energy_dram[i] *= repetitions;
 
         // RE1: the final output cast is committed at the off-chip store, so it scales with the
@@ -1565,7 +1568,8 @@ void stats_t::finalize_layer_timeline() {
     };
     // DRAM: one device/channel and one off-chip link.
     stage_axis_access[0] = sum_types(access_cycle_dram);
-    stage_axis_link[0] = sum_types(transfer_cycle_dram);
+    // The cache write port (MOSAIC mode) is its own resource: the link waits for the slower one.
+    stage_axis_link[0] = std::max(sum_types(transfer_cycle_dram), write_port_cycle_dram);
     stage_axis_overlap[0] = sum_types(cycle_chip_dram);
     // KV-cache read (evaluation.md Sec 4): the decode step's KV-cache DRAM read is extra
     // DRAM ACCESS traffic on this layer's device -- it serializes on the same channel as the
@@ -2188,6 +2192,7 @@ void stats_t::apply_graph_residency(bool m_input_in_glb, bool m_output_in_glb,
         access_cycle_dram[output] = access_energy_dram[output] = 0.0;
         transfer_cycle_dram[output] = transfer_energy_dram[output] = 0.0;
         cycle_chip_dram[output] = 0.0;
+        write_port_cycle_dram = 0.0;
     }
 }
 
@@ -2801,6 +2806,7 @@ void stats_t::update_network_stats(stats_t *m_source) {
 
         // Update transfer cost between the off-chip memory and chip-level processor
         transfer_cycle_dram[i] += m_source->transfer_cycle_dram[i];
+        if(i == data_type_t::OUTPUT) write_port_cycle_dram += m_source->write_port_cycle_dram;
         transfer_energy_dram[i] += m_source->transfer_energy_dram[i];
 
         // Update overlapped cycle between the off-chip memory and chip-level processor

@@ -145,6 +145,15 @@ public:
     // go back once a layer's data outgrows it). 0 (default) = no cache.
     unsigned mosaic_line_bytes = 0;
     size_t mosaic_cache_bytes = 0;
+    // mosaic_cache_ways: with it, output rows that fall in one set more often than it has ways
+    // evict each other's partly written lines (mosaic_output_conflict, set per layer).
+    unsigned mosaic_cache_ways = 0;
+    bool mosaic_output_conflict = false;
+    // mosaic_write_request_ns: the cache takes one partial-line write every this many ns at most
+    // (measured; 0 = no limit). Its own resource beside the DRAM: the layer's total is
+    // mosaic_write_port_cycle, which the critical path maxes with the summed DRAM streams.
+    double mosaic_write_request_ns = 0.0;
+    double mosaic_write_port_cycle = 0.0;
 
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory

@@ -697,6 +697,7 @@ public:
     std::vector<double> cycle_chip_dram;
 
     std::vector<double> transfer_cycle_dram;                            // Total data transfer cycle between DRAM and Multi-chip.
+    double write_port_cycle_dram = 0.0;                                 // Cache write-port cycles (dram_t::mosaic_write_port_cycle).
     std::vector<double> transfer_energy_dram;                           // Total data transfer energy between DRAM and Multi-chip.
 
 };

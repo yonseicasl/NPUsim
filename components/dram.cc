@@ -253,6 +253,8 @@ void dram_t::init(section_config_t m_section_config) {
     unsigned mosaic_cache_kb = 0;
     m_section_config.get_setting("mosaic_cache_kb", &mosaic_cache_kb);
     mosaic_cache_bytes = static_cast<size_t>(mosaic_cache_kb)*1024;
+    m_section_config.get_setting("mosaic_cache_ways", &mosaic_cache_ways);
+    m_section_config.get_setting("mosaic_write_request_ns", &mosaic_write_request_ns);
     if(mosaic_write_request_bytes == 0) mosaic_write_request_bytes = mosaic_request_bytes;
     if(mosaic_write_path_latency_ns < 0.0) mosaic_write_path_latency_ns = mosaic_path_latency_ns;
     if(!mosaic_dram_config.empty()) {
@@ -294,14 +296,23 @@ void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, si
     double ns = ramulator_ns(mosaic_dram_config, copies*bytes, is_write,
                              is_write ? mosaic_write_request_bytes : mosaic_request_bytes, mosaic_max_inflight,
                              is_write ? mosaic_write_path_latency_ns : mosaic_path_latency_ns);
-    if(is_write && mosaic_line_bytes > 0 && mosaic_write_request_bytes > 0 &&
-       mosaic_write_request_bytes < mosaic_line_bytes) {
+    const bool partial = is_write && mosaic_line_bytes > 0 && mosaic_write_request_bytes > 0 &&
+                         mosaic_write_request_bytes < mosaic_line_bytes;
+    const size_t requests = (is_write && mosaic_write_request_bytes > 0)
+                            ? (copies*bytes + mosaic_write_request_bytes - 1)/mosaic_write_request_bytes : 0;
+    if(partial && mosaic_output_conflict) {
+        // The rows' lines thrash one set: every partial write reads its line again and evicts a
+        // dirty one (measured: rtl_mem_path.txt write_strided64k).
+        ns += ramulator_ns(mosaic_dram_config, requests*mosaic_line_bytes, false, mosaic_request_bytes,
+                           mosaic_max_inflight, mosaic_path_latency_ns);
+        ns += ramulator_ns(mosaic_dram_config, requests*mosaic_line_bytes, true, mosaic_line_bytes, 0, 0.0);
+    } else if(partial) {
         // Write-allocate cache: a partial-line write to a line it does not hold reads the line first
         // (outputs are new data, so every written line misses).
         ns += ramulator_ns(mosaic_dram_config, copies*bytes, false, mosaic_request_bytes, mosaic_max_inflight,
                            mosaic_path_latency_ns);
     }
-    if(is_write && mosaic_cache_bytes > 0) {
+    if(is_write && mosaic_cache_bytes > 0 && !(partial && mosaic_output_conflict)) {
         // Write-back cache: once the layer's data outgrows it, the lines it evicts are dirty in the
         // proportion written / total, so (footprint - cache) / footprint of the written bytes go back
         // to the DRAM as line writes the cache issues (no DMA limit). ponytail: LRU over one layer, no
@@ -320,6 +331,7 @@ void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, si
         }
     }
     const double cycles = ns/copies*frequency/1e3;
+    mosaic_write_port_cycle += requests*mosaic_write_request_ns/copies*frequency/1e3;
     access_cycle[type] = before.access;
     transfer_cycle[type] = before.transfer + cycles;
     if(overlap) cycle_chip_dram[type] = before.overlap + std::max(cycles, sink_cycle);
@@ -338,6 +350,21 @@ void dram_t::connect_layer(nebula::layer_t *m_layer) {
 
 void dram_t::update_tile_size(scheduler_t *m_scheduler) {
     tile_size = m_scheduler->tile_size[component_type_t::DRAM];
+    // L2 set conflict of the output rows: a tile writes its batch rows, one row pitch (the layer's
+    // output_size, its C*H*W output elements) apart, part of a line at a time; when more rows than the cache has
+    // ways map to one set, they evict each other's open lines. Set+bank index = line address mod
+    // (cache / ways / line). ponytail: GEMM/FC rows only (a conv tile's H/W runs are not checked).
+    mosaic_output_conflict = false;
+    if(mosaic_cache_bytes == 0 || mosaic_cache_ways == 0 || mosaic_line_bytes == 0 || !layer) return;
+    const std::vector<unsigned> tile_dims = m_scheduler->mapping_table->calculate_parameter_size(component_type_t::CHIPS_Y);
+    const size_t pitch = runtime_datatypes().storage_bytes(data_type_t::OUTPUT, layer->output_size);
+    const size_t sets = mosaic_cache_bytes/mosaic_cache_ways/mosaic_line_bytes;
+    const size_t step = (pitch/mosaic_line_bytes) % sets;
+    size_t g = sets, r = step;                                           // gcd (pre-C++17 build)
+    while(r) { const size_t t = g % r; g = r; r = t; }
+    const size_t period = step == 0 ? 1 : sets/g;                       // distinct sets the rows cycle through
+    const size_t rows = tile_dims[parameter_type_t::BATCH_SIZE];
+    mosaic_output_conflict = (rows + period - 1)/period > mosaic_cache_ways;
 }
 
 unsigned dram_t::get_bitwidth() {
@@ -1256,6 +1283,7 @@ double dram_t::modeled_elapsed_cycles() const {
 
 void dram_t::reset() {
     done = false;
+    mosaic_write_port_cycle = 0.0;
 
     skip_transfer.assign(data_type_t::NUM_DATA_TYPES, false);
 
