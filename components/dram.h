@@ -136,6 +136,10 @@ public:
     unsigned mosaic_request_bytes = 0;
     unsigned mosaic_max_inflight = 0;
     double mosaic_path_latency_ns = 0.0;
+    // Write-back streams: mosaic_write_request_bytes / mosaic_write_path_latency_ns (default: as reads),
+    // e.g. a DMA that stores one narrow output row per request.
+    unsigned mosaic_write_request_bytes = 0;
+    double mosaic_write_path_latency_ns = -1.0;
 
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory

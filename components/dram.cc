@@ -247,6 +247,10 @@ void dram_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("mosaic_request_bytes", &mosaic_request_bytes);
     m_section_config.get_setting("mosaic_max_inflight", &mosaic_max_inflight);
     m_section_config.get_setting("mosaic_path_latency_ns", &mosaic_path_latency_ns);
+    m_section_config.get_setting("mosaic_write_request_bytes", &mosaic_write_request_bytes);
+    m_section_config.get_setting("mosaic_write_path_latency_ns", &mosaic_write_path_latency_ns);
+    if(mosaic_write_request_bytes == 0) mosaic_write_request_bytes = mosaic_request_bytes;
+    if(mosaic_write_path_latency_ns < 0.0) mosaic_write_path_latency_ns = mosaic_path_latency_ns;
     if(!mosaic_dram_config.empty()) {
 #ifndef NPUSIM_MOSAIC_DRAM
         std::cerr << "Error: NPUSIM_MOSAIC_DRAM is set but NPUsim was built without MOSAIC_ROOT" << std::endl;
@@ -283,8 +287,11 @@ void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, si
     const size_t bytes = runtime_datatypes().storage_bytes(type, elements);
     if(bytes == 0) return;
     const size_t copies = std::max<size_t>(1, (1 << 20)/bytes);
-    const double cycles = ramulator_ns(mosaic_dram_config, copies*bytes, is_write, mosaic_request_bytes,
-                                       mosaic_max_inflight, mosaic_path_latency_ns)/copies*frequency/1e3;
+    const double cycles = ramulator_ns(mosaic_dram_config, copies*bytes, is_write,
+                                       is_write ? mosaic_write_request_bytes : mosaic_request_bytes,
+                                       mosaic_max_inflight,
+                                       is_write ? mosaic_write_path_latency_ns : mosaic_path_latency_ns)
+                          /copies*frequency/1e3;
     access_cycle[type] = before.access;
     transfer_cycle[type] = before.transfer + cycles;
     if(overlap) cycle_chip_dram[type] = before.overlap + std::max(cycles, sink_cycle);
