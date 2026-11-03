@@ -121,3 +121,26 @@ sections; no errors (raw archive `results/2026-11-03_colab_v5e1_followup2.zip`).
   carry; the compiled HLO now keeps every reduce inside the while body (it had none before). The Kaggle bench's
   HBM section had the same flaws (1-D, stacked, one buffer at >= 512 MB) and is fixed the same way. Rerun with
   `%env TPU_BENCH_SECTIONS=hbm_read` (a few minutes).
+
+## Results: 2026-11-03 Colab v5e-1, third run (`results/2026-11-03_colab_v5e1_followup3/`)
+
+`tpu_v5e1_stream_bench` with the hbm_read fix, all sections, no errors (raw archive
+`results/2026-11-03_colab_v5e1_followup3.zip`).
+
+- **Sustained HBM read: 732-757 GB/s** (64 MB 732, 256 MB 749, 1 GB 755, 4 GB 757), 89-92% of the 819 GB/s spec.
+  The same rate shows up in every HBM-bound measurement: streamed decode weights 690-750 GB/s, attention's KV
+  read 733-797 GB/s. This is the target for a MOSAIC HBM2e config (2 stacks x 409.6 GB/s) to reproduce.
+- **Reproducible against the second run** (median / max |difference|): streamed GEMMs 0.9% / 5.8%, decode
+  layers 0.7% / 5.1%, attention 0.3% / 28.8%, small odd GEMMs 6.3% / 70.9% -- the large maxima are us-scale
+  cases (B 1 L 512 attention, M 100 K=N 1000-1024 GEMMs).
+
+### What the three Colab runs establish for NPUsim (TPU v5e, one chip)
+
+| quantity | measured | NPUsim |
+|---|---|---|
+| decode-shaped GEMMs, weights streamed (M 1..128) | HBM-bound at 690-750 GB/s | -0.3..-8% (MAPE ~5%), assumes 819 GB/s |
+| compute-bound GEMMs | 187-192 of 197 TFLOPS | -1..+12% |
+| int8 weights at M <= 32 | half the bf16 time | not compared yet (tpu_v5e int8 config) |
+| decode attention, B >= 8 | KV bytes / ~745 GB/s (1.03-1.12x roofline) | not modeled in the PaLM flow |
+| decode layer | GEMM-only layer + attention (within 2.4%) | 4 projection GEMMs -3..-13% of the GEMM-only layer |
+| small / unaligned GEMMs | | -10..-36% at K=N 1000-1024 / 2000-2048: fixed per-GEMM cost, MXU strip partition |
