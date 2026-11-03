@@ -140,6 +140,11 @@ public:
     // e.g. a DMA that stores one narrow output row per request.
     unsigned mosaic_write_request_bytes = 0;
     double mosaic_write_path_latency_ns = -1.0;
+    // A write-back, write-allocate cache between the DMA and the DRAM (e.g. an SoC L2):
+    // mosaic_line_bytes (partial-line writes read the line first) and mosaic_cache_bytes (dirty lines
+    // go back once a layer's data outgrows it). 0 (default) = no cache.
+    unsigned mosaic_line_bytes = 0;
+    size_t mosaic_cache_bytes = 0;
 
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory

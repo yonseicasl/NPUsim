@@ -249,6 +249,10 @@ void dram_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("mosaic_path_latency_ns", &mosaic_path_latency_ns);
     m_section_config.get_setting("mosaic_write_request_bytes", &mosaic_write_request_bytes);
     m_section_config.get_setting("mosaic_write_path_latency_ns", &mosaic_write_path_latency_ns);
+    m_section_config.get_setting("mosaic_line_bytes", &mosaic_line_bytes);
+    unsigned mosaic_cache_kb = 0;
+    m_section_config.get_setting("mosaic_cache_kb", &mosaic_cache_kb);
+    mosaic_cache_bytes = static_cast<size_t>(mosaic_cache_kb)*1024;
     if(mosaic_write_request_bytes == 0) mosaic_write_request_bytes = mosaic_request_bytes;
     if(mosaic_write_path_latency_ns < 0.0) mosaic_write_path_latency_ns = mosaic_path_latency_ns;
     if(!mosaic_dram_config.empty()) {
@@ -287,11 +291,35 @@ void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, si
     const size_t bytes = runtime_datatypes().storage_bytes(type, elements);
     if(bytes == 0) return;
     const size_t copies = std::max<size_t>(1, (1 << 20)/bytes);
-    const double cycles = ramulator_ns(mosaic_dram_config, copies*bytes, is_write,
-                                       is_write ? mosaic_write_request_bytes : mosaic_request_bytes,
-                                       mosaic_max_inflight,
-                                       is_write ? mosaic_write_path_latency_ns : mosaic_path_latency_ns)
-                          /copies*frequency/1e3;
+    double ns = ramulator_ns(mosaic_dram_config, copies*bytes, is_write,
+                             is_write ? mosaic_write_request_bytes : mosaic_request_bytes, mosaic_max_inflight,
+                             is_write ? mosaic_write_path_latency_ns : mosaic_path_latency_ns);
+    if(is_write && mosaic_line_bytes > 0 && mosaic_write_request_bytes > 0 &&
+       mosaic_write_request_bytes < mosaic_line_bytes) {
+        // Write-allocate cache: a partial-line write to a line it does not hold reads the line first
+        // (outputs are new data, so every written line misses).
+        ns += ramulator_ns(mosaic_dram_config, copies*bytes, false, mosaic_request_bytes, mosaic_max_inflight,
+                           mosaic_path_latency_ns);
+    }
+    if(is_write && mosaic_cache_bytes > 0) {
+        // Write-back cache: once the layer's data outgrows it, the lines it evicts are dirty in the
+        // proportion written / total, so (footprint - cache) / footprint of the written bytes go back
+        // to the DRAM as line writes the cache issues (no DMA limit). ponytail: LRU over one layer, no
+        // reuse across layers; a cache model replaces this if reuse matters.
+        size_t footprint = 0;
+        for(unsigned t = 0; t < data_type_t::NUM_DATA_TYPES; ++t) {
+            footprint += runtime_datatypes().storage_bytes(static_cast<data_type_t>(t), tile_size[t]);
+        }
+        if(footprint > mosaic_cache_bytes) {
+            const size_t writeback = static_cast<size_t>(
+                static_cast<double>(copies*bytes)*(footprint - mosaic_cache_bytes)/footprint);
+            if(writeback > 0) {
+                ns += ramulator_ns(mosaic_dram_config, writeback, true,
+                                   mosaic_line_bytes ? mosaic_line_bytes : mosaic_request_bytes, 0, 0.0);
+            }
+        }
+    }
+    const double cycles = ns/copies*frequency/1e3;
     access_cycle[type] = before.access;
     transfer_cycle[type] = before.transfer + cycles;
     if(overlap) cycle_chip_dram[type] = before.overlap + std::max(cycles, sink_cycle);
