@@ -7,14 +7,15 @@
 #
 # 1. single-chip GEMMs: decode-style GEMVs (M = 1..512) to compute-bound GEMMs, bf16 weights and int8
 #    weights dequantized in the kernel
-# 2. HBM bandwidth: elementwise streams over large arrays
+# 2. HBM bandwidth: read-only streams over large arrays
 # 3. collectives over the 8 chips: all-reduce, all-gather, reduce-scatter, 4 KB .. 128 MB per chip
 # 4. one Llama-2-70B-shaped decode layer, tensor-parallel over 8 chips, B = 1..128, context 2048, and
 #    variants without collectives / attention / vector ops that split its time into components
 #
 # Timing: each op runs n and 2n times inside one jitted fori_loop whose iterations depend on each
 # other (no hoisting, no host dispatch in the loop); time per iteration = (t(2n) - t(n)) / n, the
-# median of several runs.
+# median of several runs. Each iteration consumes all of the previous result (a full reduction): a scalar
+# carry taken from one element would let XLA sink that slice into the op and compute one element.
 #
 # Cold operands: TPU v5e keeps an operand of up to ~128 MiB on chip when every iteration reads the same
 # buffer, so a loop over one weight measures on-chip reuse, not HBM. Iteration i reads copy i % R of a
@@ -123,7 +124,7 @@ rng = np.random.default_rng(0)
 def gemm_loop(n, x, ws):
     def body(i, c):
         y = (x + c.astype(x.dtype)) @ pick(ws, i).astype(jnp.bfloat16)
-        return c + y[0, 0].astype(jnp.float32) * 1e-6
+        return c + jnp.sum(y.astype(jnp.float32)) * 1e-9          # all of y, so no slice sinks into the dot
     return lax.fori_loop(0, n, body, jnp.float32(0))
 
 
@@ -156,8 +157,7 @@ for S in ([256] if QUICK else [1024, 2048, 4096, 8192]):
 @partial(jax.jit, static_argnums=0)
 def stream_loop(n, stack):
     def body(i, c):
-        b = pick(stack, i) * (1 + c).astype(stack.dtype)   # read a copy, write b
-        return c + b[0].astype(jnp.float32) * 1e-9
+        return c + jnp.sum(pick(stack, i).astype(jnp.float32)) * 1e-12   # reads the whole copy
     return lax.fori_loop(0, n, body, jnp.float32(0))
 
 
@@ -166,7 +166,7 @@ def hbm(mbytes):
     stack = make((R, mbytes * 2 ** 20 // 2), jnp.bfloat16, jax.sharding.SingleDeviceSharding(dev0), 0, fill=1)
     s = per_iter(stream_loop, stack, n=20)
     del stack
-    return {"seconds": s, "gbps_read_plus_write": 2 * mbytes * 2 ** 20 / s / 1e9 if s else None, "copies": R}
+    return {"seconds": s, "read_gbps": mbytes * 2 ** 20 / s / 1e9 if s else None, "copies": R}
 
 
 for mb in ([1, 8] if QUICK else [1, 16, 128, 1024, 4096]):
@@ -194,7 +194,7 @@ def collective(kind, per_chip_bytes):
         def local(xl):
             def body(i, c):
                 y = op(xl + c.astype(xl.dtype))
-                return c + y[0].astype(jnp.float32) * 1e-9
+                return c + jnp.sum(y.astype(jnp.float32)) * 1e-12
             return lax.fori_loop(0, n, body, jnp.float32(0))
         return shard_map(local, mesh=mesh, in_specs=P("i"), out_specs=P())(x)
     s = per_iter(run, x, n=20)

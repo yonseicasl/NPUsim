@@ -22,7 +22,7 @@ A failing measurement is recorded under `errors` in the JSON and the run continu
 | section | content | timing |
 |---|---|---|
 | gemm | M in 1..512 x (K, N) in {4096^2, 8192^2, 8192x28672, 28672x8192}, bf16 and int8 weights (dequantized in the kernel); square bf16 GEMMs 1024..8192 | slope of n vs 2n dependent iterations in one jitted `fori_loop` |
-| hbm | elementwise stream over 1 MB .. 4 GB | same |
+| hbm | read-only stream over 1 MB .. 4 GB | same |
 | collective | all-reduce, all-gather, reduce-scatter over 8 chips, 4 KB .. 128 MB per chip | same, inside `shard_map` |
 | decode_layer | Llama-2-70B layer (E 8192, F 28672, 64 heads, 8 KV heads, d_head 128), TP 8, B 1..128, context 2048, bf16 and int8 weights; variants full / no_comm / no_attn / no_vector / gemm_only; one profiler trace (B 8, bf16) | per layer, n vs 2n layers |
 
@@ -36,3 +36,34 @@ KV cache, streamed array; a decode iteration runs layer i % R), R chosen so the 
 
 `make_notebook.py` regenerates the notebook from the script. `TPU_BENCH_QUICK=1 TPU_BENCH_OUT=<dir>` with
 `JAX_PLATFORMS=cpu XLA_FLAGS=--xla_force_host_platform_device_count=8` runs a tiny CPU smoke test.
+
+# TPU v5e-1 follow-up (Colab)
+
+`colab_v5e1_bench.py` / `.ipynb` follows up the isolated Colab runs of `measure_tpu.py` (one GEMM or one decode
+layer per XLA program; `results/2026-11-03_colab_v5e1_*` on branch `tpu-measure`). With fresh buffers such a
+program copies an operand HBM -> on-chip memory and then runs the fusion, serially, so it overstates an HBM-bound
+GEMM; a decode step streams many different weights inside one program. Here everything runs inside one program
+(n vs 2n dependent iterations of a `fori_loop`, R distinct operand copies, >= 512 MB):
+
+| section | measures | answers |
+|---|---|---|
+| stream_gemm | Llama-3-8B projections (M 1..512) streaming distinct weights (cold) / one weight (warm), bf16 and int8 | HBM-bound GEMM time with copy/compute overlap; on-chip reuse factor; int8 dequant cost |
+| decode_stack | R distinct Llama-3-8B layers (weights + KV) in one loop, B 1..128, L 512..8192, full / GEMM-only | layer time without the one-op-program copy; non-GEMM share |
+| attention | decode attention alone over a rotated KV cache, B 1..128, L 512..32768 | KV-read efficiency vs roofline (open in validation/palm) |
+| hbm_read | read-only streams 64 MB .. 4 GB | sustained HBM read bandwidth (to check a MOSAIC HBM2e config) |
+| odd_gemm | M 100..512 x K=N 1000..2048 around multiples of 128 | padding / tiling granularity |
+
+For two cases (8x4096x4096 streamed and as a one-op program; decode B 8 L 2048) it also keeps the optimized HLO
+(`hlo/`), XLA's cost analysis and a profiler trace (`traces/`, for TensorBoard's profile plugin: trace viewer,
+op_profile, hlo_stats, roofline, memory_profile), and the run's HBM memory stats.
+
+Colab: Runtime -> Change runtime type -> v5e-1 TPU; upload the notebook (File -> Upload notebook) and Run All
+(~20-30 min). It downloads `tpu_v5e1_followup.zip`; unzip it under `results/<date>_colab_v5e1_followup/`, then
+
+```
+LD_LIBRARY_PATH=<npusim libs> python3 validation/tpu_v5e/compare_v5e.py results/<dir>     # tpu-measure branch
+python3 validation/tpu_v5e/colab_summary.py results/<dir> [--isolated results/2026-11-03_colab_v5e1_rot]
+```
+
+`gemm.csv` there is in measure_tpu.py's format (device_us = loop slope), so compare_v5e.py takes it as is and
+writes `compare_gemm.csv`, which colab_summary.py then uses for the NPUsim columns.
