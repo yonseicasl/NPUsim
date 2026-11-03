@@ -127,3 +127,27 @@ already the refresh-free bound. NPUsim streams at ~715 GB/s there (1 x 4096 x 81
 the probe's refresh-free 727 GB/s minus the per-stream start; the remaining gap to the TPU's ~750 GB/s
 is Ramulator's row/command model and the fresh device per stream, not refresh. (HBM2_R20 has no
 per-bank refresh manager: PerBank looks up nREFIpb, the 2.0 port names it nREFISB.)
+
+### 2026-11-03, Colab TPU v5e-1, follow-up (`results/2026-11-03_colab_v5e1_followup/`)
+
+Measured by a separate script (not `measure_tpu.py`; `results.json` keeps all of it, `hlo/` three HLO
+dumps; traces not committed): GEMMs streamed in a `while` loop over distinct weights (bf16 and int8
+weights), a stacked decode layer (`while` over layers, `full` and `gemm_only`), attention alone, odd-shaped
+GEMMs, an HBM read test.
+
+- Streamed decode-shaped GEMMs (M 1-128, the four Llama-3-8B projections; 20): no serial copy as in the
+  isolated runs, 690-755 GB/s. NPUsim analytic mean -4.6% (MAPE 5.0%), Ramulator2 HBM2e +5.0% (6.0%):
+  the same bracket as before, now on the cases that matter for decode. M 512: -5..+4% on both.
+- Odd-shaped small GEMMs (M 100-512, K = N 1000-2048; 35): NPUsim short, analytic MAPE 15%, Ramulator 11%.
+  Padding agrees (1100 and 1152 take the same time on both); a fixed ~1.5-3 us per kernel is missing
+  (`layer_setup_cycle` 0, no first-DMA latency in `tpu_v5e.cfg`).
+- Stacked decode `gemm_only`: B = 1 745-751 GB/s (analytic -4..-5%, Ramulator +7..+8%); B >= 8 645-685
+  GB/s (analytic -10..-14%, Ramulator -2..+1%). The B 8 trace shows why: qkv/o_proj weights are first
+  copied out of the stacked array (`dynamic-slice` fusions and `slice-done` waits, ~180 us per layer)
+  and the dots then read the copies -- the cost of slicing stacked weights in a `while` loop, not of
+  streaming them.
+- Attention at >= 268 MB of KV runs at 226 GB/s (3.6x the KV roofline) while <= 67 MB runs at 550-610
+  GB/s. GQA is not materialized (the einsum is grouped); the HLO slices the layer's KV out of the stack
+  and relayouts it (`copy_bitcast_fusion`, layout {3,1,2,0}), presumably through HBM once it exceeds the
+  on-chip memory. Implementation-dependent; not used for NPUsim.
+- `hbm_read` is invalid (64 MB at 94 GB/s, 4 GB in 1 us: the read was elided or not timed on device).
