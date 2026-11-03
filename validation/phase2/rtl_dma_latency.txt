@@ -1,0 +1,41 @@
+== Loading device model file '/home/bogil/npusim/ext/chipyard/generators/testchipip/src/main/resources/dramsim2_ini/DDR3_micron_64M_8B_x4_sg15.ini' == 
+== Loading system model file '/home/bogil/npusim/ext/chipyard/generators/testchipip/src/main/resources/dramsim2_ini/system.ini' == 
+===== MemorySystem 0 =====
+CH. 0 TOTAL_STORAGE : 4096MB | 1 Ranks | 16 Devices per rank
+%Warning: System has stack size 8192 kb which may be too small; suggest 'ulimit -c 15363' or larger
+[UART] UART0 is here (stdin/stdout).
+DRAMSim2 Clock Frequency =666666666Hz, CPU Clock Frequency=500000000Hz
+DMALAT fence=2 cold=61 warm=33 (median cycles of 32)
+DMALAT_TRIAL 0 cold=60 warm=33
+DMALAT_TRIAL 1 cold=60 warm=33
+DMALAT_TRIAL 2 cold=61 warm=33
+DMALAT_TRIAL 3 cold=61 warm=33
+DMALAT_TRIAL 4 cold=61 warm=33
+DMALAT_TRIAL 5 cold=61 warm=33
+DMALAT_TRIAL 6 cold=61 warm=33
+DMALAT_TRIAL 7 cold=61 warm=33
+DMALAT_TRIAL 8 cold=61 warm=33
+DMALAT_TRIAL 9 cold=61 warm=33
+DMALAT_TRIAL 10 cold=61 warm=33
+DMALAT_TRIAL 11 cold=61 warm=33
+DMALAT_TRIAL 12 cold=61 warm=33
+DMALAT_TRIAL 13 cold=61 warm=33
+DMALAT_TRIAL 14 cold=61 warm=33
+DMALAT_TRIAL 15 cold=61 warm=33
+DMALAT_TRIAL 16 cold=61 warm=33
+DMALAT_TRIAL 17 cold=61 warm=33
+DMALAT_TRIAL 18 cold=61 warm=33
+DMALAT_TRIAL 19 cold=61 warm=33
+DMALAT_TRIAL 20 cold=61 warm=33
+DMALAT_TRIAL 21 cold=61 warm=33
+DMALAT_TRIAL 22 cold=61 warm=33
+DMALAT_TRIAL 23 cold=61 warm=33
+DMALAT_TRIAL 24 cold=61 warm=33
+DMALAT_TRIAL 25 cold=61 warm=33
+DMALAT_TRIAL 26 cold=61 warm=33
+DMALAT_TRIAL 27 cold=61 warm=33
+DMALAT_TRIAL 28 cold=61 warm=33
+DMALAT_TRIAL 29 cold=61 warm=33
+DMALAT_TRIAL 30 cold=62 warm=33
+DMALAT_TRIAL 31 cold=71 warm=33
+- /home/bogil/npusim/ext/chipyard/sims/verilator/generated-src/chipyard.harness.TestHarness.GemminiRocketConfig/gen-collateral/TestDriver.v:158: Verilog $finish

@@ -138,10 +138,18 @@ NPUsim은 `compare_cold.py`로 세 설정을 비교한다: A `gemmini_rtl`, B `g
 - L2가 비면 RTL이 3~54% 느려진다(16x512x512 +53%): 기존 golden은 L2 효과를 포함한다.
 - 연산 바운드 4점은 세 설정 모두 ±6%. 메모리 바운드 점은 RTL 실효 대역폭이 4.6 B/cycle(512 KB),
   2.7 B/cycle(2 MB, 데이터가 L2보다 커서 dirty C의 write-back이 겹친다)로 64-bit 포트(8 B/cycle)와
-  DDR3보다 낮다. C가 B와 같은 이유: NPUsim의 병목은 포트 폭인데 RTL의 병목은 Gemmini DMA의 동시
-  요청 수(`max_in_flight_mem_reqs` = 16 x 64 B)와 L2 miss 왕복 지연(Little's law, 약 190 cycle)이다.
-  이를 맞추려면 MOSAIC DRAM 스트림에 동시 요청 수 상한과 L2 경로 지연, L2 write-back을 넣어야 한다
-  (미구현).
+  DDR3보다 낮다.
+- DMA 왕복 지연 측정(`dma_latency.c`, `rtl_dma_latency.txt`): L2 miss 한 줄 mvin 61 cycle, L2 hit 33,
+  fence만 2 (500 MHz). 동시 요청 16 x 64 B / 59 cycle = 17 B/cycle > 포트 8 B/cycle이라 DMA 동시 요청
+  상한은 병목이 아니다(앞서 GEMM 결과에서 역산한 약 190 cycle 왕복 가설은 틀렸다). NPUsim의 MOSAIC
+  DRAM 스트림은 이제 `[dram] mosaic_request_bytes / mosaic_max_inflight / mosaic_path_latency_ns`로 DMA를
+  표현할 수 있고(기본 0 = 제한 없음), `gemmini_rtl_mem.cfg`는 측정값(64 B, 16, DDR3 37.5 ns를 뺀 80 ns)을
+  쓴다. 결과는 C 그대로다.
+- 남은 원인(미구현): (1) 메모리 바운드 타일에서 DMA와 연산이 거의 겹치지 않는다. 16x16x16384의 RTL
+  타일당 약 3,529 cycle은 연산 960 + B 읽기 1,024 + C 쓰기 1,024의 합에 가깝고, NPUsim은 이중 버퍼로
+  이를 겹친다. GLB 이중 버퍼를 끄면 이 점은 -11%가 되지만 연산 바운드 점이 2배 느려져, 겹침이 타일
+  모양에 따라 다르다(Gemmini 명령 큐 lookahead로 추정, 미측정). (2) 16x16x65536은 데이터가 L2보다 커서
+  dirty C의 write-back이 포트를 더 쓴다.
 
 ## 인프라 트러블슈팅 기록 (재현자 참고)
 

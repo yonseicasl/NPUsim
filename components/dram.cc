@@ -7,34 +7,50 @@
 #include <cstdlib>
 
 #ifdef NPUSIM_MOSAIC_DRAM
+#include <functional>
 #include <map>
-#include <utility>
+#include <queue>
+#include <tuple>
 #include "dram/cosim_frontend.h"
 
 namespace {
 // DRAM nanoseconds to read (or write) `bytes` as one sequential stream through MOSAIC's
-// Ramulator2, pushed at full pressure on a fresh device. Memoized: the tiles of a layer
-// repeat the same sizes.
-double ramulator_ns(const std::string &yaml, size_t bytes, bool is_write) {
-    static std::map<std::pair<size_t, bool>, double> memo;
-    const std::pair<size_t, bool> key(bytes, is_write);
+// Ramulator2 on a fresh device, issued by the accelerator's DMA: requests of request_bytes
+// (0: 64 DRAM transactions), at most max_inflight outstanding (0: unlimited), each holding its
+// slot for path_latency_ns beyond the DRAM access (caches, buses, clock crossings), so a
+// latency-bound DMA streams at max_inflight x request_bytes per round trip. Memoized: the tiles
+// of a layer repeat the same sizes.
+double ramulator_ns(const std::string &yaml, size_t bytes, bool is_write, size_t request_bytes,
+                    unsigned max_inflight, double path_latency_ns) {
+    static std::map<std::tuple<size_t, bool, size_t, unsigned, double>, double> memo;
+    const auto key = std::make_tuple(bytes, is_write, request_bytes, max_inflight, path_latency_ns);
     auto it = memo.find(key);
     if(it != memo.end()) return it->second;
     mosaicsim::CosimFrontend fe(yaml);
-    const size_t chunk = 64*fe.get_tx_bytes();   // CosimFrontend splits each push into tx-sized lines
-    size_t pos = 0, pushed = 0, done = 0;
+    const size_t chunk = request_bytes ? request_bytes : 64*fe.get_tx_bytes();
+    const uint64_t latency = static_cast<uint64_t>(std::ceil(path_latency_ns/fe.get_tCK()));
+    std::priority_queue<uint64_t, std::vector<uint64_t>, std::greater<uint64_t>> releases;
+    size_t pos = 0, pushed = 0, done = 0, inflight = 0;
+    uint64_t end = 0;
     while(pos < bytes || done < pushed) {
-        while(pos < bytes && !fe.full(is_write)) {
+        while(pos < bytes && (max_inflight == 0 || inflight < max_inflight) && !fe.full(is_write)) {
             const size_t size = std::min(chunk, bytes - pos);
             fe.push(static_cast<int64_t>(pos), is_write, static_cast<uint32_t>(size), &fe);
             pos += size;
             ++pushed;
+            ++inflight;
         }
         fe.tick();
-        while(fe.return_queue_pop()) ++done;
+        while(fe.return_queue_pop()) releases.push(fe.get_clk() + latency);
+        while(!releases.empty() && releases.top() <= fe.get_clk()) {
+            end = releases.top();
+            releases.pop();
+            --inflight;
+            ++done;
+        }
     }
     while(!fe.is_idle()) fe.tick();
-    return memo[key] = fe.get_clk()*fe.get_tCK();
+    return memo[key] = std::max<uint64_t>(end, fe.get_clk())*fe.get_tCK();
 }
 } // namespace
 #endif
@@ -227,6 +243,10 @@ void dram_t::init(section_config_t m_section_config) {
 #endif
 
     if(const char *yaml = std::getenv("NPUSIM_MOSAIC_DRAM")) mosaic_dram_config = yaml;
+    // The accelerator's DMA in front of the MOSAIC DRAM (see ramulator_ns); 0 = not limited.
+    m_section_config.get_setting("mosaic_request_bytes", &mosaic_request_bytes);
+    m_section_config.get_setting("mosaic_max_inflight", &mosaic_max_inflight);
+    m_section_config.get_setting("mosaic_path_latency_ns", &mosaic_path_latency_ns);
     if(!mosaic_dram_config.empty()) {
 #ifndef NPUSIM_MOSAIC_DRAM
         std::cerr << "Error: NPUSIM_MOSAIC_DRAM is set but NPUsim was built without MOSAIC_ROOT" << std::endl;
@@ -263,7 +283,8 @@ void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, si
     const size_t bytes = runtime_datatypes().storage_bytes(type, elements);
     if(bytes == 0) return;
     const size_t copies = std::max<size_t>(1, (1 << 20)/bytes);
-    const double cycles = ramulator_ns(mosaic_dram_config, copies*bytes, is_write)/copies*frequency/1e3;
+    const double cycles = ramulator_ns(mosaic_dram_config, copies*bytes, is_write, mosaic_request_bytes,
+                                       mosaic_max_inflight, mosaic_path_latency_ns)/copies*frequency/1e3;
     access_cycle[type] = before.access;
     transfer_cycle[type] = before.transfer + cycles;
     if(overlap) cycle_chip_dram[type] = before.overlap + std::max(cycles, sink_cycle);

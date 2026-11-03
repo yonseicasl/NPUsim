@@ -130,6 +130,12 @@ public:
     void mosaic_stream(const cycles_snapshot_t &before, data_type_t type, size_t elements,
                        bool is_write, bool overlap, double sink_cycle);
     std::string mosaic_dram_config;
+    // [dram] mosaic_request_bytes / mosaic_max_inflight / mosaic_path_latency_ns: the DMA issuing the
+    // tile streams -- request size, outstanding-request limit, round-trip latency outside the DRAM.
+    // 0 (default) = the stream is pushed at full pressure with no added latency.
+    unsigned mosaic_request_bytes = 0;
+    unsigned mosaic_max_inflight = 0;
+    double mosaic_path_latency_ns = 0.0;
 
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory
