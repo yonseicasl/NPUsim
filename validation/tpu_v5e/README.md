@@ -74,3 +74,30 @@ writes `compare_gemm.csv`, which colab_summary.py then uses for the NPUsim colum
 (rotated buffers) are the archives the two Colab v5e-1 runs of `measure_tpu.py` produced, unchanged
 (gemm/vector/decode CSVs, decode_ops.json, env.json; no traces kept). Branch `tpu-measure` has them unpacked
 under `results/2026-11-03_colab_v5e1_{warm,rot}/` with their comparisons.
+
+## Results: 2026-11-03 Colab v5e-1 follow-up (`results/2026-11-03_colab_v5e1_followup/`)
+
+TPU v5 lite, JAX 0.11.2, no errors (raw archive `results/2026-11-03_colab_v5e1_followup.zip`).
+`compare.log` / `compare_gemm.csv`: compare_v5e.py (branch tpu-measure) on this run's gemm.csv.
+
+- **Streamed decode GEMMs** (Llama-3-8B projections, M 1..128, weights read from HBM inside one program):
+  NPUsim -0.3..-8% (16 points, all under), e.g. 8x4096x4096 46.8 us measured vs 43.4. Weights stream at
+  690-750 GB/s (85-92% of 819), which accounts for the gap. The isolated runs' -22..-35% (rotated: serial
+  copy + fusion) and +74..+312% (warm: weight on chip) were measurement artifacts: streamed 8x4096x4096 is 46.8
+  us vs 56.4 rotated (copy 44.8 + fusion 11.6) and 11.7 warm. Inside one program warm = cold (ratio ~1.0).
+- **int8 weights**: 0.50-0.56x the bf16 time at M <= 32 (HBM-bound, half the bytes), 0.6x at M 128, ~1.0x at
+  M 512 (compute-bound); dequantization is free at decode sizes.
+- **Small / unaligned GEMMs** (odd_gemm, M 100..512, K = N 1000..2048): NPUsim -23..-36% at K=N 1000-1024,
+  -10..-20% at 2000-2048, -12..+7% at 1100-1280. 1000 and 1024 measure the same (padding to 128 is right, and
+  NPUsim agrees). The pattern points to a fixed per-GEMM cost (~1-2 us) NPUsim lacks and to its partition of
+  output columns over the 4 MXUs in 128-column strips being coarser than XLA's (1024 -> 1100: NPUsim 1.6x,
+  measured 1.27x). Not yet modeled.
+- **decode_stack GEMM-only** per layer: 580 us at B 1 (NPUsim's 4 GEMMs -3.9%), 637-676 us at B 8..128, ~50 us
+  above the sum of the four streamed GEMMs (588-606); NPUsim -10..-14% there. Remeasure with the fixed bench.
+- **Not valid in this run** (bench artifacts, found in the saved HLO; fixed, rerun pending): attention and the
+  full decode layer above ~128 MB of KV picked the cache out of a stacked array with a dynamic slice and
+  relaid (B, L, kv, d) for the einsum -- two extra HBM copies, 3.6x the KV roofline instead of ~1.3-1.5x; and
+  hbm_read summed a 1-D array (slow on TPU) and at 1-4 GB used one buffer, so XLA hoisted the read out of the
+  loop. The bench now keeps KV as (B, kv, L, d), unrolls up to 8 distinct buffers in the loop body instead of
+  slicing large ones, and reads >= 2 distinct 2-D arrays. Rerun only those sections with
+  `%env TPU_BENCH_SECTIONS=decode_stack,attention,hbm_read` in a cell above the first code cell.

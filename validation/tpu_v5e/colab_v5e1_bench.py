@@ -16,6 +16,10 @@
 # 4. hbm_read: read-only streams 64 MB .. 4 GB (sustained HBM read bandwidth; spec 819 GB/s)
 # 5. odd_gemm: dimensions around multiples of 128 (padding/tiling granularity)
 #
+# TPU_BENCH_SECTIONS (comma list, default all) runs only some sections; in Colab put
+#   %env TPU_BENCH_SECTIONS=decode_stack,attention,hbm_read
+# in a cell above this one.
+#
 # Also, for a few cases: optimized HLO, XLA cost analysis and a profiler trace (hlo/, traces/, cost_analysis);
 # the HBM memory stats of the run (env.memory_stats).
 #
@@ -40,12 +44,13 @@ from jax import lax
 OUT = os.environ.get("TPU_BENCH_OUT", "/content/tpu_v5e1_followup")
 QUICK = os.environ.get("TPU_BENCH_QUICK") == "1"    # tiny sizes (CPU smoke test)
 ROTATE_MB = float(os.environ.get("TPU_BENCH_ROTATE_MB", "512"))
+SECTIONS = os.environ.get("TPU_BENCH_SECTIONS", "stream_gemm,decode_stack,attention,hbm_read,odd_gemm").split(",")
 os.makedirs(OUT, exist_ok=True)
 dev = jax.devices()[0]
 ONE = jax.sharding.SingleDeviceSharding(dev)
 RESULTS = {"env": {"jax": jax.__version__, "python": sys.version.split()[0], "platform": platform.platform(),
                    "device_kind": dev.device_kind, "n_devices": len(jax.devices()), "quick": QUICK,
-                   "rotate_mb": ROTATE_MB, "date": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())},
+                   "rotate_mb": ROTATE_MB, "sections": SECTIONS, "date": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())},
            "stream_gemm": [], "decode_stack": [], "attention": [], "hbm_read": [], "odd_gemm": [], "cost_analysis": {},
            "errors": []}
 print(RESULTS["env"])
@@ -94,8 +99,13 @@ def make(shape, dtype, seed, fill=None):
 
 
 def pick(stack, i):
-    """Copy i % R of a stack of R copies (dynamic, so XLA cannot hoist it out of the loop)."""
+    """Copy i % R of a stack of R copies (dynamic, so XLA cannot hoist it out of the loop). Fine for weights: the
+    slice fuses into the dot. Not for large KV caches or streamed arrays: there XLA materializes the slice (an extra
+    HBM round trip); those use UNROLL separate buffers in turn inside the loop body instead."""
     return lax.dynamic_index_in_dim(stack, i % stack.shape[0], keepdims=False)
+
+
+UNROLL = 8   # at most this many distinct buffers are unrolled in a loop body; more (small ones) use pick()
 
 
 def guarded(section, params, fn):
@@ -158,7 +168,7 @@ def gemm(M, K, N, wdtype, cold=True, tag=None):
 D, H, HKV, DH, F = (256, 4, 2, 32, 512) if QUICK else (4096, 32, 8, 128, 14336)    # Llama-3-8B
 PROJ = {"qkv": (D, (H + 2 * HKV) * DH), "o_proj": (H * DH, D), "ffn_up": (D, 2 * F), "ffn_down": (F, D)}
 MS = [1, 8] if QUICK else [1, 8, 32, 128, 512]
-for M in MS:
+for M in (MS if "stream_gemm" in SECTIONS else []):
     for name, (K, N) in PROJ.items():
         for wd in ("bf16", "int8"):
             for cold in (True, False):
@@ -174,11 +184,11 @@ for M in MS:
 def decode_stack(B, L, gemm_only=False, n_layers=4, tag=None):
     shapes = {"g1": ((D,), jnp.bfloat16), "wqkv": (PROJ["qkv"], jnp.bfloat16), "wo": (PROJ["o_proj"], jnp.bfloat16),
               "g2": ((D,), jnp.bfloat16), "wgu": (PROJ["ffn_up"], jnp.bfloat16), "wd": (PROJ["ffn_down"], jnp.bfloat16),
-              "k": ((B, L, HKV, DH), jnp.bfloat16), "v": ((B, L, HKV, DH), jnp.bfloat16)}
+              "k": ((B, HKV, L, DH), jnp.bfloat16), "v": ((B, HKV, L, DH), jnp.bfloat16)}
     per_layer = sum(math.prod(s) * jnp.dtype(t).itemsize for s, t in shapes.values())
-    R = copies(per_layer)
-    p = {name: make((R, *s), t, seed, fill=1 if name in ("g1", "g2", "k", "v") else None)
-         for seed, (name, (s, t)) in enumerate(shapes.items())}
+    R = min(UNROLL, copies(per_layer))              # 2 at full size: a layer is >= 436 MB
+    p = [{name: make(s, t, 100 * j + seed, fill=1 if name in ("g1", "g2", "k", "v") else None)
+          for seed, (name, (s, t)) in enumerate(shapes.items())} for j in range(R)]
     rms = lambda v, g: (v * lax.rsqrt(jnp.mean(v.astype(jnp.float32) ** 2, -1, keepdims=True) + 1e-6)).astype(v.dtype) * g
 
     def layer(x, w):
@@ -188,9 +198,9 @@ def decode_stack(B, L, gemm_only=False, n_layers=4, tag=None):
             o = q
         else:
             qg = q.reshape(B, HKV, H // HKV, DH)
-            s = jnp.einsum("bkgd,blkd->bkgl", qg, w["k"]) / float(np.sqrt(DH))
+            s = jnp.einsum("bkgd,bkld->bkgl", qg, w["k"]) / float(np.sqrt(DH))
             pr = jax.nn.softmax(s.astype(jnp.float32), -1).astype(jnp.bfloat16)
-            o = jnp.einsum("bkgl,blkd->bkgd", pr, w["v"]).reshape(B, H * DH)
+            o = jnp.einsum("bkgl,bkld->bkgd", pr, w["v"]).reshape(B, H * DH)
         x = x + o @ w["wo"]
         h = x if gemm_only else rms(x, w["g2"])
         gu = h @ w["wgu"]
@@ -199,17 +209,21 @@ def decode_stack(B, L, gemm_only=False, n_layers=4, tag=None):
 
     @partial(jax.jit, static_argnums=0)
     def run(n, x, p):
-        return lax.fori_loop(0, n, lambda i, xx: layer(xx, jax.tree_util.tree_map(lambda a: pick(a, i), p)), x)
+        def body(i, xx):                            # the R distinct layers, one after the other
+            for w in p:
+                xx = layer(xx, w)
+            return xx
+        return lax.fori_loop(0, n, body, x)
 
     x0 = make((B, D), jnp.bfloat16, 99, fill=0.01)
-    s = per_iter(run, x0, p, n=n_layers)
+    s = per_iter(run, x0, p, n=max(1, n_layers // R)) / R
     if tag:
-        trace(tag, run, n_layers, x0, p)
+        trace(tag, run, max(1, n_layers // R), x0, p)
     del p
     return {"us_per_layer": s * 1e6, "copies": R, "layer_mb": per_layer / 2 ** 20}
 
 
-for B in ([1, 8] if QUICK else [1, 8, 32, 128]):
+for B in (([1, 8] if QUICK else [1, 8, 32, 128]) if "decode_stack" in SECTIONS else []):
     for L in ([128] if QUICK else [512, 2048, 8192]):
         tag = "decode_stack_b8_l2048" if (B == 8 and L == 2048) else None
         guarded("decode_stack", {"B": B, "L": L, "variant": "full"}, partial(decode_stack, B, L, False, tag=tag))
@@ -220,27 +234,44 @@ for B in ([1, 8] if QUICK else [1, 8, 32, 128]):
 # ## 3. Decode attention alone over a rotated KV cache
 
 # %%
+def attend(q, k, v):
+    s = jnp.einsum("bkgd,bkld->bkgl", q, k) / float(np.sqrt(DH))
+    pr = jax.nn.softmax(s.astype(jnp.float32), -1).astype(jnp.bfloat16)
+    return jnp.einsum("bkgl,bkld->bkgd", pr, v)     # the output is the next query
+
+
 def attention(B, L):
+    """KV in (B, KV heads, L, d), the layout serving stacks keep. Up to UNROLL distinct caches unrolled in the loop
+    body; smaller caches (more copies) are picked from a stack, where the slice stays on chip."""
     kv_bytes = 2 * B * L * HKV * DH * 2
     R = copies(kv_bytes)
-    k, v = make((R, B, L, HKV, DH), jnp.bfloat16, 1, fill=1), make((R, B, L, HKV, DH), jnp.bfloat16, 2, fill=1)
     q0 = make((B, HKV, H // HKV, DH), jnp.bfloat16, 3)
+    if R <= UNROLL:
+        kv = [(make((B, HKV, L, DH), jnp.bfloat16, 0, fill=1), make((B, HKV, L, DH), jnp.bfloat16, 0, fill=1))
+              for _ in range(R)]
 
-    @partial(jax.jit, static_argnums=0)
-    def run(n, q, k, v):
-        def body(i, q):
-            s = jnp.einsum("bkgd,blkd->bkgl", q, pick(k, i)) / float(np.sqrt(DH))
-            pr = jax.nn.softmax(s.astype(jnp.float32), -1).astype(jnp.bfloat16)
-            return jnp.einsum("bkgl,blkd->bkgd", pr, pick(v, i))       # the output is the next query
-        return lax.fori_loop(0, n, body, q)
+        @partial(jax.jit, static_argnums=0)
+        def run(n, q, kv):
+            def body(i, q):
+                for k, v in kv:
+                    q = attend(q, k, v)
+                return q
+            return lax.fori_loop(0, n, body, q)
+        s = per_iter(run, q0, kv, n=max(2, 20 // R)) / R
+    else:
+        kv = (make((R, B, HKV, L, DH), jnp.bfloat16, 1, fill=1), make((R, B, HKV, L, DH), jnp.bfloat16, 2, fill=1))
 
-    s = per_iter(run, q0, k, v, n=20)
-    del k, v
+        @partial(jax.jit, static_argnums=0)
+        def run(n, q, kv):
+            return lax.fori_loop(0, n, lambda i, q: attend(q, pick(kv[0], i), pick(kv[1], i)), q)
+        s = per_iter(run, q0, kv, n=20)
+    del kv
     return {"us": s * 1e6, "kv_gbps": kv_bytes / s / 1e9 if s else None, "copies": R,
+            "mode": "unrolled" if R <= UNROLL else "stacked",
             "vs_roofline_819": s / (kv_bytes / 819e9) if s else None}
 
 
-for B in ([1, 8] if QUICK else [1, 8, 32, 128]):
+for B in (([1, 8] if QUICK else [1, 8, 32, 128]) if "attention" in SECTIONS else []):
     for L in ([128] if QUICK else [512, 2048, 8192, 32768]):
         if B * L <= 2 ** 20:                        # <= 4 GB of KV per layer
             guarded("attention", {"B": B, "L": L}, partial(attention, B, L))
@@ -251,22 +282,25 @@ for B in ([1, 8] if QUICK else [1, 8, 32, 128]):
 
 # %%
 @partial(jax.jit, static_argnums=0)
-def read_loop(n, stack):
+def read_loop(n, arrays):
     def body(i, c):
-        return c + jnp.sum(pick(stack, i).astype(jnp.float32)) * 1e-12   # reads the whole copy
+        for a in arrays:                            # each distinct (rows, 4096) array read in full
+            c = c + jnp.sum(a.astype(jnp.float32)) * 1e-12
+        return c
     return lax.fori_loop(0, n, body, jnp.float32(0))
 
 
 def hbm_read(mbytes):
+    """Read-only stream: R >= 2 distinct 2-D arrays (>= 512 MB) read in turn, unrolled (no slicing)."""
     nbytes = mbytes * 2 ** 20
-    R = copies(nbytes, at_least=1)
-    stack = make((R, nbytes // 2), jnp.bfloat16, 0, fill=1)
-    s = per_iter(read_loop, stack, n=20)
-    del stack
+    R = min(UNROLL, copies(nbytes))
+    arrays = [make((nbytes // 2 // 4096, 4096), jnp.bfloat16, 0, fill=1) for _ in range(R)]
+    s = per_iter(read_loop, arrays, n=max(2, 20 // R)) / R
+    del arrays
     return {"us": s * 1e6, "read_gbps": nbytes / s / 1e9 if s else None, "copies": R}
 
 
-for mb in ([1, 8] if QUICK else [64, 256, 1024, 4096]):
+for mb in (([1, 8] if QUICK else [64, 256, 1024, 4096]) if "hbm_read" in SECTIONS else []):
     guarded("hbm_read", {"mbytes": mb}, partial(hbm_read, mb))
 
 
@@ -274,7 +308,7 @@ for mb in ([1, 8] if QUICK else [64, 256, 1024, 4096]):
 # ## 5. Dimensions around multiples of 128
 
 # %%
-for M in ([100, 128] if QUICK else [100, 128, 200, 256, 512]):
+for M in (([100, 128] if QUICK else [100, 128, 200, 256, 512]) if "odd_gemm" in SECTIONS else []):
     for KN in ([1000, 1024] if QUICK else [1000, 1024, 1100, 1152, 1280, 2000, 2048]):
         guarded("odd_gemm", {"M": M, "K": KN, "N": KN, "weights": "bf16", "cold": True},
                 partial(gemm, M, KN, KN, "bf16", True))
