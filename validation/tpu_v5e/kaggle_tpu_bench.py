@@ -161,21 +161,27 @@ for S in ([256] if QUICK else [1024, 2048, 4096, 8192]):
 
 # %%
 @partial(jax.jit, static_argnums=0)
-def stream_loop(n, stack):
+def stream_loop(n, arrays):
     def body(i, c):
-        return c + jnp.sum(pick(stack, i).astype(jnp.float32)) * 1e-12   # reads the whole copy
+        for a in arrays:   # read each distinct 2-D array in full; the max with the carry keeps the read in the loop
+            c = c + jnp.sum(jnp.maximum(a, c.astype(a.dtype)).astype(jnp.float32)) * 1e-12
+        return c
     return lax.fori_loop(0, n, body, jnp.float32(0))
 
 
 def hbm(mbytes):
-    R = copies(mbytes * 2 ** 20)
-    stack = make((R, mbytes * 2 ** 20 // 2), jnp.bfloat16, jax.sharding.SingleDeviceSharding(dev0), 0, fill=1)
-    s = per_iter(stream_loop, stack, n=20)
-    del stack
-    return {"seconds": s, "read_gbps": mbytes * 2 ** 20 / s / 1e9 if s else None, "copies": R}
+    """Read-only stream over R >= 2 distinct (rows, 4096) arrays (>= ROTATE_MB), unrolled in the loop body: a 1-D
+    array reduces slowly on TPU, a stacked one gets sliced into a copy, and one buffer is hoisted out of the loop."""
+    nbytes = mbytes * 2 ** 20
+    R = 1 if ROTATE_MB <= 0 else min(8, max(2, math.ceil(ROTATE_MB * 2 ** 20 / nbytes)))
+    arrays = [make((nbytes // 2 // 4096, 4096), jnp.bfloat16, jax.sharding.SingleDeviceSharding(dev0), k, fill=1)
+              for k in range(R)]
+    s = per_iter(stream_loop, arrays, n=max(2, 20 // R)) / R
+    del arrays
+    return {"seconds": s, "read_gbps": nbytes / s / 1e9 if s else None, "copies": R}
 
 
-for mb in ([1, 8] if QUICK else [1, 16, 128, 1024, 4096]):
+for mb in ([1, 8] if QUICK else [16, 64, 256, 1024, 4096]):
     guarded("hbm", {"mbytes": mb}, partial(hbm, mb))
 
 

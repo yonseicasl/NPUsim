@@ -284,8 +284,9 @@ for B in (([1, 8] if QUICK else [1, 8, 32, 128]) if "attention" in SECTIONS else
 @partial(jax.jit, static_argnums=0)
 def read_loop(n, arrays):
     def body(i, c):
-        for a in arrays:                            # each distinct (rows, 4096) array read in full
-            c = c + jnp.sum(a.astype(jnp.float32)) * 1e-12
+        for a in arrays:                            # each distinct (rows, 4096) array read in full; the max with the
+            # carry makes every read depend on the previous one, else XLA hoists the loop-invariant sum out of the loop
+            c = c + jnp.sum(jnp.maximum(a, c.astype(a.dtype)).astype(jnp.float32)) * 1e-12
         return c
     return lax.fori_loop(0, n, body, jnp.float32(0))
 

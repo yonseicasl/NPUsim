@@ -101,3 +101,23 @@ TPU v5 lite, JAX 0.11.2, no errors (raw archive `results/2026-11-03_colab_v5e1_f
   loop. The bench now keeps KV as (B, kv, L, d), unrolls up to 8 distinct buffers in the loop body instead of
   slicing large ones, and reads >= 2 distinct 2-D arrays. Rerun only those sections with
   `%env TPU_BENCH_SECTIONS=decode_stack,attention,hbm_read` in a cell above the first code cell.
+
+## Results: 2026-11-03 Colab v5e-1 follow-up, rerun (`results/2026-11-03_colab_v5e1_followup2/`)
+
+Same chip, the fixed bench (KV as (B, kv, L, d), distinct KV/layer buffers unrolled in the loop body), all
+sections; no errors (raw archive `results/2026-11-03_colab_v5e1_followup2.zip`).
+
+- **Reproducible**: the 80 streamed GEMMs match the first run within 1.3% (median; max 6.8%), NPUsim MAPE 5.0% ->
+  4.7%; the small odd GEMMs within 2.8% (median; a few us-scale cases up to 35%), NPUsim MAPE 16.1% -> 15.5%.
+- **Attention is a KV read at the sustained HBM rate**: 1.03-1.12x the KV roofline at 819 GB/s (733-797 GB/s) for
+  B >= 8, 1.16-1.7x at B 1 (short reads). The earlier 3.6x (stacked KV) and the isolated runs' 1.25-1.35x carried
+  the cache relayout copy that a (B, L, kv, d) layout forces.
+- **A decode layer is its GEMMs plus its attention**: full layer = GEMM-only layer + attention within 2.4% over
+  all 12 (B, L). NPUsim's four projection GEMMs are -3..-13% of the GEMM-only layer (-10.6% at B 1, -5..-6% at
+  B 8, -3..-6% at B 32, -11..-13% at B 128); the GEMM-only layer runs 1-12% over the four streamed GEMMs alone
+  (residual adds, the gate/up split).
+- **hbm_read is still not valid**: with the copies unrolled, each read no longer depended on the loop carry and
+  XLA hoisted the loop-invariant sums out of the loop (0 or absurd GB/s). Fixed: each read takes a max with the
+  carry; the compiled HLO now keeps every reduce inside the while body (it had none before). The Kaggle bench's
+  HBM section had the same flaws (1-D, stacked, one buffer at >= 512 MB) and is fixed the same way. Rerun with
+  `%env TPU_BENCH_SECTIONS=hbm_read` (a few minutes).
