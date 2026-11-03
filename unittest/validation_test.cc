@@ -880,6 +880,11 @@ void validate_accelerator(config_t &config, const std::string &path) {
                 fail(path + ": [kvcache] kv_schedule = " + sched +
                      " requires a positive kv_tile_bytes");
             }
+            unsigned long kv_batch = 1;
+            section.get_setting("batch", &kv_batch);
+            if(kv_batch == 0) {
+                fail(path + ": [kvcache] batch must be positive");
+            }
             // Attention consumer mode: mirror kvcache_t's fail-fast contract.
             bool attention = false;
             section.get_setting("attention", &attention);

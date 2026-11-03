@@ -141,6 +141,19 @@ sections; no errors (raw archive `results/2026-11-03_colab_v5e1_followup2.zip`).
 | decode-shaped GEMMs, weights streamed (M 1..128) | HBM-bound at 690-750 GB/s | -0.3..-8% (MAPE ~5%), assumes 819 GB/s |
 | compute-bound GEMMs | 187-192 of 197 TFLOPS | -1..+12% |
 | int8 weights at M <= 32 | half the bf16 time | not compared yet (tpu_v5e int8 config) |
-| decode attention, B >= 8 | KV bytes / ~745 GB/s (1.03-1.12x roofline) | not modeled in the PaLM flow |
+| decode attention, B >= 8 | KV bytes / ~745 GB/s (1.03-1.12x roofline) | -6..-8% (MAPE 8.3%, `compare_attention.py`) |
 | decode layer | GEMM-only layer + attention (within 2.4%) | 4 projection GEMMs -3..-13% of the GEMM-only layer |
 | small / unaligned GEMMs | | -10..-36% at K=N 1000-1024 / 2000-2048: fixed per-GEMM cost, MXU strip partition |
+
+## NPUsim attention vs measured (`compare_attention.py`, `results/2026-11-03_colab_v5e1_followup3/compare_attention.log`)
+
+NPUsim's attention consumer (`[kvcache] attention = 1`: K and V supply as a dedicated stream on the `[dram]` model,
+QK / softmax / AV at declared rates, appended after the projection layer) now takes `batch` (sequences in the
+decode step, default 1: read, append, MACs, softmax and occupancy scale with it). `compare_attention.py` runs it on
+`tpu_v5e.cfg` with the measured geometry (Llama-3-8B: 32 q-heads, 8 kv-heads, d 128, bf16; two_pass, streaming
+1 MiB tiles) for the 15 measured (B, L) and compares the report's "Attention step":
+
+- B >= 8: -6..-8% (B 8 / L 512, 16 MB of KV: -17.8%), MAPE 8.3% (n=11). B = 1: -12..-30%, MAPE 17.6% (n=4).
+- The step is KV-read bound; its compute rates are structural (4 x 128^2 MAC/cycle; softmax 0.005 cycles/score,
+  ~5 VPU ops over 8 x 128 lanes) and barely matter. The steady -7% is the same HBM efficiency gap as the GEMMs
+  (819 GB/s assumed, ~760 sustained).

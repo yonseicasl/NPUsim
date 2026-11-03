@@ -2399,7 +2399,7 @@ void stats_t::apply_attention_step(kvcache_t *m_engine, const kv_stream_cost_t &
         kv_unpriced.push_back("attention softmax fired but [kvcache] kvcache_softmax_energy"
                               " is not declared");
     }
-    attn_kv_occupancy_bytes = kv_bytes_per_token*(kv_context_length + 1);
+    attn_kv_occupancy_bytes = m_engine->occupancy_bytes();
     attn_kv_capacity_bytes = m_engine->get_kv_capacity_bytes();
     attn_pending = true;   // integrated by finalize_layer_timeline()
 }

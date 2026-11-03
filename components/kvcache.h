@@ -59,8 +59,9 @@
 // separate read stream. Studying them together shows the Amdahl interaction -- weight
 // compression only speeds up the weight fraction of total DRAM traffic.
 //
-// Read bytes = kv_bytes_per_token * context_length. kv_bytes_per_token is the per-token KV
-// footprint of ONE layer = 2 (K and V) * n_kv_heads * head_dim * precision_bytes; a GQA
+// Read bytes = batch * kv_bytes_per_token * context_length: a decode step over `batch` sequences
+// (default 1) reads each sequence's own cache, and its QK/softmax/AV work and cache append scale the
+// same way. kv_bytes_per_token is the per-token KV footprint of ONE layer = 2 (K and V) * n_kv_heads * head_dim * precision_bytes; a GQA
 // model makes it small, an MHA model large. Both are config knobs, so context_length sweeps
 // cleanly. Without a [kvcache] section nothing is added and the numbers are unchanged.
 
@@ -93,6 +94,7 @@ public:
 
     size_t get_bytes_per_token() const { return kv_bytes_per_token; }
     size_t get_context_length() const { return context_length; }
+    size_t get_batch() const { return batch; }
     const std::string &get_schedule() const { return kv_schedule; }
     size_t get_tile_bytes() const { return kv_tile_bytes; }
     unsigned get_buffer_tiles() const { return kv_buffer_tiles; }
@@ -105,14 +107,16 @@ public:
     double get_softmax_cycles_per_element() const { return softmax_cycles_per_element; }
     size_t get_kv_capacity_bytes() const { return kv_capacity_bytes; }
     // The current token's K+V append (the cache write of one decode step).
-    size_t kv_write_bytes() const { return kv_bytes_per_token; }
-    // QK^T MACs of one decode step (M=1): every query head scores every cached token.
-    // AV is the same count, so total attention MACs = 2x this.
+    size_t kv_write_bytes() const { return batch*kv_bytes_per_token; }
+    // Cache occupancy after the step's append, over all sequences.
+    size_t occupancy_bytes() const { return batch*kv_bytes_per_token*(context_length + 1); }
+    // QK^T MACs of one decode step (one query token per sequence): every query head scores every
+    // cached token of its sequence. AV is the same count, so total attention MACs = 2x this.
     size_t attention_qk_macs() const {
-        return static_cast<size_t>(n_q_heads)*head_dim*context_length;
+        return batch*static_cast<size_t>(n_q_heads)*head_dim*context_length;
     }
     size_t attention_softmax_elements() const {
-        return static_cast<size_t>(n_q_heads)*context_length;
+        return batch*static_cast<size_t>(n_q_heads)*context_length;
     }
     // Attention compute energy for one step; m_priced = both fired event classes priced.
     double attention_compute_energy(bool *m_mac_priced, bool *m_softmax_priced) const {
@@ -127,6 +131,7 @@ public:
 private:
     size_t kv_bytes_per_token;      // per-token KV footprint of one layer (K+V, precision)
     size_t context_length;          // tokens already in the cache (the read length)
+    size_t batch;                   // sequences in the decode step, each with its own cache (default 1)
     double kv_compression_ratio;    // CR = dense / compressed (>= 1; 1 = no compression)
     double kv_decoder_bytes_per_cycle;  // dense-output decoder throughput (0 = ideal)
     // KV supply scheduling (evaluation discussion 2026-09-03 Sec 7). "aggregate" (default)
