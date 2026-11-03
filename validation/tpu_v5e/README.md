@@ -74,3 +74,22 @@ First run, before buffer rotation: every call reused the same input buffers. JAX
   its KV-read roofline and dominates as B x L grows (49% of the layer at B 8 / L 8192, 93% at B 128 /
   L 8192). Single-chip vector work therefore does not explain the PaLM gap; collectives (tp=8, v5e-8)
   are the next measurement.
+
+### 2026-11-03, Colab TPU v5e-1, rotated buffers (`results/2026-11-03_colab_v5e1_rot/`)
+
+Same chip and JAX, `measure_tpu.py` with buffer rotation (>= 512 MB of distinct inputs; decode rotates
+two whole layers incl. KV cache). `compare_v5e.py` now also reports the module time minus its
+`copy-start`/`copy-done` ops ("kernel").
+
+- With fresh buffers a GEMM whose operand fits on chip runs as a serial copy HBM -> on-chip memory
+  followed by the fusion (33.5 MB in 44.8 us, 117 MB in 155.6 us: ~750 GB/s); the fusion time is the
+  warm time. Operands that do not fit (235 MB) and the M = 1 path stream from HBM, also at ~750 GB/s.
+  The sustained HBM read rate is therefore ~750 GB/s (92% of 819) across 14 independent points.
+- Compute-bound GEMMs (M >= 512 or >= 1024^3): kernel -1..+12% (MAPE 9.6%). HBM-streaming GEMMs: -6..-2%
+  (NPUsim assumes 819 GB/s). Decode-shaped GEMMs that fit on chip, isolated: module -22..-35%, because
+  NPUsim overlaps the HBM stream with compute while XLA serializes copy and fusion in a one-op program.
+- Decode layer (Llama-3-8B, tp=1), where the copies run inside the layer program: NPUsim's four GEMMs
+  are -3..-9% of the measured GEMM scopes plus the unattributed ops (the copies), -4..-12% at B = 1.
+  Attention 1.25-1.35x its KV-read roofline; norms, SwiGLU, residual 4-6 us (~1%).
+- Calibration candidates with their own evidence, not applied: sustained HBM bandwidth ~750 GB/s
+  (`[dram]` read cycle), KV-read efficiency ~0.75-0.8 for attention in validation/palm.
