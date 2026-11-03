@@ -3,6 +3,7 @@
 // buffers, timed from the first command to the fence that waits for the last one.
 //   read  N      mvin of N bytes, 1 KB per command (16 rows of 64 B), N = 64 KB .. 4 MB (L2 is 512 KB)
 //   read warm    the same 256 KB again (L2 hits)
+//   read strided512  64 B rows 512 B apart in 64 B column strips (B of the 16x512x512 GEMM)
 //   write N      mvout of N bytes in 16 B rows (DIM int8), contiguous rows
 //   write strided N  16 B rows 16 KB apart, as the C rows of a K = 16, N = 16384 GEMM tile
 //   write strided64k N  rows 64 KB apart (N = 65536): all 16 rows fall in one 8-way L2 set
@@ -22,6 +23,7 @@ static elem_t rd64k[64 * KB] __attribute__((aligned(64)));
 static elem_t rd256k[256 * KB] __attribute__((aligned(64)));
 static elem_t rd1m[1024 * KB] __attribute__((aligned(64)));
 static elem_t rd4m[4096 * KB] __attribute__((aligned(64)));
+static elem_t rdb512[256 * KB] __attribute__((aligned(64)));       // a 512 x 512 B matrix, read as GEMM B
 static elem_t wr256k[256 * KB] __attribute__((aligned(64)));
 static elem_t wr1m[1024 * KB] __attribute__((aligned(64)));
 static elem_t wrs256k[256 * KB] __attribute__((aligned(64)));      // strided rows: 16 B every 16 KB
@@ -82,6 +84,13 @@ int main(void) {
     TIME("read_warm", 256 * KB, reads(rd256k, 256 * KB));
     TIME("read", 1024 * KB, reads(rd1m, 1024 * KB));
     TIME("read", 4096 * KB, reads(rd4m, 4096 * KB));
+    gemmini_config_ld(512);                          // B of 16x512x512: 64 B rows 512 B apart, strip by strip
+    TIME("read_strided512", 256 * KB, {
+        for (size_t j = 0; j < 512; j += 64)
+            for (size_t k = 0; k < 512; k += 16)
+                gemmini_extended_mvin(rdb512 + k * 512 + j, next_rows(16 * 4), 64, 16);
+    });
+    gemmini_config_ld(64);
     TIME("write", 256 * KB, writes(wr256k, 256 * KB, DIM, 256 * KB));
     TIME("write", 1024 * KB, writes(wr1m, 1024 * KB, DIM, 1024 * KB));
     TIME("write_strided", 256 * KB, writes(wrs256k, 256 * KB, 16 * KB, 256 * KB));

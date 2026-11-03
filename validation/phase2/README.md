@@ -170,6 +170,7 @@ NPUsim은 `compare_cold.py`로 세 설정을 비교한다: A `gemmini_rtl`, B `g
 |---|---|---|
 | 읽기 (64 B 행) | 64 KB / 256 KB / 1 MB / 4 MB | 7.72 / 7.23 / 6.10 / 5.84 |
 | 읽기 warm (L2 hit) | 256 KB | 13.1 |
+| 읽기 64 B 행, 512 B 간격 열 strip 순 (16x512x512의 B) | 256 KB | 5.81 |
 | 쓰기 16 B 행, 연속 | 256 KB / 1 MB | 1.73 / 1.74 |
 | 쓰기 16 B 행, 16 KB 간격 (16x16x16384의 C) | 256 KB | 2.02 |
 | 쓰기 16 B 행, 64 KB 간격 (16x16x65536의 C) | 256 KB | **0.55** |
@@ -192,7 +193,18 @@ NPUsim은 `compare_cold.py`로 세 설정을 비교한다: A `gemmini_rtl`, B `g
   2. set 충돌: `[dram] mosaic_cache_ways`(8). 레이어의 출력 행 간격(`output_size`)과 타일 행 수로, 한
      set에 way 수보다 많은 행이 몰리는지 레이어마다 판정한다. 몰리면 부분 쓰기마다 라인 RFO와 dirty
      write-back을 DRAM에 더한다. 16x16x65536 -55.1% -> -8.6%. 다른 5점은 충돌이 없다.
-- 남은 최대 오차: 16x512x512 -28.9% (cold L2에서 RTL이 warm보다 53% 느린 점; 이번 두 효과와 무관).
+- 남은 최대 오차: 16x512x512 -28.9%. B(256 KB) 읽기에 묶인 점이다(LOAD_ACTIVE 49,686 / 50,795 cycles).
+  - RTL: 같은 패턴의 읽기 벤치(64 B 행, 512 B 간격) 45,094 cycles(5.81 B/cycle)로 연속 읽기(7.16)보다
+    23% 느리다. GEMM 49,892 = 이 45.1K + A 읽기, C 쓰기, 타일 fill 약 4.8K.
+  - 원인은 golden의 DRAMSim2 설정이다: ADDRESS_MAPPING_SCHEME=scheme2(하위부터 rank, bank, column,
+    row)라 bank = 라인 주소의 하위 3비트이고, 512 B(8 라인) 간격은 전부 한 bank에 간다. 여기에
+    TOTAL_ROW_ACCESSES=4가 4번마다 row를 닫아 한 bank의 ACT/PRE가 직렬화된다. 연속 라인은 8 bank를 돈다.
+  - NPUsim: B를 64비트 포트 속도(8 B/cycle, multi-chip 단계 34,816)로 읽는다. Ramulator2 DDR3
+    (RoBaRaCoCh: column이 하위 비트)는 512 B 간격이 같은 row의 hit라 느려지지 않는다(`bw3` 실험: 연속과
+    strip 모두 20.8 B/cycle). 또 NPUsim은 타일을 연속 주소 한 덩어리로 Ramulator에 넣는다.
+  - 고치려면 둘 다 필요하다: (a) MOSAIC Ramulator2에 scheme2와 같은 RoCoBaRaCh 매퍼를 추가하고
+    `ddr3_1333_simdram.yaml`을 그 매퍼 + ClosedCAP(cap 4)로, (b) NPUsim `mosaic_stream`이 타일을 행
+    단위(행 바이트, 레이어 행 간격)로 Ramulator에 넣기.
 
 ## 인프라 트러블슈팅 기록 (재현자 참고)
 
