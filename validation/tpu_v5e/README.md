@@ -65,8 +65,8 @@ First run, before buffer rotation: every call reused the same input buffers. JAX
   -6..+12% (MAPE 9%, 8192^3 0.0%), HBM-bound M = 1 and the 235 MB 4096x28672 weight -6..-2%. Large
   GEMMs reach 187-192 of 197 TFLOPS; HBM-bound ones ~750 GB/s (92% of 819).
 - Decode-shaped GEMMs at M = 8..128 with <= 118 MB of weights ran at 2.7-3.3 TB/s, 3-4x what HBM allows
-  (wall time too), so NPUsim reads +74..+312%. XLA keeps an unchanged input on chip across executions
-  (cross-program prefetch: `copy-start`/`copy-done` in the trace; the 235 MB weight and the non-dot
+  (wall time too), so NPUsim reads +74..+312%. An unchanged input apparently stays on chip across executions
+  (presumably XLA cross-program prefetch, not confirmed: `copy-start`/`copy-done` in the trace; the 235 MB weight and the non-dot
   M = 1 path do not benefit). A real decode step never reuses a layer's weights, so these points are not
   usable; `measure_tpu.py` now rotates distinct buffers (`--rotate-mb`, default 512; 0 reproduces this).
 - Decode layer (Llama-3-8B, tp=1): at B = 1 (not affected) NPUsim's four GEMMs are -4..+2% of the
