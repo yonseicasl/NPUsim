@@ -49,6 +49,12 @@ RESULTS = {"env": {"jax": jax.__version__, "python": sys.version.split()[0], "pl
            "stream_gemm": [], "decode_stack": [], "attention": [], "hbm_read": [], "odd_gemm": [], "cost_analysis": {},
            "errors": []}
 print(RESULTS["env"])
+if jax.devices()[0].platform != "tpu" and not QUICK and os.environ.get("TPU_BENCH_ALLOW_CPU") != "1":
+    # JAX silently falls back to the CPU when it finds no TPU; full sizes there take hours and measure nothing.
+    raise SystemExit(f"No TPU: JAX sees {jax.devices()}. Select a TPU runtime (Colab: Runtime -> Change runtime "
+                     "type -> v5e-1 TPU; Kaggle: Accelerator TPU v5e-8). If one is selected, this JAX has no TPU "
+                     "support: run  !pip install -U 'jax[tpu]'  then restart the session. "
+                     "(TPU_BENCH_QUICK=1 or TPU_BENCH_ALLOW_CPU=1 to run on the CPU anyway.)")
 
 
 def save():
