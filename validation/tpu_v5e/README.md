@@ -117,3 +117,13 @@ the second strip on, so extrapolating from 1 and 2 strips put 8192^3 under the c
 The two DRAM models bracket the TPU: ideal streaming is ~8% fast, Ramulator's HBM2e ~8-10% slow. The
 gap is the DRAM controller's sustained efficiency (82% vs 92%: refresh policy, address mapping, row
 handling), which is DRAM modeling with the TPU's 750 GB/s as its evidence, not an NPUsim parameter.
+
+Refresh. `hbm2e_v5e_norefresh.yaml` (NoRefresh) sustains 726.9 GB/s in `dram_bw_probe` (88.7%, vs 82.4%
+with AllBank), yet NPUsim's results are identical to the cycle with either config: `ramulator_ns()`
+(components/dram.cc) times each tile stream on a fresh Ramulator2 device, ~1 MiB long (one MXU's 4096 x
+128 bf16 weight strip; smaller tiles are replicated to 1 MiB), i.e. ~1.5 us, shorter than the first
+refresh at tREFI 3.9 us. Refresh never fires in NPUsim's co-simulation, so the Ramulator column above is
+already the refresh-free bound. NPUsim streams at ~715 GB/s there (1 x 4096 x 8192: 67 MB in 93.8 us),
+the probe's refresh-free 727 GB/s minus the per-stream start; the remaining gap to the TPU's ~750 GB/s
+is Ramulator's row/command model and the fresh device per stream, not refresh. (HBM2_R20 has no
+per-bank refresh manager: PerBank looks up nREFIpb, the 2.0 port names it nREFISB.)

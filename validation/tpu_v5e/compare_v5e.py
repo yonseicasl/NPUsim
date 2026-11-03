@@ -10,7 +10,7 @@
           against the measured GEMM scopes.
 
 Usage: python3 validation/tpu_v5e/compare_v5e.py RESULTS_DIR [-j 16] [--dram hbm2e_v5e.yaml]   (needs models/model)
-Writes RESULTS_DIR/compare_gemm.csv (compare_gemm_ramulator.csv with --dram).
+Writes RESULTS_DIR/compare_gemm.csv (compare_gemm_<yaml name>.csv with --dram).
 """
 import argparse
 import csv
@@ -108,8 +108,8 @@ def main():
         print(f"{M:5d} {K:6d} {N:6d} | {meas:9.2f} {copy:7.2f} {kern:8.2f} {s:9.2f} {roof:9.2f}    | {err:+6.1f}%"
               f" {errk:+6.1f}%  {src}")
     print("MAPE " + ", ".join(f"{k} {statistics.mean(v):.1f}% (n={len(v)})" for k, v in errs.items()))
-    with open(os.path.join(a.results, "compare_gemm_ramulator.csv" if a.dram else "compare_gemm.csv"), "w",
-              newline="") as fh:
+    tag = "_" + os.path.splitext(os.path.basename(a.dram))[0] if a.dram else ""
+    with open(os.path.join(a.results, f"compare_gemm{tag}.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, list(out[0]))
         w.writeheader()
         w.writerows(out)
