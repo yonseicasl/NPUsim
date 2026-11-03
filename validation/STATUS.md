@@ -34,8 +34,11 @@ README에 있다. 브랜치: npusim `mosaic`, MOSAIC `npusim-ddr3` -> `mosaic`.
 - `NPUSIM_MOSAIC_DRAM=<yaml>`이면 dense 타일 스트림의 DRAM 시간을 MOSAIC Ramulator2(CosimFrontend)로 계산.
 - `configs/architecture/dram/ddr3_1333_simdram.yaml`: Chipyard SimDRAM의 DDR3-1333 (MOSAIC 쪽).
 - MOSAIC 변환기 버그 수정: `ClosedRowPolicy` -> Ramulator 2.1 `ClosedCAP(cap)`.
-- 주의: MOSAIC의 기존 HBM 설정은 순차 읽기에서 이론 대역폭의 23% (`hbm2_cosim_test`), 47%
-  (`hbm3_6400_16ch`)만 낸다. TPU v5e 실측(89-92%)과 비교하려면 HBM2e 설정을 새로 만들고 검증해야 한다.
+- MOSAIC의 기존 2.0 형식 HBM2 설정은 HBM2_R20 모델로 가는데, 16 B 트랜잭션에 nBL = 4 tCK라 이론의 1/4만 낸다
+  (`hbm2_cosim_test` 23%). 다른 엔진이 쓰므로 고치지 않았다.
+- TPU v5e HBM2e 설정 `configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}` (Ramulator 2.1 원본 HBM2, 공개 사양만):
+  순차 읽기 698 GB/s (85.2%, 전체 뱅크 refresh), refresh 없이 748 (91.3%), 실측 732-757 (89-92%). TPU는 refresh를
+  대부분 숨긴다. NPUsim decode GEMM에 연결하면 MAPE 5.4% (819 GB/s) -> 4.4% (`tpu_v5e/compare_hbm.py`).
 
 ## 3. TPU v5e 단일 칩 (`validation/tpu_v5e/`)
 
@@ -68,8 +71,9 @@ cache append, MAC, softmax, 점유량이 batch배가 된다. `compare_attention.
 
 ## 4. 남은 과제 (우선순위 순)
 
-1. HBM 효율: 사양 819 대신 실측 89-92%를 구조적으로 재현. MOSAIC HBM2e 설정(2 stack x 409.6 GB/s)을 만들고
-   순차 읽기 약 750 GB/s를 내는지 검증한 뒤 TPU v5e에 연결. 피팅으로 819를 낮추지는 않는다.
+1. HBM 효율: HBM2e 설정이 refresh 없이는 실측과 맞고(91%), 전체 뱅크 refresh로는 6%p 낮다(85%). TPU처럼
+   refresh를 스트림에 숨기는 refresh 관리자(또는 근거 있는 REFSB 스케줄)가 남은 일. compute-bound GEMM이 MOSAIC
+   경로에서 4-12% 빨라지는 원인도 확인할 것.
 2. PaLM/TPU v4 비교에 attention 모델을 넣어 41-60% 공백 재평가 (tpu_v4 + `[kvcache]` attention).
 3. 작은/비정렬 GEMM: GEMM당 고정 비용(약 1-2 us)과 4 MXU 열 분할 단위 (1024 -> 1100: NPUsim 1.6배, 실측 1.27배).
 4. decode 레이어의 원소 단위 연산(잔차, gate/up 분리; GEMM만 레이어가 GEMM 4개 합보다 1-12% 김).

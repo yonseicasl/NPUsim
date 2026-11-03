@@ -157,3 +157,30 @@ decode step, default 1: read, append, MACs, softmax and occupancy scale with it)
 - The step is KV-read bound; its compute rates are structural (4 x 128^2 MAC/cycle; softmax 0.005 cycles/score,
   ~5 VPU ops over 8 x 128 lanes) and barely matter. The steady -7% is the same HBM efficiency gap as the GEMMs
   (819 GB/s assumed, ~760 sustained).
+
+## MOSAIC HBM2e for TPU v5e (`configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}` in the MOSAIC tree)
+
+A Ramulator 2.1 config built from public specs only: 2 HBM2e stacks = 16 channels x 2 pseudo channels (64-bit),
+4 Gb per pseudo channel (16 GiB), 3.2 Gbps (819.2 GB/s); Ramulator 2.1's native HBM2 standard (32 B per RD in 2
+tCK); HBM2_2400Mbps core timings converted to 625 ps clocks, secondary timings from the standard's JEDEC tables;
+channels interleaved per 32 B, bank groups on the lowest column bits; open rows, FR-FCFS, all-bank refresh.
+MOSAIC's existing 2.0-format HBM2 configs map to HBM2_R20, whose 16 B transaction against nBL = 4 tCK caps it at a
+quarter of the pin rate -- the 23% seen earlier; that model is left alone (other engines' configs use it).
+
+Sequential reads (`hbm_stream_probe.cc`, 64 MB; independent of request size 32 B .. 1 KB):
+
+| refresh | GB/s | of 819.2 |
+|---|---|---|
+| all-bank (the config) | 698 | 85.2% |
+| per-bank (PerBank / HBM34PerBankRefresh) | 655 / 575 | 80.0% / 70.2% |
+| none | 748 | 91.3% |
+| **TPU v5e measured** (hbm_read) | **732-757** | **89-92%** |
+
+The non-refresh losses (~9%: row switches, bank-group/CAS timing) match the measurement; the TPU hides most of its
+refresh, which neither of Ramulator's per-bank managers does for a stream. The config keeps JEDEC all-bank refresh
+rather than picking the variant that matches.
+
+NPUsim decode GEMMs on it (`compare_hbm.py`, log `results/2026-11-03_colab_v5e1_followup3/compare_hbm.log`;
+`NPUSIM_MOSAIC_DRAM` = this config): M <= 128 MAPE 5.4% (analytical 819 GB/s, -2..-8%) -> 4.4% (+1..+7%, one
++13%), the sign now set by the refresh gap. Compute-bound M = 512 moves from -2..-6% to -4..-12%: the MOSAIC path
+replaces more of the analytical DRAM-side cost than the HBM time alone -- to look into.
