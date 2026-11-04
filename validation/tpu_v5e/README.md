@@ -186,3 +186,23 @@ NPUsim decode GEMMs on it (`compare_hbm.py`, log `results/2026-11-03_colab_v5e1_
 `NPUSIM_MOSAIC_DRAM` = this config): M <= 128 MAPE 5.4% (analytical 819 GB/s, -2..-8%) -> 4.4% (+1..+7%, one
 +13%), the sign now set by the refresh gap. Compute-bound M = 512 moves from -2..-6% to -4..-12%: the MOSAIC path
 replaces more of the analytical DRAM-side cost than the HBM time alone -- to look into.
+
+## HBM probe: address mapping and refresh (`tpu_v5e1_hbm_probe.py` / `.ipynb`, Colab v5e-1)
+
+How does the TPU keep 89-92% of HBM peak on long streams? Pallas kernels issue explicit HBM -> VMEM DMAs (4
+in flight, ~512 KB each) over a 2 GB array laid out as (G, S, 8, 128) f32 -- 4 KB tiles, the HBM layout unit -- so
+the access pattern is exactly the one written:
+
+| section | pattern | tells |
+|---|---|---|
+| seq_duration | sequential stream kept up ~1 / 10 / 200 ms | efficiency decays with duration -> refresh only postponed |
+| stride | one 4 KB tile every S tiles, S = 1 .. 16384 | bandwidth dips = strides aliasing channels / banks (the mapping) |
+| chunk | 4 .. 128 KB chunks at a 1 MB stride | channel interleave granularity |
+| burst | 4 / 16 / 64 MB bursts with ~20 us HBM idle (VPU-only work) vs back-to-back | bursts faster -> refresh postponed into idle time; equal -> hidden under other banks |
+| xla_stride | the stride sweep with plain XLA slicing | fallback if Pallas fails |
+
+Colab: v5e-1 TPU runtime, upload the notebook, Run All (~15-25 min; `%env TPU_BENCH_SECTIONS=...` in a cell above
+the first code cell picks sections); it downloads `tpu_v5e1_hbm_probe.zip`. The patterns are then replayed on
+MOSAIC's HBM2e candidates (`hbm2e_tpu_v5e` all-bank refresh, `hbm2e_tpu_v5e_refsb` per-bank refresh hidden;
+REPORT.md section 4.1) to see which mapping and refresh scheme reproduce them. CPU smoke test:
+`TPU_BENCH_QUICK=1` (Pallas interpret mode).

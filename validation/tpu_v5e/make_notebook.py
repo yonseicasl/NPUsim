@@ -7,7 +7,7 @@ import re
 import sys
 
 here = os.path.dirname(os.path.abspath(__file__))
-for script in sys.argv[1:] or ("kaggle_tpu_bench.py", "tpu_v5e1_stream_bench.py"):
+for script in sys.argv[1:] or ("kaggle_tpu_bench.py", "tpu_v5e1_stream_bench.py", "tpu_v5e1_hbm_probe.py"):
     src = open(os.path.join(here, script)).read()
     cells = []
     for chunk in re.split(r"(?m)^# %%", src)[1:]:

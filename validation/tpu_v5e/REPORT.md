@@ -7,12 +7,12 @@ NPUsim의 `tpu_v5e.cfg`(공개 사양만으로 만든 구조 설정, 측정값�
 
 | 항목 | 실측 | NPUsim 오차 | 비고 |
 |---|---|---|---|
-| decode GEMM (Llama-3-8B projection, M 1..128, 16개) | HBM 바운드, weight 690-750 GB/s | **MAPE 5.4%** (-2.3..-8.3%) | MOSAIC HBM2e 사용 시 MAPE 4.4% (+0.8..+13%) |
+| decode GEMM (Llama-3-8B projection, M 1..128, 16개) | HBM 바운드, weight 690-750 GB/s | **MAPE 5.4%** (-2.3..-8.3%) | MOSAIC HBM2e: 4.4% (전체 뱅크 refresh), **3.2%** (뱅크별 refresh 숨김) |
 | compute-bound GEMM (M 512, 2048, 1024^3 이상) | 187-192 TFLOPS (사양 197) | -6..+12% | |
 | decode attention (B >= 8) | KV 바이트 / 약 745 GB/s | **MAPE 8.3%** (-6..-8%, 1개 -17.8%) | B = 1은 MAPE 17.6% |
 | decode 레이어 | = GEMM만 레이어 + attention (2.4% 이내) | projection GEMM 4개가 GEMM만 레이어의 -4..-11% | 원소 단위 연산 미모델 |
 | 작은/비정렬 GEMM (M 100..512, K=N 1000..2048) | | -35..+15% (평균 -0.5..-25%) | 고정 오버헤드, MXU 분할 |
-| HBM 순차 읽기 | 732-757 GB/s (사양 819의 89-92%) | 분석 모델은 819 가정 | MOSAIC HBM2e 698 GB/s (85%) |
+| HBM 순차 읽기 | 732-757 GB/s (사양 819의 89-92%) | 분석 모델은 819 가정 | MOSAIC HBM2e 698 GB/s (85%), 뱅크별 refresh 숨김 751 GB/s (91.7%) |
 
 남은 차이의 주원인은 하나다: NPUsim의 분석 DRAM 모델이 HBM 사양 대역폭(819 GB/s)을 그대로 쓰는데 실측 실효
 대역폭은 89-92%다. decode GEMM과 attention의 일관된 -5..-8%가 이것이다.
@@ -170,9 +170,44 @@ HBM 속도의 KV 읽기다. NPUsim의 연산 처리율은 결과에 거의 영�
 | 같은 설정, refresh 없음 | 748 | 91.3% |
 | 실측 | 732-757 | 89-92% |
 
-refresh 이외의 손실은 실측과 맞고, TPU는 refresh를 대부분 숨긴다. Ramulator의 뱅크별 refresh 관리자는 연속
-스트림에서 오히려 느리다(655, 575 GB/s). 이 설정으로 decode GEMM MAPE가 5.4% -> 4.4%가 되지만 부호가 바뀐다
-(+1..+7%). compute-bound M 512는 MOSAIC 경로에서 -4..-12%로 더 빨라진다(원인 조사 필요).
+refresh 이외의 손실은 실측과 맞고, TPU는 refresh를 대부분 숨긴다. 이 설정으로 decode GEMM MAPE가 5.4% -> 4.4%가
+되지만 부호가 바뀐다(+1..+7%). compute-bound M 512는 MOSAIC 경로에서 -4..-12%로 더 빨라진다(원인 조사 필요).
+
+### 4.1 refresh를 숨기는 방식 (가설 검증, 2026-11-04)
+
+가설: 주소 매핑이 스트림을 여러 bank에 퍼뜨리고, 뱅크별 refresh(REFSB)로 한 bank가 refresh하는 동안 다른 bank에서
+데이터를 읽는다. refresh를 미뤘다가 나중에 처리하는 방식으로는 약 31 us(8 x tREFI)만 숨길 수 있는데, 4 GB를 5.7 ms
+동안 읽어도 92%가 유지되므로 미루기만으로는 설명되지 않는다.
+
+Ramulator의 뱅크별 refresh가 처음에 오히려 느렸던 이유: 컨트롤러가 우선순위 버퍼에 refresh가 하나라도 있으면 채널의
+모든 읽기/쓰기를 멈췄다(뱅크별 refresh가 전체 뱅크 refresh처럼, 더 나쁘게 동작). MOSAIC Ramulator2(`mosaic`
+`378827a`)에 두 가지를 추가했다 (기본값은 기존 동작):
+- GenericDDR `rw_beside_bank_refresh`: 뱅크별 refresh만 대기 중이면 다른 bank의 읽기/쓰기를 계속 처리 (REFSB 의미).
+- refresh 관리자 `IdleBankRefresh`: 대기 요청이 없는 bank에 REFpb를 낸다 (`policy` next: 순번, recent: 스트림이 방금
+  지나간 bank). 모든 bank가 바쁘면 최대 8회까지 미룬다.
+
+HBM2e 순차 읽기 (16 MB):
+
+| refresh | 기존 컨트롤러 | REFSB 의미 컨트롤러 |
+|---|---|---|
+| 전체 뱅크 | 697 GB/s (85.1%) | 697 (85.1%) |
+| 뱅크별, 순서대로 (PerBank) | 655 (80.0%) | 738 (90.1%) |
+| 뱅크별, HBM용 (HBM34PerBankRefresh) | 575 (70.2%) | 727 (88.7%) |
+| 뱅크별, idle bank (next / recent) | 669 / 667 (81.7%) | **749 / 751 (91.4 / 91.7%)** |
+| refresh 없음 | 747 (91.2%) | |
+| **TPU v5e 실측** | | **732-757 (89-92%)** |
+
+뱅크별 refresh + 다른 bank 계속 처리면 refresh가 거의 숨겨지고(순서대로도 90%), idle bank를 고르면 완전히 숨겨져
+실측 범위에 든다. 가설과 일치한다. 이 조합을 `hbm2e_tpu_v5e_refsb.{py,yaml}`(MOSAIC)로 두었다 (64 MB 순차 읽기
+751 GB/s). 기본 `hbm2e_tpu_v5e`는 JEDEC 전체 뱅크 refresh 그대로 둔다 (실측에 맞는 쪽을 기본으로 고르면 피팅).
+
+NPUsim decode GEMM (M <= 128, `compare_hbm.py --mosaic-dram .../hbm2e_tpu_v5e_refsb.yaml`, log
+`results/2026-11-03_colab_v5e1_followup3/compare_hbm_refsb.log`): **MAPE 3.2%** (-0.5..+6.2%, 128x4096x28672만
++11.7%). 분석 모델 5.4%, 전체 뱅크 refresh HBM2e 4.4%.
+
+이것은 시뮬레이션에서 가설이 성립함을 보인 것이고, TPU가 실제로 이렇게 하는지는 `tpu_v5e1_hbm_probe`(README)의
+접근 패턴 측정으로 판별한다: 휴지를 둔 burst가 연속 스트림보다 빠르면 미루기, 같으면 겹쳐 숨기기; stride sweep으로
+매핑을 추정해 같은 패턴을 Ramulator 후보 설정과 맞춘다.
 
 ## 5. 결론
 
@@ -185,8 +220,8 @@ refresh 이외의 손실은 실측과 맞고, TPU는 refresh를 대부분 숨긴
 
 ## 6. 남은 과제
 
-1. HBM 효율: refresh를 스트림에 숨기는 모델(또는 근거 있는 REFSB 스케줄)로 HBM2e를 89-92%에 맞추기. 분석 모델의
-   819를 피팅으로 낮추지는 않는다.
+1. HBM 효율: 뱅크별 refresh 숨김 모델(4.1)이 89-92%를 재현한다. TPU가 실제로 그렇게 하는지 HBM probe 측정으로 판별하고,
+   맞으면 `hbm2e_tpu_v5e_refsb`를 TPU v5e의 기본 DRAM으로 삼는다.
 2. compute-bound GEMM이 MOSAIC 경로에서 빨라지는 원인.
 3. 작은/비정렬 GEMM: GEMM당 고정 비용, MXU 열 분할 단위.
 4. 레이어의 원소 단위 연산(잔차, gate/up 분리).

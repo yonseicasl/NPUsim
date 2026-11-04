@@ -39,6 +39,10 @@ README에 있다. 브랜치: npusim `mosaic`, MOSAIC `npusim-ddr3` -> `mosaic`.
 - TPU v5e HBM2e 설정 `configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}` (Ramulator 2.1 원본 HBM2, 공개 사양만):
   순차 읽기 698 GB/s (85.2%, 전체 뱅크 refresh), refresh 없이 748 (91.3%), 실측 732-757 (89-92%). TPU는 refresh를
   대부분 숨긴다. NPUsim decode GEMM에 연결하면 MAPE 5.4% (819 GB/s) -> 4.4% (`tpu_v5e/compare_hbm.py`).
+- Ramulator2 (`mosaic` `378827a`): 뱅크별 refresh 대기 중에도 다른 bank를 처리하는 컨트롤러 옵션
+  `rw_beside_bank_refresh`와 idle bank 우선 refresh 관리자 `IdleBankRefresh` (기본값은 기존 동작). 이 조합의
+  `hbm2e_tpu_v5e_refsb`는 순차 읽기 751 GB/s (91.7%)로 실측 범위에 들고, decode GEMM MAPE 3.2%
+  (`tpu_v5e/REPORT.md` 4.1).
 
 ## 3. TPU v5e 단일 칩 (`validation/tpu_v5e/`, 종합 보고서 `tpu_v5e/REPORT.md`)
 
@@ -71,9 +75,8 @@ cache append, MAC, softmax, 점유량이 batch배가 된다. `compare_attention.
 
 ## 4. 남은 과제 (우선순위 순)
 
-1. HBM 효율: HBM2e 설정이 refresh 없이는 실측과 맞고(91%), 전체 뱅크 refresh로는 6%p 낮다(85%). TPU처럼
-   refresh를 스트림에 숨기는 refresh 관리자(또는 근거 있는 REFSB 스케줄)가 남은 일. compute-bound GEMM이 MOSAIC
-   경로에서 4-12% 빨라지는 원인도 확인할 것.
+1. HBM 효율: 뱅크별 refresh 숨김 모델이 실측(89-92%)을 재현한다. TPU가 실제로 그런지 Colab HBM probe
+   (`tpu_v5e/tpu_v5e1_hbm_probe.ipynb`)로 판별할 것. compute-bound GEMM이 MOSAIC 경로에서 4-12% 빨라지는 원인도.
 2. PaLM/TPU v4 비교에 attention 모델을 넣어 41-60% 공백 재평가 (tpu_v4 + `[kvcache]` attention).
 3. 작은/비정렬 GEMM: GEMM당 고정 비용(약 1-2 us)과 4 MXU 열 분할 단위 (1024 -> 1100: NPUsim 1.6배, 실측 1.27배).
 4. decode 레이어의 원소 단위 연산(잔차, gate/up 분리; GEMM만 레이어가 GEMM 4개 합보다 1-12% 김).
