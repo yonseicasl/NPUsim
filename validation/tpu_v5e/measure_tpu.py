@@ -7,6 +7,8 @@ copy this one file to a Kaggle TPU notebook (TpuV5E8) or a TRC/Cloud TPU VM and 
   collectives.csv  all chips: psum, all_gather, psum_scatter, all_to_all vs bytes per chip
   decode.csv       one Llama-3-8B-shaped decode layer, on one chip and tensor-parallel over all chips,
                    time per named scope (qkv, attn, o_proj, ffn_*, norms, psum)
+  smallk.csv       (--only smallk, not in the default set) fixed per-kernel time: K sweeps at small M, N,
+                   the smallest elementwise kernel, chains of n matmuls in one program; fits in smallk_fit.csv
   env.json         devices, versions
 
 Device time comes from the profiler's perfetto trace (XLA module and op events on TPU:0); wall time
@@ -282,6 +284,88 @@ def decode():
             del kv
     write("decode.csv", rows)
     json.dump(ops_all, open(os.path.join(ARGS.out, "decode_ops.json"), "w"), indent=1)
+
+
+def linfit(xs, ys):
+    """(intercept, slope) of the least-squares line."""
+    mx, my = statistics.mean(xs), statistics.mean(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx if sxx else 0.0
+    return my - b * mx, b
+
+
+def smallk():
+    """Fixed per-kernel time (not in the default --only): what a kernel costs beyond its bytes and FLOPs.
+
+    ksweep  C[M x N] = A[M x K] @ B[K x N] at fixed small M, N and K 128..16384: time = fixed + per-byte x
+            bytes, so the K = 0 intercept is the fixed cost. device_us is the XLA module (program launch and
+            finish included), ops_us the sum of its op events (the kernels alone).
+    floor   x + 1 on one vreg ([8, 128]) up to 4 MB: the smallest kernel.
+    chain   n dependent matmuls y = y @ W_i (W_i distinct, K x K) in ONE program, n = 1..32: the slope over n
+            is what one more kernel costs inside a program (as in a model's layer), the n = 1 intercept the
+            program's own overhead.
+    Writes smallk.csv (all points) and smallk_fit.csv (intercepts and slopes).
+    """
+    dev = jax.devices()[0]
+    rows, fits = [], []
+    put = lambda k, s, scale=1.0: jax.device_put((rnd(k, s).astype(F32) * scale).astype(BF16), dev)
+    ops_sum = lambda r: r["ops"] and round(sum(r["ops"].values()), 3)
+
+    ks = (128, 512, 2048) if ARGS.quick else (128, 256, 512, 1024, 2048, 4096, 8192, 16384)
+    mn = [(8, 128)] if ARGS.quick else [(8, 128), (8, 1024), (128, 128), (128, 1024)]
+    f = jax.jit(lambda a, b: a @ b)
+    for M, N in mn:
+        pts = []
+        for K in ks:
+            sets = [(put(2 * i + 1, (M, K)), put(2 * i + 2, (K, N))) for i in range(nsets(2 * (M * K + K * N)))]
+            r = bench(f, sets, f"smallk_{M}x{K}x{N}")
+            rows.append(dict(kind="ksweep", M=M, K=K, N=N, n=1, bytes=2 * (M * K + K * N + M * N), sets=r["sets"],
+                             wall_us=round(r["wall_us"], 3), device_us=r["device_us"] and round(r["device_us"], 3),
+                             ops_us=ops_sum(r)))
+            pts.append(rows[-1])
+            print(f"smallk ksweep {M:4d} x {K:5d} x {N:5d}  {fmt(r)}  ops {rows[-1]['ops_us']}")
+        for col in ("device_us", "ops_us"):
+            xy = [(p["bytes"], p[col]) for p in pts if p[col] is not None]
+            if len(xy) >= 2:
+                a, b = linfit(*zip(*xy))
+                fits.append(dict(kind="ksweep", M=M, N=N, time=col, fixed_us=round(a, 3),
+                                 per_byte_GBps=round(1e-3 / b, 1) if b > 0 else None))
+                print(f"  fit {col}: fixed {a:.3f} us, {1e-3 / b if b > 0 else float('nan'):.1f} GB/s")
+
+    shapes = [(8, 128), (8, 1024)] if ARGS.quick else [(8, 128), (8, 1024), (128, 1024), (1024, 1024)]
+    g = jax.jit(lambda x: x + 1)
+    for M, D in shapes:
+        sets = [(put(i + 100, (M, D)),) for i in range(nsets(2 * M * D))]
+        r = bench(g, sets, f"smallk_floor_{M}x{D}")
+        rows.append(dict(kind="floor", M=M, K=D, N=0, n=1, bytes=4 * M * D, sets=r["sets"],
+                         wall_us=round(r["wall_us"], 3), device_us=r["device_us"] and round(r["device_us"], 3),
+                         ops_us=ops_sum(r)))
+        print(f"smallk floor  {M:4d} x {D:5d}  {fmt(r)}  ops {rows[-1]['ops_us']}")
+
+    ns = (1, 2, 4, 8) if ARGS.quick else (1, 2, 4, 8, 16, 32)
+    for M, K in ([(8, 128)] if ARGS.quick else [(8, 128), (8, 1024), (128, 1024)]):
+        pts = []
+        for n in ns:
+            def h(x, *ws):
+                for w in ws:
+                    x = x @ w
+                return x
+            # weights scaled by 1/sqrt(K) keep the chained values in range
+            sets = [(put(1000 * i, (M, K)), *[put(1000 * i + j + 1, (K, K), K ** -0.5) for j in range(n)])
+                    for i in range(nsets(2 * (M * K + n * K * K)))]
+            r = bench(jax.jit(h), sets, f"smallk_chain_{M}x{K}_n{n}")
+            rows.append(dict(kind="chain", M=M, K=K, N=K, n=n, bytes=2 * (M * K + n * K * K + M * K), sets=r["sets"],
+                             wall_us=round(r["wall_us"], 3), device_us=r["device_us"] and round(r["device_us"], 3),
+                             ops_us=ops_sum(r)))
+            pts.append(rows[-1])
+            print(f"smallk chain  {M:4d} x {K:5d} n={n:2d}  {fmt(r)}  ops {rows[-1]['ops_us']}")
+        xy = [(p["n"], p["device_us"]) for p in pts if p["device_us"] is not None]
+        if len(xy) >= 2:
+            a, b = linfit(*zip(*xy))
+            fits.append(dict(kind="chain", M=M, N=K, time="device_us", fixed_us=round(a, 3), per_kernel_us=round(b, 3)))
+            print(f"  fit chain: program {a:.3f} us + {b:.3f} us per kernel")
+    write("smallk.csv", rows)
+    write("smallk_fit.csv", fits)
 
 
 def main():

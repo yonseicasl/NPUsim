@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""parse_trace on a synthetic TPU-shaped perfetto trace (no TPU needed; needs jax importable)."""
+"""parse_trace on a synthetic TPU-shaped perfetto trace, and linfit (no TPU needed; needs jax importable)."""
 import gzip, json, os, sys, tempfile, types
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import measure_tpu as m
@@ -22,4 +22,6 @@ mods, ops = m.parse_trace(d)
 assert mods == [100.0, 120.0], mods
 assert ops == {"qkv|fusion.1": 60.0, "psum_attn|all-reduce": 10.0, "-|copy.2": 4.0}, ops
 assert m.parse_trace(tempfile.mkdtemp()) is None
+a, b = m.linfit([1, 2, 3], [3, 5, 7])
+assert abs(a - 1) < 1e-9 and abs(b - 2) < 1e-9, (a, b)
 print("ok")

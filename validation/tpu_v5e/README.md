@@ -36,6 +36,12 @@ verification for TPUs and internet.
 TRC or a paid Cloud TPU VM (`v5litepod-1` for gemm/vector/decode tp=1, `v5litepod-8` for all):
 `python3 measure_tpu.py --out results/<date>` on the VM (installs `jax[tpu]` if missing).
 
+Fixed per-kernel time (not in the default run): `python3 measure_tpu.py --only smallk` (a few minutes on
+one chip) writes `smallk.csv` -- K sweeps at M 8/128, N 128/1024 (the K = 0 intercept is the fixed cost,
+`device_us` with the program launch, `ops_us` the kernels alone), `x + 1` from one vreg to 4 MB, and chains
+of 1-32 dependent matmuls in one program (slope = cost of one more kernel inside a program, intercept =
+the program's own) -- and the fits in `smallk_fit.csv`.
+
 A full run takes about 10-20 minutes. Device times come from the profiler (`jax.profiler.trace`,
 perfetto export, XLA module/op events on `TPU:0`); if the trace has no TPU process the CSVs keep wall
 time only and `compare_v5e.py` says so. `--keep-traces` keeps the raw traces for TensorBoard.
