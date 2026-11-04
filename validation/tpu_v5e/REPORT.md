@@ -159,6 +159,30 @@ HBM 속도의 KV 읽기다. NPUsim의 연산 처리율은 결과에 거의 영�
 열을 4 MXU에 128열 단위로 나누는 방식이 XLA보다 거칠다(1024 -> 1100에서 NPUsim 1.6배, 실측 1.27배). 수 us 규모라
 실행 간 잡음(중앙값 6%)도 크다.
 
+### 3.7 latency 너머: 연산 수, HBM 바이트, 유효 대역폭, MXU 활용률
+
+latency만 맞추면 서로 상쇄되는 오류를 놓친다. `compare_metrics.py`(log와 csv: `results/2026-11-03_colab_v5e1_followup3/
+compare_metrics.*`)가 측정한 GEMM 55개마다 NPUsim의 MAC 수(busy scalar-MAC)와 DRAM 바이트(트랜잭션 x 1 KB)를 실제
+작업량(2MKN FLOPs, 2(KN + MK + MN) 바이트; XProf hlo_stats로 확인)과 비교하고, 유효 HBM 대역폭(바이트 / 시간)과 MXU
+활용률(FLOP 처리율 / 197 TFLOP/s)을 양쪽에서 낸다.
+
+| 경우 | MAC 수 NPUsim/실제 | 바이트 NPUsim/실제 | 유효 HBM GB/s 실측 / NPUsim | MXU 활용률 실측 / NPUsim |
+|---|---|---|---|---|
+| decode GEMM M 1..128 (16개) | 1.000 | 1.000 | 711-757 (1개 783) / 761-799 | 0.4-49% / 0.4-50% |
+| compute-bound M 512 (4개) | 1.000 | 1.000 | - | 86-96% / 91-97% |
+| 비정렬 K=N 1100 / 1152 / 1280 | 1.46 / 1.33 / 1.20 | 1.35-1.43 / 1.26-1.31 / 1.16-1.19 | 391-526 / 514-690 | |
+| 정렬 K=N 1024 / 2048 | 1.000 | 1.000 | 415-662 / 491-728 | |
+
+1. decode GEMM: NPUsim의 연산 수와 트래픽은 정확하다. latency 오차 -3..-8%는 전부 유효 대역폭 차이다(NPUsim은 819 GB/s
+   사양에서 파이프라인 fill을 빼고 761-799를 낸다). HBM2e REFSB 설정(4.1)이 이것을 고친다.
+2. 비정렬 GEMM: NPUsim(이 검증의 매핑)은 출력 열을 4 MXU x 128 = 512열 단위로 채우고 K를 128로 채워 MAC와 바이트를
+   20-46% 더 센다. 실측 시간비 1100/1024 = 1.27은 128 단위 padding(1152^2/1024^2 = 1.266)과 같다: TPU는 128 단위로만
+   채운다. 동시에 작은 GEMM의 실측 유효 대역폭(380-660 GB/s)이 NPUsim(490-730)보다 낮다(GEMM당 고정 비용, 원인은
+   trace로 확인할 것). 두 오류가 상쇄되어 K=N 1100의 latency는 -4%로 맞아 보이지만, padding 차이가 없는 1024에서는
+   -27%다. 고칠 것: 매핑을 128열 단위로 MXU에 나누기, 작은 GEMM의 고정 비용.
+3. 측정 쪽 바이트와 FLOPs를 모든 케이스에서 XLA 수치로 확인하려면 trace가 필요하다: `tpu_v5e1_stream_bench`가 이제 모든
+   케이스를 trace하고 `xprof_stats.py`가 op별 표로 바꾼다(README "Per-op profile").
+
 ## 4. MOSAIC HBM2e
 
 `configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}`(MOSAIC): HBM2e 2 stack = 16채널 x 2 pseudo channel, 3.2 Gbps,

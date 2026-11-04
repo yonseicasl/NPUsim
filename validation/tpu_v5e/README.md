@@ -206,3 +206,33 @@ the first code cell picks sections); it downloads `tpu_v5e1_hbm_probe.zip`. The 
 MOSAIC's HBM2e candidates (`hbm2e_tpu_v5e` all-bank refresh, `hbm2e_tpu_v5e_refsb` per-bank refresh hidden;
 REPORT.md section 4.1) to see which mapping and refresh scheme reproduce them. CPU smoke test:
 `TPU_BENCH_QUICK=1` (Pallas interpret mode).
+
+## Per-op profile: FLOPs, bytes, utilization, bound-by (`xprof_stats.py`)
+
+Latency alone says how far NPUsim is off, not where. The saved `jax.profiler` traces (xplane.pb) also carry, per HLO
+op, XLA's FLOPs and bytes accessed and the measured time, from which XProf derives FLOP rate, HBM / VMEM bandwidth,
+operational intensity and the bound resource. `xprof_stats.py RESULTS` converts every `RESULTS/traces/<case>/` with
+XProf's hlo_stats, roofline_model and op_profile tools into `RESULTS/xprof/{hlo_stats,roofline,programs}.csv`
+(one row per op and case) and prints the top ops (needs `pip install xprof`).
+
+`tpu_v5e1_stream_bench.py` now traces **every** case (`TPU_BENCH_TRACE=all`, default; `some` keeps the few
+representative ones, `none` none), so each GEMM, decode layer, attention and HBM read comes with its per-op table.
+What it validates in NPUsim: bytes accessed -> the DRAM traffic count (operand re-reads), FLOP rate / MXU
+utilization -> PE utilization, tiling and fill/drain, HBM bandwidth -> the DRAM model.
+
+First result, the three traces of the third run (`results/2026-11-03_colab_v5e1_followup3/xprof/`):
+
+| case | op | bound by | bandwidth | FLOP rate |
+|---|---|---|---|---|
+| 8x4096x4096 streamed (one program, many weights) | matmul fusion | HBM | HBM 679 GB/s | 5.8 TFLOP/s |
+| 8x4096x4096 as a one-op program | copy-done (HBM -> VMEM) | VMEM write | 699 GB/s | - |
+| | matmul fusion | VMEM read | VMEM 2697 GB/s, HBM 10 GB/s | 23 TFLOP/s |
+| decode layer B 8 L 2048 | FFN / projection fusions | HBM | HBM 685-697 GB/s | 3-6 TFLOP/s |
+
+This confirms in numbers what the latencies implied: the one-op program stages the weight into VMEM and multiplies
+from there, while the streamed GEMM and the decode layer read weights from HBM at the sustained rate.
+
+Hardware counters: XProf's perf_counters and utilization_viewer tools exist but are empty with the default profiler
+options. The bench's `counters` section traces one GEMM under candidate `advanced_configuration` options
+(undocumented; names from XProf and Cloud TPU profiler options); `xprof_stats.py RESULTS --list-tools --case counters`
+shows which, if any, fills them.

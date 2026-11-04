@@ -1,0 +1,798 @@
+case,rank,program_id,category,hlo_op_name,hlo_op_expression,tf_op_name,occurrences,total_time,avg_time,total_self_time,avg_self_time,total_self_time_percent,cumulative_total_self_time_percent,dma_stall_percent,model_flop_rate,normalized_flop_rate,measured_memory_bw,hbm_bw,cmem_read_bw,cmem_write_bw,operational_intensity,bound_by,hlo_rematerialization,outside_compilation,autotuned,source_info,core_type,parent_op_name,vdd_energy
+decode_stack_b8_l2048,1.0,5487826530121886445,convolution fusion,fusion.138,"%fusion.138 = bf16[8,28672]{1,0:T(8,128)(2,1)} fusion(bf16[4096,28672]{1,0:T(8,128)(2,1)} %get-tuple-element.436, bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.380, f32[8]{0:T(128)} %add_rsqrt_fusion.11, bf16[4096]{0:T(1024)(128)(2,1)} %get-tuple-element.435), kind=kOutput, calls=%fused_computation.53.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,629.0375,314.51875,629.0375,314.51875,23.14729208466841,23.14729208466841,0.0,5975.089141744332,5975.089141744332,697.0838477733159,697.0838477733159,0.0,0.0,7.982878129828524,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:23:13
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:23</div>",TensorCore,,0.0
+decode_stack_b8_l2048,2.0,5487826530121886445,convolution fusion,fusion.131,"%fusion.131 = bf16[8,28672]{1,0:T(8,128)(2,1)} fusion(bf16[4096,28672]{1,0:T(8,128)(2,1)} %get-tuple-element.428, bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.374, f32[8]{0:T(128)} %add_rsqrt_fusion.9, bf16[4096]{0:T(1024)(128)(2,1)} %get-tuple-element.427), kind=kOutput, calls=%fused_computation.56.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,628.7725,314.38625,628.7725,314.38625,23.137540627239503,46.28483271190792,0.0,5977.607379457594,5977.607379457594,697.3776380069218,697.3776380069218,0.0,0.0,7.982878129828524,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:23:13
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:23</div>",TensorCore,,0.0
+decode_stack_b8_l2048,3.0,5487826530121886445,convolution fusion,fusion.134,"%fusion.134 = (bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)}) fusion(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} %get-tuple-element.432, bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} %bitcast.43), kind=kOutput, calls=%fused_computation.79.clone.1","jit(run)/while/body/eval_jaxpr/bkgd,bkld->bkgl/dot_general:",2.0,92.0825,46.04125,92.0825,46.04125,3.3884474667829476,49.67328017869086,0.0,2972.093763744468,2972.093763744468,701.285792488436,678.7391741101728,0.0,0.0,3.9470042680135276,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:18:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:18</div>",TensorCore,,0.0
+decode_stack_b8_l2048,4.0,5487826530121886445,convolution fusion,fusion.126,"%fusion.126 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} fusion(bf16[4096,6144]{1,0:T(8,128)(2,1)} %get-tuple-element.423, bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.402, f32[8]{0:T(128)S(1)} %add_rsqrt_fusion.8, bf16[4096]{0:T(1024)(128)(2,1)} %get-tuple-element.422), kind=kOutput, calls=%fused_computation.2.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,91.5425,45.77125,91.5425,45.77125,3.368576572399512,53.041856751090364,0.0,5869.728967419504,5869.728967419504,685.5772894415957,684.2431559282574,0.0,0.0,7.973734221395745,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:13:30
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:13</div>",TensorCore,,0.0
+decode_stack_b8_l2048,5.0,5487826530121886445,convolution fusion,fusion.133,"%fusion.133 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} fusion(bf16[4096,6144]{1,0:T(8,128)(2,1)} %get-tuple-element.431, bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.376, f32[8]{0:T(128)S(1)} %add_rsqrt_fusion.10, bf16[4096]{0:T(1024)(128)(2,1)} %get-tuple-element.430), kind=kOutput, calls=%fused_computation.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,91.50875,45.754375,91.50875,45.754375,3.3673346415005474,56.40919139259092,0.0,5871.893824361058,5871.893824361058,685.83014213075,684.4955165660388,0.0,0.0,7.973734221395745,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:13:30
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:13</div>",TensorCore,,0.0
+decode_stack_b8_l2048,6.0,5487826530121886445,copy-done,copy-done,"%copy-done = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} copy-done((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, u32[]{:S(2)}) %copy-start)",jit(run)/while:,2.0,85.10125,42.550625,85.10125,42.550625,3.1315517604600474,59.54074315305097,0.0,0.0,0.0,734.4198199613235,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,7.0,5487826530121886445,async-done,slice-done.2,"%slice-done.2 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.2)",jit(run)/while:,2.0,77.6075,38.80375,77.6075,38.80375,2.855797103449164,62.39654025650013,0.0,0.0,0.0,704.6682949906076,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,8.0,5487826530121886445,async-done,slice-done.5,"%slice-done.5 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.5)",jit(run)/while:,2.0,77.59875,38.799375,77.59875,38.799375,2.8554751213642473,65.25201537786438,0.0,0.0,0.0,704.7477530692644,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,9.0,5487826530121886445,async-done,slice-done.1,"%slice-done.1 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.1)",jit(run)/while:,2.0,77.55125,38.775625,77.55125,38.775625,2.853727218617556,68.10574259648193,0.0,0.0,0.0,705.1794097900882,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,10.0,5487826530121886445,async-done,slice-done.7,"%slice-done.7 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.7)",jit(run)/while:,2.0,77.54125,38.770625,77.54125,38.770625,2.853359239091937,70.95910183557386,0.0,0.0,0.0,705.270352276802,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,11.0,5487826530121886445,async-done,slice-done.3,"%slice-done.3 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.3)",jit(run)/while:,2.0,77.53125,38.765625,77.53125,38.765625,2.8529912595663176,73.81209309514018,0.0,0.0,0.0,705.3613182230853,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,12.0,5487826530121886445,async-done,slice-done.6,"%slice-done.6 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.6)",jit(run)/while:,2.0,77.3275,38.66375,77.3275,38.66375,2.845493676731827,76.657586771872,0.0,0.0,0.0,707.2198726647516,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,13.0,5487826530121886445,copy-done,copy-done.2,"%copy-done.2 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} copy-done((bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) %copy-start.2)",jit(run)/while:,2.0,76.01,38.005,76.01,38.005,2.797012374231498,79.4545991461035,0.0,0.0,0.0,822.260817043594,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,14.0,5487826530121886445,convolution fusion,fusion.132,"%fusion.132 = (f32[8]{0:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) fusion(bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.374, bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} %custom-call, bf16[8,28672]{1,0:T(8,128)(2,1)} %fusion.131), kind=kOutput, calls=%fused_computation.46.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,66.81125,33.405625,66.81125,33.405625,2.458517208102541,81.91311635420605,0.0,28162.492514359485,28162.492514359485,3290.593910713312,16.4447217668398,0.0,0.0,7.970708555276215,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:25:20
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:25</div>",TensorCore,,0.0
+decode_stack_b8_l2048,15.0,5487826530121886445,async-done,slice-done.10,"%slice-done.10 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} async-done(((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.10)",jit(run)/while:,2.0,66.7575,33.37875,66.7575,33.37875,2.4565393181523376,84.36965567235839,0.0,0.0,0.0,234.0567682055736,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,16.0,5487826530121886445,convolution fusion,fusion.139,"%fusion.139 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.380, bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} %custom-call.1, bf16[8,28672]{1,0:T(8,128)(2,1)} %fusion.138), kind=kOutput, calls=%fused_computation.67.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,66.0625,33.03125,66.0625,33.03125,2.430964741121804,86.80062041348019,0.0,28478.709101229895,28478.709101229895,3327.8884815515607,16.630203405865654,0.0,0.0,7.96987784564131,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:25:20
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:25</div>",TensorCore,,0.0
+decode_stack_b8_l2048,17.0,5487826530121886445,copy-done,copy-done.1,"%copy-done.1 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} copy-done((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, u32[]{:S(2)}) %copy-start.1)",jit(run)/while:,2.0,60.12125,30.060625,60.12125,30.060625,2.2123389054633,89.01295931894349,0.0,0.0,0.0,1039.5666208451019,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,18.0,5487826530121886445,async-done,slice-done.4,"%slice-done.4 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.4)",jit(run)/while:,2.0,49.42125,24.710625,49.42125,24.710625,1.8186008130507618,90.83156013199425,0.0,0.0,0.0,1106.5593181775769,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,19.0,5487826530121886445,async-done,slice-done,"%slice-done = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start)",jit(run)/while:,2.0,48.97,24.485,48.97,24.485,1.8019957369571955,92.63355586895145,0.0,0.0,0.0,1116.756069092987,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,20.0,5487826530121886445,convolution fusion,fusion.127,"%fusion.127 = (bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)}) fusion(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} %copy-done, bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} %bitcast.42), kind=kOutput, calls=%fused_computation.78.clone.1","jit(run)/while/body/eval_jaxpr/bkgd,bkld->bkgl/dot_general:",2.0,26.5275,13.26375,26.5275,13.26375,0.9761576865863183,93.60971355553777,0.0,10316.758985957968,10316.758985957968,2434.3096404416697,0.0,0.0,0.0,3.9470042680135276,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:18:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:18</div>",TensorCore,,0.0
+decode_stack_b8_l2048,21.0,5487826530121886445,convolution fusion,fusion.130,"%fusion.130 = (f32[8]{0:T(128)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) fusion(bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.402, bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} %reshape.32, bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} %copy-done.2), kind=kOutput, calls=%fused_computation.44.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,25.13625,12.568125,25.13625,12.568125,0.9249625350845478,94.53467609062231,0.0,21376.683634193643,21376.683634193643,2501.020261261913,9.712690834949525,0.0,0.0,7.960186627553638,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:21:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:21</div>",TensorCore,,0.0
+decode_stack_b8_l2048,22.0,5487826530121886445,convolution fusion,fusion.137,"%fusion.137 = (f32[8]{0:T(128)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) fusion(bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} %copy-done.3, bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} %reshape.33, bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} %custom-call.3), kind=kOutput, calls=%fused_computation.48.clone.1",jit(run)/while/body/eval_jaxpr/dot_general:,2.0,24.3325,12.16625,24.3325,12.16625,0.8953861807129051,95.43006227133523,0.0,22082.797246481045,22082.797246481045,2583.633845356818,5.01675999178054,0.0,0.0,7.960186627553638,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:21:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:21</div>",TensorCore,,0.0
+decode_stack_b8_l2048,23.0,5487826530121886445,async-done,slice-done.11,"%slice-done.11 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} async-done(((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.11)",jit(run)/while:,2.0,22.03,11.015,22.03,11.015,0.8106588949390856,96.24072116627431,0.0,0.0,0.0,709.2621290732446,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,24.0,5487826530121886445,async-done,slice-done.9,"%slice-done.9 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} async-done(((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.9)",jit(run)/while:,2.0,21.97375,10.986875,21.97375,10.986875,0.8085890101074775,97.04931017638178,0.0,0.0,0.0,711.0777497461098,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,25.0,5487826530121886445,async-done,slice-done.15,"%slice-done.15 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.15)",jit(run)/while:,2.0,21.87125,10.935625,21.87125,10.935625,0.8048172199698809,97.85412739635166,0.0,0.0,0.0,714.410228198369,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,26.0,5487826530121886445,async-done,slice-done.8,"%slice-done.8 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} async-done(((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.8)",jit(run)/while:,2.0,14.32875,7.164375,14.32875,7.164375,0.5272686627716034,98.38139605912328,0.0,0.0,0.0,1090.4680941103431,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,27.0,5487826530121886445,convolution fusion,fusion.129,"%fusion.129 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} fusion(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} %copy-done.1, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} %get-tuple-element.372, f32[8,8,4]{2,1,0:T(8,128)S(1)} %fusion.128, f32[8,8,4]{2,1,0:T(8,128)S(1)} %convert.22), kind=kOutput, calls=%fused_computation.10.clone.1","jit(run)/while/body/eval_jaxpr/bkgl,bkld->bkgd/dot_general:",2.0,12.14375,6.071875,12.14375,6.071875,0.44686513642380943,98.82826119554709,0.0,22450.2118373649,22450.2118373649,5317.880391951879,0.0,0.0,0.0,3.9317148089077913,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>",TensorCore,,0.0
+decode_stack_b8_l2048,28.0,5487826530121886445,convolution fusion,fusion.136,"%fusion.136 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} fusion(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} %custom-call.2, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} %get-tuple-element.378, f32[8,8,4]{2,1,0:T(8,128)S(1)} %fusion.135, f32[8,8,4]{2,1,0:T(8,128)S(1)} %convert.23), kind=kOutput, calls=%fused_computation.11.clone.1","jit(run)/while/body/eval_jaxpr/bkgl,bkld->bkgd/dot_general:",2.0,12.1425,6.07125,12.1425,6.07125,0.446819138983107,99.2750803345302,0.0,22452.522956557546,22452.522956557546,5318.427836917079,0.0,0.0,0.0,3.9317148089077913,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>",TensorCore,,0.0
+decode_stack_b8_l2048,29.0,5487826530121886445,async-done,slice-done.14,"%slice-done.14 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.14)",jit(run)/while:,2.0,9.86125,4.930625,9.86125,4.930625,0.36287380970122823,99.63795414423143,0.0,0.0,0.0,1584.489258814408,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,30.0,5487826530121886445,loop fusion,fusion.135,"%fusion.135 = f32[8,8,4]{2,1,0:T(8,128)S(1)} fusion(bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} %get-tuple-element.378, f32[8,8,4]{2,1,0:T(8,128)S(1)} %convert.23), kind=kLoop, calls=%fused_computation.6.clone.1",jit(run)/while/body/eval_jaxpr/reduce_sum:,2.0,2.3775,1.18875,2.3775,1.18875,0.0874871322159635,99.72544127644738,0.0,1322.908937960042,1322.908937960042,823.1081797121451,0.0,0.0,0.0,1.4968323586744638,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>",TensorCore,,0.0
+decode_stack_b8_l2048,31.0,5487826530121886445,loop fusion,fusion.128,"%fusion.128 = f32[8,8,4]{2,1,0:T(8,128)S(1)} fusion(bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} %get-tuple-element.372, f32[8,8,4]{2,1,0:T(8,128)S(1)} %convert.22), kind=kLoop, calls=%fused_computation.9.clone.1",jit(run)/while/body/eval_jaxpr/reduce_sum:,2.0,2.375,1.1875,2.375,1.1875,0.08739513733455871,99.81283641378195,0.0,1324.3014736842106,1324.3014736842106,823.9746093749999,0.0,0.0,0.0,1.4968323586744638,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>",TensorCore,,0.0
+decode_stack_b8_l2048,32.0,5487826530121886445,loop fusion,fusion.125,"%fusion.125 = f32[8]{0:T(128)S(1)} fusion(bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.402), kind=kLoop, calls=%fused_computation.42.clone.1",jit(run)/while/body/eval_jaxpr/reduce_sum:,2.0,1.6425,0.82125,1.6425,0.82125,0.060440637082952706,99.8732770508649,0.0,119.69071537290715,119.69071537290715,74.35611393898044,74.31982496194826,0.0,0.0,1.499145924841386,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:38
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>",TensorCore,,0.0
+decode_stack_b8_l2048,33.0,5487826530121886445,data formatting,copy.22,"%copy.22 = bf16[8,4096]{1,0:T(8,128)(2,1)} copy(bf16[8,4096]{1,0:T(8,128)(2,1)} %x.1)",,1.0,0.75125,0.75125,0.75125,0.75125,0.027644461862141992,99.90092151272704,0.0,0.0,0.0,162.4896006655574,162.4896006655574,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,34.0,5487826530121886445,loop fusion,add_rsqrt_fusion.10,"%add_rsqrt_fusion.10 = f32[8]{0:T(128)S(1)} fusion(f32[8]{0:T(128)} %get-tuple-element.377), kind=kLoop, calls=%fused_computation.73.clone.1",jit(run)/while/body/eval_jaxpr/rsqrt:,2.0,0.64625,0.323125,0.64625,0.323125,0.023780676843140447,99.92470218957018,0.0,0.04951644100580271,0.04951644100580271,0.18446311729327852,0.09223155864663926,0.0,0.0,0.25,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>",TensorCore,,0.0
+decode_stack_b8_l2048,35.0,5487826530121886445,loop fusion,add_rsqrt_fusion.11,"%add_rsqrt_fusion.11 = f32[8]{0:T(128)} fusion(f32[8]{0:T(128)S(1)} %get-tuple-element.381), kind=kLoop, calls=%fused_computation.72.clone.1",jit(run)/while/body/eval_jaxpr/rsqrt:,2.0,0.50375,0.251875,0.50375,0.251875,0.018536968603066927,99.94323915817324,0.0,0.06352357320099256,0.06352357320099256,0.2366437509692928,0.1183218754846464,0.0,0.0,0.25,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:22:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>",TensorCore,,0.0
+decode_stack_b8_l2048,36.0,5487826530121886445,loop fusion,add_rsqrt_fusion.9,"%add_rsqrt_fusion.9 = f32[8]{0:T(128)} fusion(f32[8]{0:T(128)S(1)} %get-tuple-element.375), kind=kLoop, calls=%fused_computation.74.clone.1",jit(run)/while/body/eval_jaxpr/rsqrt:,2.0,0.50125,0.250625,0.50125,0.250625,0.018444973721662126,99.96168413189491,0.0,0.06384039900249376,0.06384039900249376,0.23782401905392764,0.11891200952696382,0.0,0.0,0.25,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:22:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>",TensorCore,,0.0
+decode_stack_b8_l2048,37.0,5487826530121886445,while,while.3,"%while.3 = (s32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, s32[]{:T(128)}) while((s32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, s32[]{:T(128)}) %tuple.35), condition=%wide.wide.region_9.11.clone.clone, body=%wide.wide.region_0.10.sunk.clone.clone.sunk",,1.0,2716.79,2716.79,0.29,0.29,0.01067140624295664,99.97235553813788,0.0,2673.8316557407825,2673.8316557407825,785.6260718833289,0.7866907453404824,0.0,0.0,3.1697010458719674,Compute,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:33</div>",TensorCore,,0.0
+decode_stack_b8_l2048,38.0,5487826530121886445,copy-done,copy-done.3,"%copy-done.3 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} copy-done((bf16[8,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) %copy-start.3)",jit(run)/while:,2.0,0.2575,0.12875,0.2575,0.12875,0.00947547278469426,99.98183101092256,0.0,0.0,0.0,474.2330717808992,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,39.0,5487826530121886445,data formatting,reshape.32,"%reshape.32 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} reshape(bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} %fusion.129)",jit(run)/while/body/eval_jaxpr/reshape:,2.0,0.13125,0.065625,0.13125,0.065625,0.0048297312737519285,99.9866607421963,0.0,0.0,0.0,1860.1190476190475,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>",TensorCore,,0.0
+decode_stack_b8_l2048,40.0,5487826530121886445,data formatting,reshape.33,"%reshape.33 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} reshape(bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} %fusion.136)",jit(run)/while/body/eval_jaxpr/reshape:,2.0,0.13,0.065,0.13,0.065,0.00478373383304953,99.99144447602936,0.0,0.0,0.0,1878.0048076923076,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>",TensorCore,,0.0
+decode_stack_b8_l2048,41.0,5487826530121886445,loop fusion,add_rsqrt_fusion.8,"%add_rsqrt_fusion.8 = f32[8]{0:T(128)S(1)} fusion(f32[8]{0:T(128)S(1)} %fusion.125), kind=kLoop, calls=%fused_computation.75.clone.1",jit(run)/while/body/eval_jaxpr/rsqrt:,2.0,0.04375,0.021875,0.04375,0.021875,0.001609910424583976,99.99305438645393,0.0,0.7314285714285714,0.7314285714285714,2.724783761160714,0.0,0.0,0.0,0.25,VMEM Write,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>",TensorCore,,0.0
+decode_stack_b8_l2048,42.0,5487826530121886445,non-fusion elementwise,convert.23,"%convert.23 = f32[8,8,4]{2,1,0:T(8,128)S(1)} convert(bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)} %get-tuple-element.379)",jit(run)/while/body/eval_jaxpr/reduce_max:,2.0,0.025,0.0125,0.025,0.0125,0.0009199488140479864,99.99397433526799,0.0,20.48,20.48,114.44091796874999,0.0,0.0,0.0,0.16666666666666666,VMEM Write,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>",TensorCore,,0.0
+decode_stack_b8_l2048,43.0,5487826530121886445,non-fusion elementwise,convert.22,"%convert.22 = f32[8,8,4]{2,1,0:T(8,128)S(1)} convert(bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)} %get-tuple-element.373)",jit(run)/while/body/eval_jaxpr/reduce_max:,2.0,0.02375,0.011875,0.02375,0.011875,0.0008739513733455871,99.99484828664134,0.0,21.557894736842105,21.557894736842105,120.46412417763158,0.0,0.0,0.0,0.16666666666666666,VMEM Write,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>",TensorCore,,0.0
+decode_stack_b8_l2048,44.0,5487826530121886445,async-start,slice-start.10,"%slice-start.10 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} %get-tuple-element.433), calls=%async_computation.10",jit(run)/while:,2.0,0.01625,0.008125,0.01625,0.008125,0.0005979667291311912,99.99544625337047,0.0,0.0,0.0,1923076.923076923,961538.4615384615,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,45.0,5487826530121886445,async-start,slice-start.14,"%slice-start.14 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[4096,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.434), calls=%async_computation.14",jit(run)/while:,2.0,0.01625,0.008125,0.01625,0.008125,0.0005979667291311912,99.9960442200996,0.0,0.0,0.0,1923076.923076923,961538.4615384615,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,46.0,5487826530121886445,async-start,slice-start.12,"%slice-start.12 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[4096,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.434), calls=%async_computation.12",jit(run)/while:,2.0,0.015,0.0075,0.015,0.0075,0.0005519692884287918,99.99659618938803,0.0,0.0,0.0,2083333.3333333333,1041666.6666666666,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,47.0,5487826530121886445,async-start,slice-start.11,"%slice-start.11 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} %get-tuple-element.433), calls=%async_computation.11",jit(run)/while:,2.0,0.00875,0.004375,0.00875,0.004375,0.00032198208491679523,99.99691817147294,0.0,0.0,0.0,3571428.571428571,1785714.2857142854,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,48.0,5487826530121886445,async-start,slice-start.13,"%slice-start.13 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[4096,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.434), calls=%async_computation.13",jit(run)/while:,2.0,0.00875,0.004375,0.00875,0.004375,0.00032198208491679523,99.99724015355787,0.0,0.0,0.0,3571428.571428571,1785714.2857142854,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,49.0,5487826530121886445,async-done,slice-done.12,"%slice-done.12 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.12)",jit(run)/while:,2.0,0.00625,0.003125,0.00625,0.003125,0.0002299872035119966,99.99747014076138,0.0,0.0,0.0,2500007.152557373,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,50.0,5487826530121886445,copy-start,copy-start.1,"%copy-start.1 = (bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} %get-tuple-element.425)",jit(run)/while:,2.0,0.005,0.0025,0.005,0.0025,0.00018398976280959727,99.9976541305242,0.0,0.0,0.0,37500000.0,12500000.0,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,51.0,5487826530121886445,copy-start,copy-start.3,"%copy-start.3 = (bf16[8,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.376)",jit(run)/while:,2.0,0.005,0.0025,0.005,0.0025,0.00018398976280959727,99.99783812028701,0.0,0.0,0.0,73243.67761611938,24414.0625,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,52.0,5487826530121886445,async-done,slice-done.13,"%slice-done.13 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} async-done(((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) %slice-start.13)",jit(run)/while:,2.0,0.005,0.0025,0.005,0.0025,0.00018398976280959727,99.99802211004982,0.0,0.0,0.0,3125008.940696716,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,53.0,5487826530121886445,async-start,slice-start,"%slice-start = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.429), calls=%async_computation",jit(run)/while:,2.0,0.005,0.0025,0.005,0.0025,0.00018398976280959727,99.99820609981263,0.0,0.0,0.0,21874999.999999996,10937499.999999998,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,54.0,5487826530121886445,async-start,slice-start.9,"%slice-start.9 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} %get-tuple-element.433), calls=%async_computation.9",jit(run)/while:,2.0,0.005,0.0025,0.005,0.0025,0.00018398976280959727,99.99839008957545,0.0,0.0,0.0,6250000.0,3125000.0,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,55.0,5487826530121886445,copy-start,copy-start,"%copy-start = (bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} %get-tuple-element.424)",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99852808189755,0.0,0.0,0.0,50000000.0,16666666.666666666,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,56.0,5487826530121886445,async-start,slice-start.1,"%slice-start.1 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.429), calls=%async_computation.1",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99866607421966,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,57.0,5487826530121886445,async-start,slice-start.15,"%slice-start.15 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[4096,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.434), calls=%async_computation.15",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99880406654175,0.0,0.0,0.0,8333333.333333333,4166666.6666666665,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,58.0,5487826530121886445,async-start,slice-start.2,"%slice-start.2 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.429), calls=%async_computation.2",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99894205886386,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,59.0,5487826530121886445,async-start,slice-start.3,"%slice-start.3 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.429), calls=%async_computation.3",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99908005118596,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,60.0,5487826530121886445,async-start,slice-start.5,"%slice-start.5 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.437), calls=%async_computation.5",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99921804350807,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,61.0,5487826530121886445,async-start,slice-start.6,"%slice-start.6 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.437), calls=%async_computation.6",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99935603583016,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,62.0,5487826530121886445,async-start,slice-start.7,"%slice-start.7 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.437), calls=%async_computation.7",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99949402815227,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,63.0,5487826530121886445,async-start,slice-start.8,"%slice-start.8 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} %get-tuple-element.433), calls=%async_computation.8",jit(run)/while:,2.0,0.00375,0.001875,0.00375,0.001875,0.00013799232210719796,99.99963202047437,0.0,0.0,0.0,8333333.333333333,4166666.6666666665,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,64.0,5487826530121886445,copy-start,copy-start.2,"%copy-start.2 = (bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(bf16[4096,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.426)",jit(run)/while:,2.0,0.0025,0.00125,0.0025,0.00125,9.199488140479863e-05,99.99972401535577,0.0,0.0,0.0,75000000.0,25000000.0,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,65.0,5487826530121886445,async-start,slice-start.4,"%slice-start.4 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) async-start(bf16[14336,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.437), calls=%async_computation.4",jit(run)/while:,2.0,0.0025,0.00125,0.0025,0.00125,9.199488140479863e-05,99.99981601023717,0.0,0.0,0.0,43749999.99999999,21874999.999999996,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,66.0,5487826530121886445,custom-call,custom-call,"%custom-call = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} custom-call(bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done, bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.1, bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.2, bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.3), custom_call_target=""ConcatBitcast""",jit(run)/while:,2.0,0.00125,0.000625,0.00125,0.000625,4.599744070239932e-05,99.99986200767788,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,67.0,5487826530121886445,custom-call,custom-call.1,"%custom-call.1 = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} custom-call(bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.4, bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.5, bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.6, bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.7), custom_call_target=""ConcatBitcast""",jit(run)/while:,2.0,0.00125,0.000625,0.00125,0.000625,4.599744070239932e-05,99.99990800511857,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,68.0,5487826530121886445,custom-call,custom-call.2,"%custom-call.2 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} custom-call(bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} %slice-done.8, bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} %slice-done.9, bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} %slice-done.10, bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} %slice-done.11), custom_call_target=""ConcatBitcast""",jit(run)/while:,2.0,0.00125,0.000625,0.00125,0.000625,4.599744070239932e-05,99.99995400255928,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,No,No,No,,TensorCore,,0.0
+decode_stack_b8_l2048,69.0,5487826530121886445,custom-call,custom-call.3,"%custom-call.3 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} custom-call(bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.12, bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.13, bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.14, bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} %slice-done.15), custom_call_target=""ConcatBitcast""",jit(run)/while:,2.0,0.0,0.0,0.0,0.0,0.0,99.99995400255928,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,No,No,No,,TensorCore,,0.0
+stream_gemm_8x4096x4096_bf16,1.0,14812420971802782909,convolution fusion,convert_reduce_fusion.2,"%convert_reduce_fusion.2 = f32[]{:T(128)} fusion(bf16[16,4096,4096]{2,1,0:T(8,128)(2,1)} %get-tuple-element.151, s32[]{:T(128)S(6)} %select_n.30, bf16[8,4096]{1,0:T(8,128)(2,1)} %get-tuple-element.150, bf16[]{:T(256)S(6)} %convert_element_type.20), kind=kOutput, calls=%fused_computation.3.clone.1",jit(gemm_loop)/while/body/eval_jaxpr/dot_general:,8.0,368.6725,46.0840625,368.6725,46.0840625,99.14615534594155,99.14615534594155,0.0,5829.174977791943,5829.174977791943,679.4332120096963,679.4331311728496,0.0,0.0,7.9902515099951295,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:4:12
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:17:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:4</div>",TensorCore,,0.0
+stream_gemm_8x4096x4096_bf16,2.0,14812420971802782909,while,while.4,"%while.4 = (s32[]{:T(128)}, f32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[16,4096,4096]{2,1,0:T(8,128)(2,1)}, s32[]{:T(128)}, /*index=5*/s32[]{:T(128)}, s32[]{:T(128)}, s32[]{:T(128)}, f32[]{:T(128)}) while((s32[]{:T(128)}, f32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[16,4096,4096]{2,1,0:T(8,128)(2,1)}, s32[]{:T(128)}, /*index=5*/s32[]{:T(128)}, s32[]{:T(128)}, s32[]{:T(128)}, f32[]{:T(128)}) %tuple.27), condition=%wide.wide.region_2.6.clone.clone.clone, body=%wide.wide.region_0.5.clone.clone.sunk.clone.sunk.clone.sunk",,1.0,371.8475,371.8475,3.175,3.175,0.8538446540584512,100.0,0.0,722.4253598585442,722.4253598585442,84.20452947110499,84.20452947110499,0.0,0.0,7.990200174942487,HBM,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:17:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:6</div>",TensorCore,,0.0
+stream_gemm_8x4096x4096_bf16_isolated,1.0,11056305134446188932,copy-done,copy-done,"%copy-done = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} copy-done((bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) %copy-start)",,1.0,44.7,44.7,44.7,44.7,79.31673617912084,79.31673617912084,0.0,0.0,0.0,699.1056454528364,0.0,0.0,0.0,0.0,VMEM Write,No,No,No,,TensorCore,,0.0
+stream_gemm_8x4096x4096_bf16_isolated,2.0,11056305134446188932,convolution fusion,fusion,"%fusion = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(bf16[8,4096]{1,0:T(8,128)(2,1)} %a.1, bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} %copy-done), kind=kOutput, calls=%fused_computation",jit(<lambda>)/dot_general:,1.0,11.6325,11.6325,11.6325,11.6325,20.640982854667183,99.95771903378802,0.0,23076.334064044702,23076.334064044702,2696.932758435418,10.4939017837954,0.0,0.0,7.968871595330739,VMEM Read,No,No,No,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:18:54
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:18:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:18</div>",TensorCore,,0.0
+stream_gemm_8x4096x4096_bf16_isolated,3.0,11056305134446188932,copy-start,copy-start,"%copy-start = (bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(bf16[4096,4096]{1,0:T(8,128)(2,1)} %b.1), cross_program_prefetch_index=0",,1.0,0.01375,0.01375,0.01375,0.01375,0.024398324887313454,99.98211735867534,0.0,0.0,0.0,6818181.818181817,2272727.2727272725,0.0,0.0,0.0,HBM,No,No,No,,TensorCore,,0.0

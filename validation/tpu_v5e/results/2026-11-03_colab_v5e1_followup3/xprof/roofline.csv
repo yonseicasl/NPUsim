@@ -1,0 +1,1607 @@
+case,step,rank,category,operation,occurrences,total_time,avg_time,total_self_time,avg_self_time,total_self_time_percent,cumulative_total_self_time_percent,dma_stall_percent,measured_flop_rate,model_flop_rate,measured_memory_bw,hbm_bw,cmem_read_bw,cmem_write_bw,vmem_read_bw,vmem_write_bw,operational_intensity,hbm_operational_intensity,cmem_read_operational_intensity,cmem_write_operational_intensity,vmem_read_operational_intensity,vmem_write_operational_intensity,bottleneck_operational_intensity,bound_by,total_time_per_core,total_time_in_percentage,optimal_flop_rate,roofline_efficiency,compute_efficiency,max_mem_bw_utilization,include_infeed_outfeed,hlo_module_id,source_info
+decode_stack_b8_l2048,Total,0.0,Program,Program,1.0,2717.5425,2717.5425,0.0,0.0,0.0,0.0,0.0,5346.182560162352,5346.182560162352,1570.8621324816124,668.8720952511759,0.0,0.0,279.17894261125764,277.7401188588174,3.169610116216264,7.44390525728995,0.0,0.0,17.834513089433838,17.926904210859572,7.44390525728995,HBM,2717.5425,1.0,6097.731844555804,0.8767493711511023,0.026374852294831535,0.8767493711511023,True,0,
+decode_stack_b8_l2048,Total,1.0,convolution fusion,fusion.138,2.0,629.0375,314.51875,629.0375,314.51875,0.2314729208466841,0.2314729208466841,0.0,5975.089141744332,5975.089141744332,697.0838477733159,697.0838477733159,0.0,0.0,0.0,0.0,7.982878129828524,7.982878129828524,0.0,0.0,0.0,0.0,7.982878129828524,HBM,629.0375,0.23147292084668408,6539.235589517046,0.9137289917070599,0.029477499465931582,0.9137289917070599,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:23:13
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:23</div>"
+decode_stack_b8_l2048,Total,2.0,convolution fusion,fusion.131,2.0,628.7725,314.38625,628.7725,314.38625,0.23137540627239503,0.46284832711907914,0.0,5977.607379457594,5977.607379457594,697.3776380069218,697.3776380069218,0.0,0.0,0.0,0.0,7.982878129828524,7.982878129828524,0.0,0.0,0.0,0.0,7.982878129828524,HBM,628.7725,0.231375406272395,6539.235589517047,0.9141140883561696,0.029489922937629965,0.9141140883561696,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:23:13
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:23</div>"
+decode_stack_b8_l2048,Total,3.0,convolution fusion,fusion.134,2.0,92.0825,46.04125,92.0825,46.04125,0.03388447466782948,0.4967328017869086,0.0,2972.093763744468,2972.093763744468,701.285792488436,678.7391741101728,0.0,0.0,1.3256624494339313,21.220955928829106,3.9470042680135276,4.078117370605469,0.0,0.0,2087.99609375,130.4360663738409,4.078117370605469,HBM,92.0825,0.033884474667829484,3340.6209908736005,0.8896830175778907,0.014662524734802507,0.8896830175778907,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:18:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:18</div>"
+decode_stack_b8_l2048,Total,4.0,convolution fusion,fusion.126,2.0,91.5425,45.77125,91.5425,45.77125,0.03368576572399512,0.5304185675109037,0.0,5869.728967419504,5869.728967419504,685.5772894415957,684.2431559282574,0.0,0.0,0.0006511144525809391,1.3334823988857634,7.973734221395745,7.9892813641900124,0.0,0.0,8395776.0,4099.5,7.9892813641900124,HBM,91.5425,0.03368576572399512,6544.4808478491495,0.8968975697054101,0.02895771567547856,0.8968975697054101,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:13:30
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:13</div>"
+decode_stack_b8_l2048,Total,5.0,convolution fusion,fusion.133,2.0,91.50875,45.754375,91.50875,45.754375,0.033673346415005474,0.5640919139259092,0.0,5871.893824361058,5871.893824361058,685.83014213075,684.4955165660388,0.0,0.0,0.0006513545947834565,1.3339742101165188,7.973734221395745,7.9892813641900124,0.0,0.0,8395776.0,4099.5,7.9892813641900124,HBM,91.50875,0.03367334641500547,6544.4808478491495,0.8972283609464397,0.028968395778791605,0.8972283609464397,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:13:30
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:13</div>"
+decode_stack_b8_l2048,Total,6.0,copy-done,copy-done,2.0,85.10125,42.550625,85.10125,42.550625,0.031315517604600475,0.5954074315305097,0.0,0.0,0.0,734.4198199613235,0.0,0.0,0.0,0.0,734.4192946637094,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,85.10125,0.03131551760460048,0.0,0.12834898238633172,0.0,0.12834898238633172,True,5487826530121886445,
+decode_stack_b8_l2048,Total,7.0,async-done,slice-done.2,2.0,77.6075,38.80375,77.6075,38.80375,0.02855797103449164,0.6239654025650013,0.0,0.0,0.0,704.6682949906076,0.0,0.0,0.0,0.0,704.6677189704603,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.6075,0.02855797103449164,0.0,0.12314952140761795,0.0,0.12314952140761795,True,5487826530121886445,
+decode_stack_b8_l2048,Total,8.0,async-done,slice-done.5,2.0,77.59875,38.799375,77.59875,38.799375,0.02855475121364247,0.6525201537786438,0.0,0.0,0.0,704.7477530692644,0.0,0.0,0.0,0.0,704.7471769841652,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.59875,0.02855475121364247,0.0,0.12316340769202737,0.0,0.12316340769202737,True,5487826530121886445,
+decode_stack_b8_l2048,Total,9.0,async-done,slice-done.1,2.0,77.55125,38.775625,77.55125,38.775625,0.02853727218617556,0.6810574259648193,0.0,0.0,0.0,705.1794097900882,0.0,0.0,0.0,0.0,705.1788333521381,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.55125,0.02853727218617556,0.0,0.12323884505590445,0.0,0.12323884505590445,True,5487826530121886445,
+decode_stack_b8_l2048,Total,10.0,async-done,slice-done.7,2.0,77.54125,38.770625,77.54125,38.770625,0.02853359239091937,0.7095910183557387,0.0,0.0,0.0,705.270352276802,0.0,0.0,0.0,0.0,705.2697757645124,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.54125,0.02853359239091937,0.0,0.12325473838301174,0.0,0.12325473838301174,True,5487826530121886445,
+decode_stack_b8_l2048,Total,11.0,async-done,slice-done.3,2.0,77.53125,38.765625,77.53125,38.765625,0.028529912595663176,0.7381209309514019,0.0,0.0,0.0,705.3613182230853,0.0,0.0,0.0,0.0,705.3607416364368,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.53125,0.028529912595663176,0.0,0.12327063580996965,0.0,0.12327063580996965,True,5487826530121886445,
+decode_stack_b8_l2048,Total,12.0,async-done,slice-done.6,2.0,77.3275,38.66375,77.3275,38.66375,0.028454936767318268,0.7665758677187201,0.0,0.0,0.0,707.2198726647516,0.0,0.0,0.0,0.0,707.2192945588569,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.3275,0.028454936767318268,0.0,0.12359544124201237,0.0,0.12359544124201237,True,5487826530121886445,
+decode_stack_b8_l2048,Total,13.0,copy-done,copy-done.2,2.0,76.01,38.005,76.01,38.005,0.02797012374231498,0.7945459914610351,0.0,0.0,0.0,822.260817043594,0.0,0.0,0.0,0.0,822.2602289172477,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,76.01,0.027970123742314976,0.0,0.14370028729515605,0.0,0.14370028729515605,True,5487826530121886445,
+decode_stack_b8_l2048,Total,14.0,convolution fusion,fusion.132,2.0,66.81125,33.405625,66.81125,33.405625,0.02458517208102541,0.8191311635420605,0.0,28162.492514359485,28162.492514359485,3290.593910713312,16.4447217668398,0.0,0.0,3274.1491889464723,0.0,7.970708555276215,1594.941246677155,0.0,0.0,8.0107421875,0.0,8.0107421875,VMEM Read,66.81125,0.02458517208102541,147654.01982369792,0.19073298883420922,0.13893681556171428,0.19073298883420922,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:25:20
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:25</div>"
+decode_stack_b8_l2048,Total,15.0,async-done,slice-done.10,2.0,66.7575,33.37875,66.7575,33.37875,0.024565393181523378,0.8436965567235839,0.0,0.0,0.0,234.0567682055736,0.0,0.0,0.0,0.0,234.0560985657042,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,66.7575,0.02456539318152338,0.0,0.040904238614780396,0.0,0.040904238614780396,True,5487826530121886445,
+decode_stack_b8_l2048,Total,16.0,convolution fusion,fusion.139,2.0,66.0625,33.03125,66.0625,33.03125,0.02430964741121804,0.8680062041348019,0.0,28478.709101229895,28478.709101229895,3327.8884815515607,16.630203405865654,0.0,0.0,3311.258278145695,0.0,7.96987784564131,1594.861111111111,0.0,0.0,8.009905133928571,0.0,8.009905133928571,VMEM Read,66.0625,0.02430964741121804,147638.59125019796,0.1928947496726518,0.14049683819057668,0.1928947496726518,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:25:20
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:25</div>"
+decode_stack_b8_l2048,Total,17.0,copy-done,copy-done.1,2.0,60.12125,30.060625,60.12125,30.060625,0.022123389054633,0.8901295931894349,0.0,0.0,0.0,1039.5666208451019,0.0,0.0,0.0,0.0,1039.5658772896438,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,60.12125,0.022123389054633,0.0,0.1816771746646121,0.0,0.1816771746646121,True,5487826530121886445,
+decode_stack_b8_l2048,Total,18.0,async-done,slice-done.4,2.0,49.42125,24.710625,49.42125,24.710625,0.01818600813050762,0.9083156013199425,0.0,0.0,0.0,1106.5593181775769,0.0,0.0,0.0,0.0,1106.5584136378582,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,49.42125,0.01818600813050762,0.0,0.19338496057144872,0.0,0.19338496057144872,True,5487826530121886445,
+decode_stack_b8_l2048,Total,19.0,async-done,slice-done,2.0,48.97,24.485,48.97,24.485,0.018019957369571956,0.9263355586895144,0.0,0.0,0.0,1116.756069092987,0.0,0.0,0.0,0.0,1116.7551562180927,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,48.97,0.018019957369571956,0.0,0.19516696921874024,0.0,0.19516696921874024,True,5487826530121886445,
+decode_stack_b8_l2048,Total,20.0,convolution fusion,fusion.127,2.0,26.5275,13.26375,26.5275,13.26375,0.009761576865863182,0.9360971355553777,0.0,10316.758985957968,10316.758985957968,2434.3096404416697,0.0,0.0,0.0,2360.647264631043,73.66237581062694,3.9470042680135276,0.0,0.0,0.0,4.070167824074074,130.4360663738409,4.070167824074074,VMEM Read,26.5275,0.009761576865863184,75021.34340553083,0.13751765187928347,0.05089668961992091,0.13751765187928347,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:18:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:18</div>"
+decode_stack_b8_l2048,Total,21.0,convolution fusion,fusion.130,2.0,25.13625,12.568125,25.13625,12.568125,0.009249625350845479,0.9453467609062232,0.0,21376.683634193643,21376.683634193643,2501.020261261913,9.712690834949525,0.0,0.0,2491.305199164553,0.002371262410876349,7.960186627553638,2049.75,0.0,0.0,7.991228070175438,8395776.0,7.991228070175438,VMEM Read,25.13625,0.009249625350845479,147294.3355648812,0.14512902721080878,0.10545971205818275,0.14512902721080878,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:21:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:21</div>"
+decode_stack_b8_l2048,Total,22.0,convolution fusion,fusion.137,2.0,24.3325,12.16625,24.3325,12.16625,0.008953861807129052,0.9543006227133523,0.0,22082.797246481045,22082.797246481045,2583.633845356818,5.01675999178054,0.0,0.0,2578.6146357751977,0.0024495898397365917,7.960186627553638,4099.5,0.0,0.0,7.97568093385214,8395776.0,7.97568093385214,VMEM Read,24.3325,0.008953861807129052,147007.7707096966,0.1502151698503681,0.10894325232600417,0.1502151698503681,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:21:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:21</div>"
+decode_stack_b8_l2048,Total,23.0,async-done,slice-done.11,2.0,22.03,11.015,22.03,11.015,0.008106588949390856,0.9624072116627431,0.0,0.0,0.0,709.2621290732446,0.0,0.0,0.0,0.0,709.260099863822,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,22.03,0.008106588949390856,0.0,0.1239520975636043,0.0,0.1239520975636043,True,5487826530121886445,
+decode_stack_b8_l2048,Total,24.0,async-done,slice-done.9,2.0,21.97375,10.986875,21.97375,10.986875,0.008085890101074775,0.9704931017638179,0.0,0.0,0.0,711.0777497461098,0.0,0.0,0.0,0.0,711.0757153421696,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,21.97375,0.008085890101074775,0.0,0.12426939913879984,0.0,0.12426939913879984,True,5487826530121886445,
+decode_stack_b8_l2048,Total,25.0,async-done,slice-done.15,2.0,21.87125,10.935625,21.87125,10.935625,0.008048172199698809,0.9785412739635166,0.0,0.0,0.0,714.410228198369,0.0,0.0,0.0,0.0,714.4081842601588,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,21.87125,0.008048172199698809,0.0,0.12485178987603372,0.0,0.12485178987603372,True,5487826530121886445,
+decode_stack_b8_l2048,Total,26.0,async-done,slice-done.8,2.0,14.32875,7.164375,14.32875,7.164375,0.005272686627716034,0.9838139605912327,0.0,0.0,0.0,1090.4680941103431,0.0,0.0,0.0,0.0,1090.4649742650265,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,14.32875,0.005272686627716034,0.0,0.1905724302068361,0.0,0.1905724302068361,True,5487826530121886445,
+decode_stack_b8_l2048,Total,27.0,convolution fusion,fusion.129,2.0,12.14375,6.071875,12.14375,6.071875,0.004468651364238094,0.9882826119554708,0.0,22450.2118373649,22450.2118373649,5317.880391951879,0.0,0.0,0.0,5307.828281812918,10.05211013896037,3.9317148089077913,0.0,0.0,0.0,3.9391607977747527,2080.0,3.9391607977747527,VMEM Read,12.14375,0.004468651364238093,72606.6215725866,0.3092033667331688,0.11075585514240206,0.3092033667331688,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,28.0,convolution fusion,fusion.136,2.0,12.1425,6.07125,12.1425,6.07125,0.00446819138983107,0.992750803345302,0.0,22452.522956557546,22452.522956557546,5318.427836917079,0.0,0.0,0.0,5308.374691971639,10.05314494543957,3.9317148089077913,0.0,0.0,0.0,3.9391607977747527,2080.0,3.9391607977747527,VMEM Read,12.1425,0.00446819138983107,72606.6215725866,0.3092351974277059,0.11076725681577478,0.3092351974277059,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,29.0,async-done,slice-done.14,2.0,9.86125,4.930625,9.86125,4.930625,0.003628738097012282,0.9963795414423142,0.0,0.0,0.0,1584.489258814408,0.0,0.0,0.0,0.0,1584.4847255672453,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,9.86125,0.003628738097012282,0.0,0.27690857744466496,0.0,0.27690857744466496,True,5487826530121886445,
+decode_stack_b8_l2048,Total,30.0,loop fusion,fusion.135,2.0,2.3775,1.18875,2.3775,1.18875,0.0008748713221596351,0.9972544127644739,0.0,1322.908937960042,1322.908937960042,823.1081797121451,0.0,0.0,0.0,822.3059300243165,0.8022496878286014,1.4968323586744638,0.0,0.0,0.0,1.4982926829268293,1535.75,1.4982926829268293,VMEM Read,2.3775,0.0008748713221596351,27616.534439441362,0.04790278595096606,0.0065264377797732715,0.04790278595096606,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,31.0,loop fusion,fusion.128,2.0,2.375,1.1875,2.375,1.1875,0.0008739513733455871,0.9981283641378195,0.0,1324.3014736842106,1324.3014736842106,823.9746093749999,0.0,0.0,0.0,823.1715152138157,0.8030941611842105,1.4968323586744638,0.0,0.0,0.0,1.4982926829268293,1535.75,1.4982926829268293,VMEM Read,2.375,0.0008739513733455871,27616.534439441366,0.0479532099361776,0.006533307714278296,0.0479532099361776,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,32.0,loop fusion,fusion.125,2.0,1.6425,0.82125,1.6425,0.82125,0.0006044063708295271,0.998732770508649,0.0,119.69071537290715,119.69071537290715,74.35611393898044,74.31982496194826,0.0,0.0,0.0,0.0362889770322013,1.499145924841386,1.4998779296875,0.0,0.0,0.0,3071.75,1.4998779296875,HBM,1.6425,0.0006044063708295271,1228.6364614655997,0.09741751862884816,0.0005904820689339277,0.09741751862884816,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:38
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,33.0,data formatting,copy.22,1.0,0.75125,0.75125,0.75125,0.75125,0.0002764446186214199,0.9990092151272704,0.0,0.0,0.0,162.4896006655574,162.4896006655574,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.75125,0.0002764446186214199,0.0,0.21298938349135849,0.0,0.21298938349135849,True,5487826530121886445,
+decode_stack_b8_l2048,Total,34.0,loop fusion,add_rsqrt_fusion.10,2.0,0.64625,0.323125,0.64625,0.323125,0.00023780676843140447,0.9992470218957018,0.0,0.04951644100580271,0.04951644100580271,0.18446311729327852,0.09223155864663926,0.0,0.0,0.0,0.09223155864663926,0.25,0.5,0.0,0.0,0.0,0.5,0.5,HBM,0.64625,0.00023780676843140447,409.5788187648,0.00012089600032329173,2.442843660868412e-07,0.00012089600032329173,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,35.0,loop fusion,add_rsqrt_fusion.11,2.0,0.50375,0.251875,0.50375,0.251875,0.00018536968603066926,0.9994323915817325,0.0,0.06352357320099256,0.06352357320099256,0.2366437509692928,0.1183218754846464,0.0,0.0,0.1183218754846464,0.0,0.25,0.5,0.0,0.0,0.5,0.0,0.5,HBM,0.50375,0.00018536968603066926,409.57881876479996,0.00015509486890109635,3.1338713962009157e-07,0.00015509486890109635,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:22:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,36.0,loop fusion,add_rsqrt_fusion.9,2.0,0.50125,0.250625,0.50125,0.250625,0.00018444973721662127,0.9996168413189491,0.0,0.06384039900249376,0.06384039900249376,0.23782401905392764,0.11891200952696382,0.0,0.0,0.11891200952696382,0.0,0.25,0.5,0.0,0.0,0.5,0.0,0.5,HBM,0.50125,0.00018444973721662127,409.5788187648001,0.00015586840939436862,3.149501677478725e-07,0.00015586840939436862,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:22:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,37.0,while,while.3,1.0,2716.79,2716.79,0.29,0.29,0.00010671406242956641,0.9997235553813787,0.0,2673.8316557407825,2673.8316557407825,785.6260718833289,0.7866907453404824,0.0,0.0,0.0,0.0,3.1697010458719674,3165.4113086523043,0.0,0.0,0.0,0.0,3.1697010458719674,Compute,2716.79,0.9997230954069716,202700.0,0.013191078716037407,0.013191078716037407,0.0010311846183516614,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:33</div>"
+decode_stack_b8_l2048,Total,38.0,copy-done,copy-done.3,2.0,0.2575,0.12875,0.2575,0.12875,9.47547278469426e-05,0.9998183101092256,0.0,0.0,0.0,474.2330717808992,0.0,0.0,0.0,0.0,474.0594660194174,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.2575,9.47547278469426e-05,0.0,0.08284783705479984,0.0,0.08284783705479984,True,5487826530121886445,
+decode_stack_b8_l2048,Total,39.0,data formatting,reshape.32,2.0,0.13125,0.065625,0.13125,0.065625,4.829731273751929e-05,0.9998666074219631,0.0,0.0,0.0,1860.1190476190475,0.0,0.0,0.0,930.0595238095237,930.0595238095237,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.13125,4.829731273751929e-05,0.0,0.16253956603132158,0.0,0.16253956603132158,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,40.0,data formatting,reshape.33,2.0,0.13,0.065,0.13,0.065,4.7837338330495296e-05,0.9999144447602936,0.0,0.0,0.0,1878.0048076923076,0.0,0.0,0.0,939.0024038461538,939.0024038461538,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.13,4.783733833049529e-05,0.0,0.16410244647393046,0.0,0.16410244647393046,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,41.0,loop fusion,add_rsqrt_fusion.8,2.0,0.04375,0.021875,0.04375,0.021875,1.609910424583976e-05,0.9999305438645394,0.0,0.7314285714285714,0.7314285714285714,2.724783761160714,0.0,0.0,0.0,1.362391880580357,1.362391880580357,0.25,0.0,0.0,0.0,0.5,0.5,0.5,VMEM Write,0.04375,1.609910424583976e-05,3072.0022020096003,0.00023809506742869372,3.6084290647684825e-06,0.00023809506742869372,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,42.0,non-fusion elementwise,convert.23,2.0,0.025,0.0125,0.025,0.0125,9.199488140479865e-06,0.9999397433526799,0.0,20.48,20.48,114.44091796874999,0.0,0.0,0.0,38.14697265625,76.2939453125,0.16666666666666666,0.0,0.0,0.0,0.5,0.25,0.25,VMEM Write,0.025,9.199488140479863e-06,1536.0011010048001,0.01333332377600685,0.00010103601381351752,0.01333332377600685,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,43.0,non-fusion elementwise,convert.22,2.0,0.02375,0.011875,0.02375,0.011875,8.73951373345587e-06,0.9999484828664134,0.0,21.557894736842105,21.557894736842105,120.46412417763158,0.0,0.0,0.0,40.15470805921052,80.30941611842104,0.16666666666666666,0.0,0.0,0.0,0.5,0.25,0.25,VMEM Write,0.02375,8.73951373345587e-06,1536.0011010048004,0.014035077658954577,0.00010635369875107106,0.014035077658954577,True,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,44.0,async-start,slice-start.10,2.0,0.01625,0.008125,0.01625,0.008125,5.979667291311912e-06,0.9999544625337047,0.0,0.0,0.0,1923076.923076923,961538.4615384615,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.01625,5.979667291311911e-06,0.0,1260.372868709479,0.0,1260.372868709479,True,5487826530121886445,
+decode_stack_b8_l2048,Total,45.0,async-start,slice-start.14,2.0,0.01625,0.008125,0.01625,0.008125,5.979667291311912e-06,0.999960442200996,0.0,0.0,0.0,1923076.923076923,961538.4615384615,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.01625,5.979667291311911e-06,0.0,1260.372868709479,0.0,1260.372868709479,True,5487826530121886445,
+decode_stack_b8_l2048,Total,46.0,async-start,slice-start.12,2.0,0.015,0.0075,0.015,0.0075,5.519692884287918e-06,0.9999659618938803,0.0,0.0,0.0,2083333.3333333333,1041666.6666666666,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.015,5.519692884287918e-06,0.0,1365.4039411019355,0.0,1365.4039411019355,True,5487826530121886445,
+decode_stack_b8_l2048,Total,47.0,async-start,slice-start.11,2.0,0.00875,0.004375,0.00875,0.004375,3.2198208491679524e-06,0.9999691817147295,0.0,0.0,0.0,3571428.571428571,1785714.2857142854,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00875,3.2198208491679524e-06,0.0,2340.6924704604608,0.0,2340.6924704604608,True,5487826530121886445,
+decode_stack_b8_l2048,Total,48.0,async-start,slice-start.13,2.0,0.00875,0.004375,0.00875,0.004375,3.2198208491679524e-06,0.9999724015355786,0.0,0.0,0.0,3571428.571428571,1785714.2857142854,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00875,3.2198208491679524e-06,0.0,2340.6924704604608,0.0,2340.6924704604608,True,5487826530121886445,
+decode_stack_b8_l2048,Total,49.0,async-done,slice-done.12,2.0,0.00625,0.003125,0.00625,0.003125,2.2998720351199662e-06,0.9999747014076138,0.0,0.0,0.0,2500007.152557373,0.0,0.0,0.0,0.0,2500000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.00625,2.299872035119966e-06,0.0,436.90635349219247,0.0,436.90635349219247,True,5487826530121886445,
+decode_stack_b8_l2048,Total,50.0,copy-start,copy-start.1,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999765413052419,0.0,0.0,0.0,37500000.0,12500000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,16384.84729322323,0.0,16384.84729322323,True,5487826530121886445,
+decode_stack_b8_l2048,Total,51.0,copy-start,copy-start.3,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999783812028701,0.0,0.0,0.0,73243.67761611938,24414.0625,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,32.00165486957662,0.0,32.00165486957662,True,5487826530121886445,
+decode_stack_b8_l2048,Total,52.0,async-done,slice-done.13,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999802211004982,0.0,0.0,0.0,3125008.940696716,0.0,0.0,0.0,0.0,3125000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.005,1.8398976280959727e-06,0.0,546.1329418652406,0.0,546.1329418652406,True,5487826530121886445,
+decode_stack_b8_l2048,Total,53.0,async-start,slice-start,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999820609981264,0.0,0.0,0.0,21874999.999999996,10937499.999999998,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,14336.741381570322,0.0,14336.741381570322,True,5487826530121886445,
+decode_stack_b8_l2048,Total,54.0,async-start,slice-start.9,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999839008957545,0.0,0.0,0.0,6250000.0,3125000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,4096.211823305807,0.0,4096.211823305807,True,5487826530121886445,
+decode_stack_b8_l2048,Total,55.0,copy-start,copy-start,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999852808189755,0.0,0.0,0.0,50000000.0,16666666.666666666,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,21846.46305763097,0.0,21846.46305763097,True,5487826530121886445,
+decode_stack_b8_l2048,Total,56.0,async-start,slice-start.1,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999866607421966,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,True,5487826530121886445,
+decode_stack_b8_l2048,Total,57.0,async-start,slice-start.15,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999880406654176,0.0,0.0,0.0,8333333.333333333,4166666.6666666665,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,5461.615764407742,0.0,5461.615764407742,True,5487826530121886445,
+decode_stack_b8_l2048,Total,58.0,async-start,slice-start.2,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999894205886386,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,True,5487826530121886445,
+decode_stack_b8_l2048,Total,59.0,async-start,slice-start.3,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999908005118596,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,True,5487826530121886445,
+decode_stack_b8_l2048,Total,60.0,async-start,slice-start.5,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999921804350806,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,True,5487826530121886445,
+decode_stack_b8_l2048,Total,61.0,async-start,slice-start.6,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999935603583017,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,True,5487826530121886445,
+decode_stack_b8_l2048,Total,62.0,async-start,slice-start.7,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999949402815227,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,True,5487826530121886445,
+decode_stack_b8_l2048,Total,63.0,async-start,slice-start.8,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999963202047437,0.0,0.0,0.0,8333333.333333333,4166666.6666666665,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,5461.615764407742,0.0,5461.615764407742,True,5487826530121886445,
+decode_stack_b8_l2048,Total,64.0,copy-start,copy-start.2,2.0,0.0025,0.00125,0.0025,0.00125,9.199488140479863e-07,0.9999972401535577,0.0,0.0,0.0,75000000.0,25000000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.0025,9.199488140479863e-07,0.0,32769.69458644646,0.0,32769.69458644646,True,5487826530121886445,
+decode_stack_b8_l2048,Total,65.0,async-start,slice-start.4,2.0,0.0025,0.00125,0.0025,0.00125,9.199488140479863e-07,0.9999981601023717,0.0,0.0,0.0,43749999.99999999,21874999.999999996,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.0025,9.199488140479863e-07,0.0,28673.482763140644,0.0,28673.482763140644,True,5487826530121886445,
+decode_stack_b8_l2048,Total,66.0,custom-call,custom-call,2.0,0.00125,0.000625,0.00125,0.000625,4.5997440702399317e-07,0.9999986200767788,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.00125,4.5997440702399317e-07,0.0,0.0,0.0,0.0,True,5487826530121886445,
+decode_stack_b8_l2048,Total,67.0,custom-call,custom-call.1,2.0,0.00125,0.000625,0.00125,0.000625,4.5997440702399317e-07,0.9999990800511858,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.00125,4.5997440702399317e-07,0.0,0.0,0.0,0.0,True,5487826530121886445,
+decode_stack_b8_l2048,Total,68.0,custom-call,custom-call.2,2.0,0.00125,0.000625,0.00125,0.000625,4.5997440702399317e-07,0.9999995400255928,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.00125,4.5997440702399317e-07,0.0,0.0,0.0,0.0,True,5487826530121886445,
+decode_stack_b8_l2048,Total,69.0,custom-call,custom-call.3,2.0,0.0,0.0,0.0,0.0,0.0,0.9999995400255928,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,True,5487826530121886445,
+decode_stack_b8_l2048,Average,0.0,Program,Program,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,True,0,
+decode_stack_b8_l2048,Total,0.0,Program,Program,1.0,2717.5425,2717.5425,0.0,0.0,0.0,0.0,0.0,5346.182560162352,5346.182560162352,1570.8621324816124,668.8720952511759,0.0,0.0,279.17894261125764,277.7401188588174,3.169610116216264,7.44390525728995,0.0,0.0,17.834513089433838,17.926904210859572,7.44390525728995,HBM,2717.5425,1.0,6097.731844555804,0.8767493711511023,0.026374852294831535,0.8767493711511023,False,0,
+decode_stack_b8_l2048,Total,1.0,convolution fusion,fusion.138,2.0,629.0375,314.51875,629.0375,314.51875,0.2314729208466841,0.2314729208466841,0.0,5975.089141744332,5975.089141744332,697.0838477733159,697.0838477733159,0.0,0.0,0.0,0.0,7.982878129828524,7.982878129828524,0.0,0.0,0.0,0.0,7.982878129828524,HBM,629.0375,0.23147292084668408,6539.235589517046,0.9137289917070599,0.029477499465931582,0.9137289917070599,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:23:13
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:23</div>"
+decode_stack_b8_l2048,Total,2.0,convolution fusion,fusion.131,2.0,628.7725,314.38625,628.7725,314.38625,0.23137540627239503,0.46284832711907914,0.0,5977.607379457594,5977.607379457594,697.3776380069218,697.3776380069218,0.0,0.0,0.0,0.0,7.982878129828524,7.982878129828524,0.0,0.0,0.0,0.0,7.982878129828524,HBM,628.7725,0.231375406272395,6539.235589517047,0.9141140883561696,0.029489922937629965,0.9141140883561696,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:23:13
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:23</div>"
+decode_stack_b8_l2048,Total,3.0,convolution fusion,fusion.134,2.0,92.0825,46.04125,92.0825,46.04125,0.03388447466782948,0.4967328017869086,0.0,2972.093763744468,2972.093763744468,701.285792488436,678.7391741101728,0.0,0.0,1.3256624494339313,21.220955928829106,3.9470042680135276,4.078117370605469,0.0,0.0,2087.99609375,130.4360663738409,4.078117370605469,HBM,92.0825,0.033884474667829484,3340.6209908736005,0.8896830175778907,0.014662524734802507,0.8896830175778907,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:18:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:18</div>"
+decode_stack_b8_l2048,Total,4.0,convolution fusion,fusion.126,2.0,91.5425,45.77125,91.5425,45.77125,0.03368576572399512,0.5304185675109037,0.0,5869.728967419504,5869.728967419504,685.5772894415957,684.2431559282574,0.0,0.0,0.0006511144525809391,1.3334823988857634,7.973734221395745,7.9892813641900124,0.0,0.0,8395776.0,4099.5,7.9892813641900124,HBM,91.5425,0.03368576572399512,6544.4808478491495,0.8968975697054101,0.02895771567547856,0.8968975697054101,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:13:30
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:13</div>"
+decode_stack_b8_l2048,Total,5.0,convolution fusion,fusion.133,2.0,91.50875,45.754375,91.50875,45.754375,0.033673346415005474,0.5640919139259092,0.0,5871.893824361058,5871.893824361058,685.83014213075,684.4955165660388,0.0,0.0,0.0006513545947834565,1.3339742101165188,7.973734221395745,7.9892813641900124,0.0,0.0,8395776.0,4099.5,7.9892813641900124,HBM,91.50875,0.03367334641500547,6544.4808478491495,0.8972283609464397,0.028968395778791605,0.8972283609464397,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:13:30
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:13</div>"
+decode_stack_b8_l2048,Total,6.0,copy-done,copy-done,2.0,85.10125,42.550625,85.10125,42.550625,0.031315517604600475,0.5954074315305097,0.0,0.0,0.0,734.4198199613235,0.0,0.0,0.0,0.0,734.4192946637094,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,85.10125,0.03131551760460048,0.0,0.12834898238633172,0.0,0.12834898238633172,False,5487826530121886445,
+decode_stack_b8_l2048,Total,7.0,async-done,slice-done.2,2.0,77.6075,38.80375,77.6075,38.80375,0.02855797103449164,0.6239654025650013,0.0,0.0,0.0,704.6682949906076,0.0,0.0,0.0,0.0,704.6677189704603,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.6075,0.02855797103449164,0.0,0.12314952140761795,0.0,0.12314952140761795,False,5487826530121886445,
+decode_stack_b8_l2048,Total,8.0,async-done,slice-done.5,2.0,77.59875,38.799375,77.59875,38.799375,0.02855475121364247,0.6525201537786438,0.0,0.0,0.0,704.7477530692644,0.0,0.0,0.0,0.0,704.7471769841652,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.59875,0.02855475121364247,0.0,0.12316340769202737,0.0,0.12316340769202737,False,5487826530121886445,
+decode_stack_b8_l2048,Total,9.0,async-done,slice-done.1,2.0,77.55125,38.775625,77.55125,38.775625,0.02853727218617556,0.6810574259648193,0.0,0.0,0.0,705.1794097900882,0.0,0.0,0.0,0.0,705.1788333521381,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.55125,0.02853727218617556,0.0,0.12323884505590445,0.0,0.12323884505590445,False,5487826530121886445,
+decode_stack_b8_l2048,Total,10.0,async-done,slice-done.7,2.0,77.54125,38.770625,77.54125,38.770625,0.02853359239091937,0.7095910183557387,0.0,0.0,0.0,705.270352276802,0.0,0.0,0.0,0.0,705.2697757645124,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.54125,0.02853359239091937,0.0,0.12325473838301174,0.0,0.12325473838301174,False,5487826530121886445,
+decode_stack_b8_l2048,Total,11.0,async-done,slice-done.3,2.0,77.53125,38.765625,77.53125,38.765625,0.028529912595663176,0.7381209309514019,0.0,0.0,0.0,705.3613182230853,0.0,0.0,0.0,0.0,705.3607416364368,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.53125,0.028529912595663176,0.0,0.12327063580996965,0.0,0.12327063580996965,False,5487826530121886445,
+decode_stack_b8_l2048,Total,12.0,async-done,slice-done.6,2.0,77.3275,38.66375,77.3275,38.66375,0.028454936767318268,0.7665758677187201,0.0,0.0,0.0,707.2198726647516,0.0,0.0,0.0,0.0,707.2192945588569,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,77.3275,0.028454936767318268,0.0,0.12359544124201237,0.0,0.12359544124201237,False,5487826530121886445,
+decode_stack_b8_l2048,Total,13.0,copy-done,copy-done.2,2.0,76.01,38.005,76.01,38.005,0.02797012374231498,0.7945459914610351,0.0,0.0,0.0,822.260817043594,0.0,0.0,0.0,0.0,822.2602289172477,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,76.01,0.027970123742314976,0.0,0.14370028729515605,0.0,0.14370028729515605,False,5487826530121886445,
+decode_stack_b8_l2048,Total,14.0,convolution fusion,fusion.132,2.0,66.81125,33.405625,66.81125,33.405625,0.02458517208102541,0.8191311635420605,0.0,28162.492514359485,28162.492514359485,3290.593910713312,16.4447217668398,0.0,0.0,3274.1491889464723,0.0,7.970708555276215,1594.941246677155,0.0,0.0,8.0107421875,0.0,8.0107421875,VMEM Read,66.81125,0.02458517208102541,147654.01982369792,0.19073298883420922,0.13893681556171428,0.19073298883420922,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:25:20
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:25</div>"
+decode_stack_b8_l2048,Total,15.0,async-done,slice-done.10,2.0,66.7575,33.37875,66.7575,33.37875,0.024565393181523378,0.8436965567235839,0.0,0.0,0.0,234.0567682055736,0.0,0.0,0.0,0.0,234.0560985657042,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,66.7575,0.02456539318152338,0.0,0.040904238614780396,0.0,0.040904238614780396,False,5487826530121886445,
+decode_stack_b8_l2048,Total,16.0,convolution fusion,fusion.139,2.0,66.0625,33.03125,66.0625,33.03125,0.02430964741121804,0.8680062041348019,0.0,28478.709101229895,28478.709101229895,3327.8884815515607,16.630203405865654,0.0,0.0,3311.258278145695,0.0,7.96987784564131,1594.861111111111,0.0,0.0,8.009905133928571,0.0,8.009905133928571,VMEM Read,66.0625,0.02430964741121804,147638.59125019796,0.1928947496726518,0.14049683819057668,0.1928947496726518,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:25:20
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:25</div>"
+decode_stack_b8_l2048,Total,17.0,copy-done,copy-done.1,2.0,60.12125,30.060625,60.12125,30.060625,0.022123389054633,0.8901295931894349,0.0,0.0,0.0,1039.5666208451019,0.0,0.0,0.0,0.0,1039.5658772896438,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,60.12125,0.022123389054633,0.0,0.1816771746646121,0.0,0.1816771746646121,False,5487826530121886445,
+decode_stack_b8_l2048,Total,18.0,async-done,slice-done.4,2.0,49.42125,24.710625,49.42125,24.710625,0.01818600813050762,0.9083156013199425,0.0,0.0,0.0,1106.5593181775769,0.0,0.0,0.0,0.0,1106.5584136378582,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,49.42125,0.01818600813050762,0.0,0.19338496057144872,0.0,0.19338496057144872,False,5487826530121886445,
+decode_stack_b8_l2048,Total,19.0,async-done,slice-done,2.0,48.97,24.485,48.97,24.485,0.018019957369571956,0.9263355586895144,0.0,0.0,0.0,1116.756069092987,0.0,0.0,0.0,0.0,1116.7551562180927,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,48.97,0.018019957369571956,0.0,0.19516696921874024,0.0,0.19516696921874024,False,5487826530121886445,
+decode_stack_b8_l2048,Total,20.0,convolution fusion,fusion.127,2.0,26.5275,13.26375,26.5275,13.26375,0.009761576865863182,0.9360971355553777,0.0,10316.758985957968,10316.758985957968,2434.3096404416697,0.0,0.0,0.0,2360.647264631043,73.66237581062694,3.9470042680135276,0.0,0.0,0.0,4.070167824074074,130.4360663738409,4.070167824074074,VMEM Read,26.5275,0.009761576865863184,75021.34340553083,0.13751765187928347,0.05089668961992091,0.13751765187928347,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:18:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:18</div>"
+decode_stack_b8_l2048,Total,21.0,convolution fusion,fusion.130,2.0,25.13625,12.568125,25.13625,12.568125,0.009249625350845479,0.9453467609062232,0.0,21376.683634193643,21376.683634193643,2501.020261261913,9.712690834949525,0.0,0.0,2491.305199164553,0.002371262410876349,7.960186627553638,2049.75,0.0,0.0,7.991228070175438,8395776.0,7.991228070175438,VMEM Read,25.13625,0.009249625350845479,147294.3355648812,0.14512902721080878,0.10545971205818275,0.14512902721080878,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:21:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:21</div>"
+decode_stack_b8_l2048,Total,22.0,convolution fusion,fusion.137,2.0,24.3325,12.16625,24.3325,12.16625,0.008953861807129052,0.9543006227133523,0.0,22082.797246481045,22082.797246481045,2583.633845356818,5.01675999178054,0.0,0.0,2578.6146357751977,0.0024495898397365917,7.960186627553638,4099.5,0.0,0.0,7.97568093385214,8395776.0,7.97568093385214,VMEM Read,24.3325,0.008953861807129052,147007.7707096966,0.1502151698503681,0.10894325232600417,0.1502151698503681,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:21:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:21</div>"
+decode_stack_b8_l2048,Total,23.0,async-done,slice-done.11,2.0,22.03,11.015,22.03,11.015,0.008106588949390856,0.9624072116627431,0.0,0.0,0.0,709.2621290732446,0.0,0.0,0.0,0.0,709.260099863822,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,22.03,0.008106588949390856,0.0,0.1239520975636043,0.0,0.1239520975636043,False,5487826530121886445,
+decode_stack_b8_l2048,Total,24.0,async-done,slice-done.9,2.0,21.97375,10.986875,21.97375,10.986875,0.008085890101074775,0.9704931017638179,0.0,0.0,0.0,711.0777497461098,0.0,0.0,0.0,0.0,711.0757153421696,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,21.97375,0.008085890101074775,0.0,0.12426939913879984,0.0,0.12426939913879984,False,5487826530121886445,
+decode_stack_b8_l2048,Total,25.0,async-done,slice-done.15,2.0,21.87125,10.935625,21.87125,10.935625,0.008048172199698809,0.9785412739635166,0.0,0.0,0.0,714.410228198369,0.0,0.0,0.0,0.0,714.4081842601588,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,21.87125,0.008048172199698809,0.0,0.12485178987603372,0.0,0.12485178987603372,False,5487826530121886445,
+decode_stack_b8_l2048,Total,26.0,async-done,slice-done.8,2.0,14.32875,7.164375,14.32875,7.164375,0.005272686627716034,0.9838139605912327,0.0,0.0,0.0,1090.4680941103431,0.0,0.0,0.0,0.0,1090.4649742650265,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,14.32875,0.005272686627716034,0.0,0.1905724302068361,0.0,0.1905724302068361,False,5487826530121886445,
+decode_stack_b8_l2048,Total,27.0,convolution fusion,fusion.129,2.0,12.14375,6.071875,12.14375,6.071875,0.004468651364238094,0.9882826119554708,0.0,22450.2118373649,22450.2118373649,5317.880391951879,0.0,0.0,0.0,5307.828281812918,10.05211013896037,3.9317148089077913,0.0,0.0,0.0,3.9391607977747527,2080.0,3.9391607977747527,VMEM Read,12.14375,0.004468651364238093,72606.6215725866,0.3092033667331688,0.11075585514240206,0.3092033667331688,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,28.0,convolution fusion,fusion.136,2.0,12.1425,6.07125,12.1425,6.07125,0.00446819138983107,0.992750803345302,0.0,22452.522956557546,22452.522956557546,5318.427836917079,0.0,0.0,0.0,5308.374691971639,10.05314494543957,3.9317148089077913,0.0,0.0,0.0,3.9391607977747527,2080.0,3.9391607977747527,VMEM Read,12.1425,0.00446819138983107,72606.6215725866,0.3092351974277059,0.11076725681577478,0.3092351974277059,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,29.0,async-done,slice-done.14,2.0,9.86125,4.930625,9.86125,4.930625,0.003628738097012282,0.9963795414423142,0.0,0.0,0.0,1584.489258814408,0.0,0.0,0.0,0.0,1584.4847255672453,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,9.86125,0.003628738097012282,0.0,0.27690857744466496,0.0,0.27690857744466496,False,5487826530121886445,
+decode_stack_b8_l2048,Total,30.0,loop fusion,fusion.135,2.0,2.3775,1.18875,2.3775,1.18875,0.0008748713221596351,0.9972544127644739,0.0,1322.908937960042,1322.908937960042,823.1081797121451,0.0,0.0,0.0,822.3059300243165,0.8022496878286014,1.4968323586744638,0.0,0.0,0.0,1.4982926829268293,1535.75,1.4982926829268293,VMEM Read,2.3775,0.0008748713221596351,27616.534439441362,0.04790278595096606,0.0065264377797732715,0.04790278595096606,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,31.0,loop fusion,fusion.128,2.0,2.375,1.1875,2.375,1.1875,0.0008739513733455871,0.9981283641378195,0.0,1324.3014736842106,1324.3014736842106,823.9746093749999,0.0,0.0,0.0,823.1715152138157,0.8030941611842105,1.4968323586744638,0.0,0.0,0.0,1.4982926829268293,1535.75,1.4982926829268293,VMEM Read,2.375,0.0008739513733455871,27616.534439441366,0.0479532099361776,0.006533307714278296,0.0479532099361776,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,32.0,loop fusion,fusion.125,2.0,1.6425,0.82125,1.6425,0.82125,0.0006044063708295271,0.998732770508649,0.0,119.69071537290715,119.69071537290715,74.35611393898044,74.31982496194826,0.0,0.0,0.0,0.0362889770322013,1.499145924841386,1.4998779296875,0.0,0.0,0.0,3071.75,1.4998779296875,HBM,1.6425,0.0006044063708295271,1228.6364614655997,0.09741751862884816,0.0005904820689339277,0.09741751862884816,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:38
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,33.0,data formatting,copy.22,1.0,0.75125,0.75125,0.75125,0.75125,0.0002764446186214199,0.9990092151272704,0.0,0.0,0.0,162.4896006655574,162.4896006655574,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.75125,0.0002764446186214199,0.0,0.21298938349135849,0.0,0.21298938349135849,False,5487826530121886445,
+decode_stack_b8_l2048,Total,34.0,loop fusion,add_rsqrt_fusion.10,2.0,0.64625,0.323125,0.64625,0.323125,0.00023780676843140447,0.9992470218957018,0.0,0.04951644100580271,0.04951644100580271,0.18446311729327852,0.09223155864663926,0.0,0.0,0.0,0.09223155864663926,0.25,0.5,0.0,0.0,0.0,0.5,0.5,HBM,0.64625,0.00023780676843140447,409.5788187648,0.00012089600032329173,2.442843660868412e-07,0.00012089600032329173,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,35.0,loop fusion,add_rsqrt_fusion.11,2.0,0.50375,0.251875,0.50375,0.251875,0.00018536968603066926,0.9994323915817325,0.0,0.06352357320099256,0.06352357320099256,0.2366437509692928,0.1183218754846464,0.0,0.0,0.1183218754846464,0.0,0.25,0.5,0.0,0.0,0.5,0.0,0.5,HBM,0.50375,0.00018536968603066926,409.57881876479996,0.00015509486890109635,3.1338713962009157e-07,0.00015509486890109635,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:22:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,36.0,loop fusion,add_rsqrt_fusion.9,2.0,0.50125,0.250625,0.50125,0.250625,0.00018444973721662127,0.9996168413189491,0.0,0.06384039900249376,0.06384039900249376,0.23782401905392764,0.11891200952696382,0.0,0.0,0.11891200952696382,0.0,0.25,0.5,0.0,0.0,0.5,0.0,0.5,HBM,0.50125,0.00018444973721662127,409.5788187648001,0.00015586840939436862,3.149501677478725e-07,0.00015586840939436862,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:22:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,37.0,while,while.3,1.0,2716.79,2716.79,0.29,0.29,0.00010671406242956641,0.9997235553813787,0.0,2673.8316557407825,2673.8316557407825,785.6260718833289,0.7866907453404824,0.0,0.0,0.0,0.0,3.1697010458719674,3165.4113086523043,0.0,0.0,0.0,0.0,3.1697010458719674,Compute,2716.79,0.9997230954069716,202700.0,0.013191078716037407,0.013191078716037407,0.0010311846183516614,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:33</div>"
+decode_stack_b8_l2048,Total,38.0,copy-done,copy-done.3,2.0,0.2575,0.12875,0.2575,0.12875,9.47547278469426e-05,0.9998183101092256,0.0,0.0,0.0,474.2330717808992,0.0,0.0,0.0,0.0,474.0594660194174,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.2575,9.47547278469426e-05,0.0,0.08284783705479984,0.0,0.08284783705479984,False,5487826530121886445,
+decode_stack_b8_l2048,Total,39.0,data formatting,reshape.32,2.0,0.13125,0.065625,0.13125,0.065625,4.829731273751929e-05,0.9998666074219631,0.0,0.0,0.0,1860.1190476190475,0.0,0.0,0.0,930.0595238095237,930.0595238095237,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.13125,4.829731273751929e-05,0.0,0.16253956603132158,0.0,0.16253956603132158,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,40.0,data formatting,reshape.33,2.0,0.13,0.065,0.13,0.065,4.7837338330495296e-05,0.9999144447602936,0.0,0.0,0.0,1878.0048076923076,0.0,0.0,0.0,939.0024038461538,939.0024038461538,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.13,4.783733833049529e-05,0.0,0.16410244647393046,0.0,0.16410244647393046,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:20:16
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:20</div>"
+decode_stack_b8_l2048,Total,41.0,loop fusion,add_rsqrt_fusion.8,2.0,0.04375,0.021875,0.04375,0.021875,1.609910424583976e-05,0.9999305438645394,0.0,0.7314285714285714,0.7314285714285714,2.724783761160714,0.0,0.0,0.0,1.362391880580357,1.362391880580357,0.25,0.0,0.0,0.0,0.5,0.5,0.5,VMEM Write,0.04375,1.609910424583976e-05,3072.0022020096003,0.00023809506742869372,3.6084290647684825e-06,0.00023809506742869372,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:9:28
+/tmp/ipykernel_1514/4246906736.py:12:32
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:9</div>"
+decode_stack_b8_l2048,Total,42.0,non-fusion elementwise,convert.23,2.0,0.025,0.0125,0.025,0.0125,9.199488140479865e-06,0.9999397433526799,0.0,20.48,20.48,114.44091796874999,0.0,0.0,0.0,38.14697265625,76.2939453125,0.16666666666666666,0.0,0.0,0.0,0.5,0.25,0.25,VMEM Write,0.025,9.199488140479863e-06,1536.0011010048001,0.01333332377600685,0.00010103601381351752,0.01333332377600685,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,43.0,non-fusion elementwise,convert.22,2.0,0.02375,0.011875,0.02375,0.011875,8.73951373345587e-06,0.9999484828664134,0.0,21.557894736842105,21.557894736842105,120.46412417763158,0.0,0.0,0.0,40.15470805921052,80.30941611842104,0.16666666666666666,0.0,0.0,0.0,0.5,0.25,0.25,VMEM Write,0.02375,8.73951373345587e-06,1536.0011010048004,0.014035077658954577,0.00010635369875107106,0.014035077658954577,False,5487826530121886445,"<div class='source-info-cell' title='/tmp/ipykernel_1514/4246906736.py:19:17
+/tmp/ipykernel_1514/4246906736.py:31:21
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/4246906736.py:33:15
+/tmp/ipykernel_1514/3401864804.py:38:30
+/tmp/ipykernel_1514/4246906736.py:36:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/4246906736.py:46:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/4246906736.py:19</div>"
+decode_stack_b8_l2048,Total,44.0,async-start,slice-start.10,2.0,0.01625,0.008125,0.01625,0.008125,5.979667291311912e-06,0.9999544625337047,0.0,0.0,0.0,1923076.923076923,961538.4615384615,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.01625,5.979667291311911e-06,0.0,1260.372868709479,0.0,1260.372868709479,False,5487826530121886445,
+decode_stack_b8_l2048,Total,45.0,async-start,slice-start.14,2.0,0.01625,0.008125,0.01625,0.008125,5.979667291311912e-06,0.999960442200996,0.0,0.0,0.0,1923076.923076923,961538.4615384615,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.01625,5.979667291311911e-06,0.0,1260.372868709479,0.0,1260.372868709479,False,5487826530121886445,
+decode_stack_b8_l2048,Total,46.0,async-start,slice-start.12,2.0,0.015,0.0075,0.015,0.0075,5.519692884287918e-06,0.9999659618938803,0.0,0.0,0.0,2083333.3333333333,1041666.6666666666,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.015,5.519692884287918e-06,0.0,1365.4039411019355,0.0,1365.4039411019355,False,5487826530121886445,
+decode_stack_b8_l2048,Total,47.0,async-start,slice-start.11,2.0,0.00875,0.004375,0.00875,0.004375,3.2198208491679524e-06,0.9999691817147295,0.0,0.0,0.0,3571428.571428571,1785714.2857142854,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00875,3.2198208491679524e-06,0.0,2340.6924704604608,0.0,2340.6924704604608,False,5487826530121886445,
+decode_stack_b8_l2048,Total,48.0,async-start,slice-start.13,2.0,0.00875,0.004375,0.00875,0.004375,3.2198208491679524e-06,0.9999724015355786,0.0,0.0,0.0,3571428.571428571,1785714.2857142854,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00875,3.2198208491679524e-06,0.0,2340.6924704604608,0.0,2340.6924704604608,False,5487826530121886445,
+decode_stack_b8_l2048,Total,49.0,async-done,slice-done.12,2.0,0.00625,0.003125,0.00625,0.003125,2.2998720351199662e-06,0.9999747014076138,0.0,0.0,0.0,2500007.152557373,0.0,0.0,0.0,0.0,2500000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.00625,2.299872035119966e-06,0.0,436.90635349219247,0.0,436.90635349219247,False,5487826530121886445,
+decode_stack_b8_l2048,Total,50.0,copy-start,copy-start.1,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999765413052419,0.0,0.0,0.0,37500000.0,12500000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,16384.84729322323,0.0,16384.84729322323,False,5487826530121886445,
+decode_stack_b8_l2048,Total,51.0,copy-start,copy-start.3,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999783812028701,0.0,0.0,0.0,73243.67761611938,24414.0625,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,32.00165486957662,0.0,32.00165486957662,False,5487826530121886445,
+decode_stack_b8_l2048,Total,52.0,async-done,slice-done.13,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999802211004982,0.0,0.0,0.0,3125008.940696716,0.0,0.0,0.0,0.0,3125000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,0.005,1.8398976280959727e-06,0.0,546.1329418652406,0.0,546.1329418652406,False,5487826530121886445,
+decode_stack_b8_l2048,Total,53.0,async-start,slice-start,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999820609981264,0.0,0.0,0.0,21874999.999999996,10937499.999999998,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,14336.741381570322,0.0,14336.741381570322,False,5487826530121886445,
+decode_stack_b8_l2048,Total,54.0,async-start,slice-start.9,2.0,0.005,0.0025,0.005,0.0025,1.8398976280959727e-06,0.9999839008957545,0.0,0.0,0.0,6250000.0,3125000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.005,1.8398976280959727e-06,0.0,4096.211823305807,0.0,4096.211823305807,False,5487826530121886445,
+decode_stack_b8_l2048,Total,55.0,copy-start,copy-start,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999852808189755,0.0,0.0,0.0,50000000.0,16666666.666666666,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,21846.46305763097,0.0,21846.46305763097,False,5487826530121886445,
+decode_stack_b8_l2048,Total,56.0,async-start,slice-start.1,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999866607421966,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,False,5487826530121886445,
+decode_stack_b8_l2048,Total,57.0,async-start,slice-start.15,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999880406654176,0.0,0.0,0.0,8333333.333333333,4166666.6666666665,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,5461.615764407742,0.0,5461.615764407742,False,5487826530121886445,
+decode_stack_b8_l2048,Total,58.0,async-start,slice-start.2,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999894205886386,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,False,5487826530121886445,
+decode_stack_b8_l2048,Total,59.0,async-start,slice-start.3,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999908005118596,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,False,5487826530121886445,
+decode_stack_b8_l2048,Total,60.0,async-start,slice-start.5,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999921804350806,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,False,5487826530121886445,
+decode_stack_b8_l2048,Total,61.0,async-start,slice-start.6,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999935603583017,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,False,5487826530121886445,
+decode_stack_b8_l2048,Total,62.0,async-start,slice-start.7,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999949402815227,0.0,0.0,0.0,29166666.666666664,14583333.333333332,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,19115.6551754271,0.0,19115.6551754271,False,5487826530121886445,
+decode_stack_b8_l2048,Total,63.0,async-start,slice-start.8,2.0,0.00375,0.001875,0.00375,0.001875,1.3799232210719796e-06,0.9999963202047437,0.0,0.0,0.0,8333333.333333333,4166666.6666666665,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.00375,1.3799232210719796e-06,0.0,5461.615764407742,0.0,5461.615764407742,False,5487826530121886445,
+decode_stack_b8_l2048,Total,64.0,copy-start,copy-start.2,2.0,0.0025,0.00125,0.0025,0.00125,9.199488140479863e-07,0.9999972401535577,0.0,0.0,0.0,75000000.0,25000000.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.0025,9.199488140479863e-07,0.0,32769.69458644646,0.0,32769.69458644646,False,5487826530121886445,
+decode_stack_b8_l2048,Total,65.0,async-start,slice-start.4,2.0,0.0025,0.00125,0.0025,0.00125,9.199488140479863e-07,0.9999981601023717,0.0,0.0,0.0,43749999.99999999,21874999.999999996,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.0025,9.199488140479863e-07,0.0,28673.482763140644,0.0,28673.482763140644,False,5487826530121886445,
+decode_stack_b8_l2048,Total,66.0,custom-call,custom-call,2.0,0.00125,0.000625,0.00125,0.000625,4.5997440702399317e-07,0.9999986200767788,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.00125,4.5997440702399317e-07,0.0,0.0,0.0,0.0,False,5487826530121886445,
+decode_stack_b8_l2048,Total,67.0,custom-call,custom-call.1,2.0,0.00125,0.000625,0.00125,0.000625,4.5997440702399317e-07,0.9999990800511858,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.00125,4.5997440702399317e-07,0.0,0.0,0.0,0.0,False,5487826530121886445,
+decode_stack_b8_l2048,Total,68.0,custom-call,custom-call.2,2.0,0.00125,0.000625,0.00125,0.000625,4.5997440702399317e-07,0.9999995400255928,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.00125,4.5997440702399317e-07,0.0,0.0,0.0,0.0,False,5487826530121886445,
+decode_stack_b8_l2048,Total,69.0,custom-call,custom-call.3,2.0,0.0,0.0,0.0,0.0,0.0,0.9999995400255928,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,False,5487826530121886445,
+decode_stack_b8_l2048,Average,0.0,Program,Program,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,False,0,
+stream_gemm_8x4096x4096_bf16,Total,0.0,Program,Program,1.0,371.8475,371.8475,0.0,0.0,0.0,0.0,0.0,5779.402878868354,5779.402878868354,673.6319078510539,673.6318277044281,0.0,0.0,0.0,0.0,7.9902515099951295,7.990252460650473,0.0,0.0,0.0,0.0,7.990252460650473,HBM,371.8475,1.0,6545.276328931516,0.8829883703033532,0.02851210103043095,0.8829883703033532,True,0,
+stream_gemm_8x4096x4096_bf16,Total,1.0,convolution fusion,convert_reduce_fusion.2,8.0,368.6725,46.0840625,368.6725,46.0840625,0.9914615534594154,0.9914615534594154,0.0,5829.174977791943,5829.174977791943,679.4332120096963,679.4331311728496,0.0,0.0,0.0,0.0,7.9902515099951295,7.990252460650473,0.0,0.0,0.0,0.0,7.990252460650473,HBM,368.6725,0.9914615534594154,6545.276328931514,0.8905926480178917,0.028757646659062372,0.8905926480178917,True,14812420971802782909,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:4:12
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:17:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:4</div>"
+stream_gemm_8x4096x4096_bf16,Total,2.0,while,while.4,1.0,371.8475,371.8475,3.175,3.175,0.008538446540584513,1.0,0.0,722.4253598585442,722.4253598585442,84.20452947110499,84.20452947110499,0.0,0.0,0.0,0.0,7.990200174942487,7.990200174942487,0.0,0.0,0.0,0.0,7.990200174942487,HBM,371.8475,1.0,6545.233498694484,0.1103742685425416,0.003564012628803869,0.1103742685425416,True,14812420971802782909,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:17:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:6</div>"
+stream_gemm_8x4096x4096_bf16,Average,0.0,Program,Program,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,True,0,
+stream_gemm_8x4096x4096_bf16,Total,0.0,Program,Program,1.0,371.8475,371.8475,0.0,0.0,0.0,0.0,0.0,5779.402878868354,5779.402878868354,673.6319078510539,673.6318277044281,0.0,0.0,0.0,0.0,7.9902515099951295,7.990252460650473,0.0,0.0,0.0,0.0,7.990252460650473,HBM,371.8475,1.0,6545.276328931516,0.8829883703033532,0.02851210103043095,0.8829883703033532,False,0,
+stream_gemm_8x4096x4096_bf16,Total,1.0,convolution fusion,convert_reduce_fusion.2,8.0,368.6725,46.0840625,368.6725,46.0840625,0.9914615534594154,0.9914615534594154,0.0,5829.174977791943,5829.174977791943,679.4332120096963,679.4331311728496,0.0,0.0,0.0,0.0,7.9902515099951295,7.990252460650473,0.0,0.0,0.0,0.0,7.990252460650473,HBM,368.6725,0.9914615534594154,6545.276328931514,0.8905926480178917,0.028757646659062372,0.8905926480178917,False,14812420971802782909,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:4:12
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:17:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:4</div>"
+stream_gemm_8x4096x4096_bf16,Total,2.0,while,while.4,1.0,371.8475,371.8475,3.175,3.175,0.008538446540584513,1.0,0.0,722.4253598585442,722.4253598585442,84.20452947110499,84.20452947110499,0.0,0.0,0.0,0.0,7.990200174942487,7.990200174942487,0.0,0.0,0.0,0.0,7.990200174942487,HBM,371.8475,1.0,6545.233498694484,0.1103742685425416,0.003564012628803869,0.1103742685425416,False,14812420971802782909,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/789628118.py:6:11
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:17:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:6</div>"
+stream_gemm_8x4096x4096_bf16,Average,0.0,Program,Program,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,False,0,
+stream_gemm_8x4096x4096_bf16_isolated,Total,0.0,Program,Program,1.0,56.356328,56.356328,0.0,0.0,0.0,0.0,0.0,4763.182157645189,4763.182157645189,2774.7033600954587,556.6734282705573,0.0,0.0,554.5073838025785,554.5073838025785,1.598750747275562,7.968871595330739,0.0,0.0,8.0,8.0,7.968871595330739,HBM,56.356328,1.0,6527.762029807862,0.7296807291526509,0.023498678626764625,0.7296807291526509,True,0,
+stream_gemm_8x4096x4096_bf16_isolated,Total,1.0,copy-done,copy-done,1.0,44.7,44.7,44.7,44.7,0.7931673617912084,0.7931673617912084,0.0,0.0,0.0,699.1056454528364,0.0,0.0,0.0,0.0,699.1051454138702,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,44.7,0.7931673617912083,0.0,0.1221773919161612,0.0,0.1221773919161612,True,11056305134446188932,
+stream_gemm_8x4096x4096_bf16_isolated,Total,2.0,convolution fusion,fusion,1.0,11.6325,11.6325,11.6325,11.6325,0.20640982854667184,0.9995771903378803,0.0,23076.334064044702,23076.334064044702,2696.932758435418,10.4939017837954,0.0,0.0,2686.4388566516222,0.0,7.968871595330739,2048.0,0.0,0.0,8.0,0.0,8.0,VMEM Read,11.6325,0.2064098285466718,147456.0197971149,0.1564963851309393,0.11384476597950026,0.1564963851309393,True,11056305134446188932,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:18:54
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:18:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:18</div>"
+stream_gemm_8x4096x4096_bf16_isolated,Total,3.0,copy-start,copy-start,1.0,0.01375,0.01375,0.01375,0.01375,0.00024398324887313453,0.9998211735867534,0.0,0.0,0.0,6818181.818181817,2272727.2727272725,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.01375,0.00024398324887313453,0.0,2979.063144222405,0.0,2979.063144222405,True,11056305134446188932,
+stream_gemm_8x4096x4096_bf16_isolated,Average,0.0,Program,Program,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,True,0,
+stream_gemm_8x4096x4096_bf16_isolated,Total,0.0,Program,Program,1.0,56.356328,56.356328,0.0,0.0,0.0,0.0,0.0,4763.182157645189,4763.182157645189,2774.7033600954587,556.6734282705573,0.0,0.0,554.5073838025785,554.5073838025785,1.598750747275562,7.968871595330739,0.0,0.0,8.0,8.0,7.968871595330739,HBM,56.356328,1.0,6527.762029807862,0.7296807291526509,0.023498678626764625,0.7296807291526509,False,0,
+stream_gemm_8x4096x4096_bf16_isolated,Total,1.0,copy-done,copy-done,1.0,44.7,44.7,44.7,44.7,0.7931673617912084,0.7931673617912084,0.0,0.0,0.0,699.1056454528364,0.0,0.0,0.0,0.0,699.1051454138702,0.0,0.0,0.0,0.0,0.0,0.0,0.0,VMEM Write,44.7,0.7931673617912083,0.0,0.1221773919161612,0.0,0.1221773919161612,False,11056305134446188932,
+stream_gemm_8x4096x4096_bf16_isolated,Total,2.0,convolution fusion,fusion,1.0,11.6325,11.6325,11.6325,11.6325,0.20640982854667184,0.9995771903378803,0.0,23076.334064044702,23076.334064044702,2696.932758435418,10.4939017837954,0.0,0.0,2686.4388566516222,0.0,7.968871595330739,2048.0,0.0,0.0,8.0,0.0,8.0,VMEM Read,11.6325,0.2064098285466718,147456.0197971149,0.1564963851309393,0.11384476597950026,0.1564963851309393,False,11056305134446188932,"<div class='source-info-cell' title='/tmp/ipykernel_1514/789628118.py:18:54
+/tmp/ipykernel_1514/3401864804.py:93:12
+/tmp/ipykernel_1514/789628118.py:18:8
+/tmp/ipykernel_1514/3401864804.py:78:14
+/tmp/ipykernel_1514/789628118.py:32:16
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3553:20
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3473:24
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3257:29
+/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py:78:8
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:3030:19
+/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py:2975:21
+/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py:528:15
+/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py:383:26
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:730:28
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:406:20
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:499:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py:510:16
+/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py:203:8
+/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py:712:16
+/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py:992:8
+/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py:37:2
+&lt;frozen runpy&gt;:88:4
+&lt;frozen runpy&gt;:203:11
+'>/tmp/ipykernel_1514/789628118.py:18</div>"
+stream_gemm_8x4096x4096_bf16_isolated,Total,3.0,copy-start,copy-start,1.0,0.01375,0.01375,0.01375,0.01375,0.00024398324887313453,0.9998211735867534,0.0,0.0,0.0,6818181.818181817,2272727.2727272725,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,HBM,0.01375,0.00024398324887313453,0.0,2979.063144222405,0.0,2979.063144222405,False,11056305134446188932,
+stream_gemm_8x4096x4096_bf16_isolated,Average,0.0,Program,Program,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,Unknown,0.0,0.0,0.0,0.0,0.0,0.0,False,0,

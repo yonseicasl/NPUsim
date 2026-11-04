@@ -20,8 +20,11 @@
 #   %env TPU_BENCH_SECTIONS=decode_stack,attention,hbm_read
 # in a cell above this one.
 #
-# Also, for a few cases: optimized HLO, XLA cost analysis and a profiler trace (hlo/, traces/, cost_analysis);
-# the HBM memory stats of the run (env.memory_stats).
+# Also, for every case (TPU_BENCH_TRACE=all, the default; `some` = a few, `none`): the optimized HLO, XLA's cost
+# analysis and a profiler trace (hlo/, traces/, cost_analysis). xprof_stats.py turns the traces into per-op FLOPs,
+# bytes, FLOP rate, HBM / VMEM bandwidth and bound-by (XProf hlo_stats / roofline / op_profile). The `counters`
+# section traces one GEMM under candidate profiler options to find one that fills XProf's perf_counters
+# (hardware counters; empty with the default options). The HBM memory stats of the run (env.memory_stats).
 #
 # Timing: each case runs n and 2n dependent iterations inside one jitted fori_loop; time per iteration =
 # (t(2n) - t(n)) / n, median of 5 (no host dispatch). Each iteration consumes the whole previous result (a full
@@ -44,14 +47,17 @@ from jax import lax
 OUT = os.environ.get("TPU_BENCH_OUT", "/content/tpu_v5e1_followup")
 QUICK = os.environ.get("TPU_BENCH_QUICK") == "1"    # tiny sizes (CPU smoke test)
 ROTATE_MB = float(os.environ.get("TPU_BENCH_ROTATE_MB", "512"))
-SECTIONS = os.environ.get("TPU_BENCH_SECTIONS", "stream_gemm,decode_stack,attention,hbm_read,odd_gemm").split(",")
+SECTIONS = os.environ.get("TPU_BENCH_SECTIONS",
+                          "stream_gemm,decode_stack,attention,hbm_read,odd_gemm,counters").split(",")
+TRACE = os.environ.get("TPU_BENCH_TRACE", "all")      # all | some | none
 os.makedirs(OUT, exist_ok=True)
 dev = jax.devices()[0]
 ONE = jax.sharding.SingleDeviceSharding(dev)
 RESULTS = {"env": {"jax": jax.__version__, "python": sys.version.split()[0], "platform": platform.platform(),
                    "device_kind": dev.device_kind, "n_devices": len(jax.devices()), "quick": QUICK,
                    "rotate_mb": ROTATE_MB, "sections": SECTIONS, "date": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())},
-           "stream_gemm": [], "decode_stack": [], "attention": [], "hbm_read": [], "odd_gemm": [], "cost_analysis": {},
+           "stream_gemm": [], "decode_stack": [], "attention": [], "hbm_read": [], "odd_gemm": [], "counters": [],
+           "cost_analysis": {},
            "errors": []}
 print(RESULTS["env"])
 if jax.devices()[0].platform != "tpu" and not QUICK and os.environ.get("TPU_BENCH_ALLOW_CPU") != "1":
@@ -120,10 +126,22 @@ def guarded(section, params, fn):
     save()
 
 
-def trace(tag, run, *args):
+def profiler_options(advanced):
+    """jax.profiler.ProfileOptions with an advanced_configuration dict, or None if this JAX has no such option."""
+    if not advanced or not hasattr(jax.profiler, "ProfileOptions"):
+        return None
+    o = jax.profiler.ProfileOptions()
+    o.advanced_configuration = advanced
+    return o
+
+
+def trace(tag, run, *args, perfetto=False, advanced=None, wanted=True):
     """For one case: the optimized HLO (OUT/hlo/tag.txt: fusions, async copies, on-chip memory-space placement),
-    XLA's cost analysis (flops, bytes accessed) and a profiler trace (OUT/traces/tag: per-op timeline; TensorBoard's
-    profile plugin also derives op_profile / hlo_stats / roofline / memory_profile from it)."""
+    XLA's cost analysis (flops, bytes accessed) and a profiler trace (OUT/traces/tag: xplane.pb, plus a perfetto
+    copy if asked; XProf derives hlo_stats / op_profile / roofline / memory_profile from it). Skipped with
+    TPU_BENCH_TRACE=none, and for cases not `wanted` with TPU_BENCH_TRACE=some."""
+    if TRACE == "none" or (TRACE == "some" and not wanted):
+        return
     try:
         c = run.lower(*args).compile()
         os.makedirs(os.path.join(OUT, "hlo"), exist_ok=True)
@@ -132,7 +150,11 @@ def trace(tag, run, *args):
         ca = c.cost_analysis()
         ca = ca[0] if isinstance(ca, (list, tuple)) and ca else ca
         RESULTS["cost_analysis"][tag] = {k: v for k, v in (ca or {}).items() if isinstance(v, (int, float))}
-        with jax.profiler.trace(os.path.join(OUT, "traces", tag), create_perfetto_trace=True):
+        kw = {"create_perfetto_trace": perfetto}
+        opts = profiler_options(advanced)
+        if opts is not None:
+            kw["profiler_options"] = opts
+        with jax.profiler.trace(os.path.join(OUT, "traces", tag), **kw):
             jax.block_until_ready(run(*args))
     except Exception as e:
         RESULTS["errors"].append({"section": "trace", "params": {"tag": tag}, "error": repr(e)[:300]})
@@ -158,8 +180,10 @@ def gemm(M, K, N, wdtype, cold=True, tag=None):
     ws = make((R, K, N), wt, K + N)
     s = per_iter(gemm_loop, x, ws, n=10 if M * K * N > 2 ** 33 else 40)
     if tag:                                         # streamed loop vs the same GEMM as a one-op program
-        trace(tag, gemm_loop, 8, x, ws)
-        trace(tag + "_isolated", jax.jit(lambda a, b: a @ b.astype(jnp.bfloat16)), x, ws[1 % R])
+        trace(tag, gemm_loop, 8, x, ws, perfetto=True)
+        trace(tag + "_isolated", jax.jit(lambda a, b: a @ b.astype(jnp.bfloat16)), x, ws[1 % R], perfetto=True)
+    else:
+        trace(f"gemm_{M}x{K}x{N}_{wdtype}_{'cold' if cold else 'warm'}", gemm_loop, 8, x, ws, wanted=False)
     del ws
     return {"us": s * 1e6, "tflops": 2 * M * K * N / s / 1e12 if s else None,
             "weight_gbps": wbytes / s / 1e9 if s else None, "copies": R}
@@ -217,8 +241,8 @@ def decode_stack(B, L, gemm_only=False, n_layers=4, tag=None):
 
     x0 = make((B, D), jnp.bfloat16, 99, fill=0.01)
     s = per_iter(run, x0, p, n=max(1, n_layers // R)) / R
-    if tag:
-        trace(tag, run, max(1, n_layers // R), x0, p)
+    trace(tag or f"decode_b{B}_l{L}_{'gemm_only' if gemm_only else 'full'}", run, max(1, n_layers // R), x0, p,
+          perfetto=bool(tag), wanted=bool(tag))
     del p
     return {"us_per_layer": s * 1e6, "copies": R, "layer_mb": per_layer / 2 ** 20}
 
@@ -258,6 +282,7 @@ def attention(B, L):
                 return q
             return lax.fori_loop(0, n, body, q)
         s = per_iter(run, q0, kv, n=max(2, 20 // R)) / R
+        trace(f"attn_b{B}_l{L}", run, 2, q0, kv, wanted=False)
     else:
         kv = (make((R, B, HKV, L, DH), jnp.bfloat16, 1, fill=1), make((R, B, HKV, L, DH), jnp.bfloat16, 2, fill=1))
 
@@ -265,6 +290,7 @@ def attention(B, L):
         def run(n, q, kv):
             return lax.fori_loop(0, n, lambda i, q: attend(q, pick(kv[0], i), pick(kv[1], i)), q)
         s = per_iter(run, q0, kv, n=20)
+        trace(f"attn_b{B}_l{L}", run, 4, q0, kv, wanted=False)
     del kv
     return {"us": s * 1e6, "kv_gbps": kv_bytes / s / 1e9 if s else None, "copies": R,
             "mode": "unrolled" if R <= UNROLL else "stacked",
@@ -297,6 +323,7 @@ def hbm_read(mbytes):
     R = min(UNROLL, copies(nbytes))
     arrays = [make((nbytes // 2 // 4096, 4096), jnp.bfloat16, 0, fill=1) for _ in range(R)]
     s = per_iter(read_loop, arrays, n=max(2, 20 // R)) / R
+    trace(f"hbm_{mbytes}mb", read_loop, 2, arrays, wanted=False)
     del arrays
     return {"us": s * 1e6, "read_gbps": nbytes / s / 1e9 if s else None, "copies": R}
 
@@ -313,6 +340,38 @@ for M in (([100, 128] if QUICK else [100, 128, 200, 256, 512]) if "odd_gemm" in 
     for KN in ([1000, 1024] if QUICK else [1000, 1024, 1100, 1152, 1280, 2000, 2048]):
         guarded("odd_gemm", {"M": M, "K": KN, "N": KN, "weights": "bf16", "cold": True},
                 partial(gemm, M, KN, KN, "bf16", True))
+
+
+# %% [markdown]
+# ## Hardware counters: one GEMM traced under candidate profiler options
+#
+# XProf's perf_counters / utilization_viewer tools come back empty with the default options. These candidates (not
+# documented; names seen in XProf / Cloud TPU profiler options) are tried on one case, each into traces/counters_<i>;
+# xprof_stats.py --list-tools then shows which trace carries counters. A rejected option is recorded and skipped.
+
+# %%
+COUNTER_OPTIONS = [{}, {"tpu_trace_mode": "TRACE_COMPUTE_AND_SYNC"}, {"performance_counter_sets": "all"},
+                   {"tpu_performance_counter_sets": "all"}, {"enable_perf_counters": True}]
+
+
+def counters():
+    M, K, N = (8, 256, 256) if QUICK else (8, 4096, 4096)
+    x = make((M, K), jnp.bfloat16, 7)
+    ws = make((copies(K * N * 2), K, N), jnp.bfloat16, 8)
+    for i, adv in enumerate(COUNTER_OPTIONS):
+        n_err = len(RESULTS["errors"])
+        trace(f"counters_{i}", gemm_loop, 8, x, ws, advanced=adv)
+        RESULTS["counters"].append({"trace": f"counters_{i}", "advanced_configuration": adv,
+                                    "ok": len(RESULTS["errors"]) == n_err})
+    del ws
+
+
+if "counters" in SECTIONS and TRACE != "none":
+    try:
+        counters()
+    except Exception as e:
+        RESULTS["errors"].append({"section": "counters", "params": {}, "error": repr(e)[:500]})
+    save()
 
 
 # %% [markdown]
