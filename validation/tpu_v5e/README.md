@@ -220,7 +220,7 @@ shapes: only their `npusim_us` is used, by `compare_stack.py`).
   inferred from the fits, not measured part by part. In a decode layer (~600 us, a few dozen kernels) the
   per-kernel part is ~0.1%; the large isolated-kernel MAPE is the one-kernel-program case.
 - NPUsim models every GEMM as an isolated layer with its own fill but no per-kernel control cost
-  (`layer_setup_cycle` 0). Candidate with its own evidence, not applied: 0.22 us = 330 cycles at 1.5 GHz.
+  (`layer_setup_cycle` 0 at the time). Applied since: 0.22 us = 330 cycles at 1.5 GHz (below).
 - Narrow N: at M 8, N 128 NPUsim runs one MXU and its 128-element-per-cycle port (384 GB/s) limits it to
   408 GB/s, while the TPU streams at 653 GB/s; how the TPU spreads such a GEMM is not known.
 - `compare_v5e.py` fix: N with fewer than 4 128-column blocks ran padded to 4 MXUs (N 128 simulated as
@@ -228,3 +228,21 @@ shapes: only their `npusim_us` is used, by `compare_stack.py`).
   run 256^3 moves from +30% to -4% (kernel), 128^3 from +4% to -49% (its missing fixed time now shows). A
   partial last round of strips still counts whole: charging its column share was tried and put the K = N
   1100-1280 GEMMs at -20..-32% instead of -2..-20%.
+
+### `layer_setup_cycle = 330` in `tpu_v5e.cfg` / `tpu_v5e_int8w.cfg` (2026-11-04)
+
+The per-kernel cost inside one program from the smallk chain (0.22 us at 1500 MHz), the one TPU-measured
+value in the v5e configs; everything else stays specified. It is added once per layer to the compute
+schedule and overlaps the DRAM stream, so it shows where compute is the critical path (8 x 128 x 128:
++330 cycles) and hides behind HBM-bound streams (8 x 4096 x 512: +10 cycles). All comparisons above were
+re-run with it (mean / MAPE, analytic | Ramulator2):
+
+| | before | after |
+|---|---|---|
+| smallk K sweep (32) | -33.7 / 38.1% \| -29.2 / 33.6% | -28.9 / 33.2% \| -24.9 / 29.3% |
+| rotated small (128^3, 256^3, odd; kernel) | +21.1 / 39.1% \| +31.4 / 47.0% | +28.4 / 35.2% \| +38.0 / 44.2% |
+| odd small GEMMs, follow-up 2 (35) | -14.4 / 15.5% \| -6.6 / 10.2% | -13.9 / 15.2% \| -6.3 / 10.1% |
+| streamed decode GEMMs bf16 (20) | -4.1 / 4.7% \| +5.5 / 6.2% | unchanged |
+| int8 streamed, M <= 128 (16) | -8.3 / 8.3% \| +1.9 / 3.5% | unchanged |
+| compute-bound GEMMs, rotated (kernel) | +5.9 / 7.5% \| +8.3 / 8.7% | +6.3 / 7.5% \| +8.5 / 8.6% |
+| decode layer full, follow-up 3 (12) | -8.6 / 8.6% \| -0.7 / 3.5% | unchanged |
