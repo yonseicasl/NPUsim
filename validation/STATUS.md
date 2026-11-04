@@ -1,4 +1,4 @@
-# NPUsim 정합성 현황 (2026-11-03)
+# NPUsim 정합성 현황 (2026-11-04)
 
 NPUsim을 MOSAIC에 붙인 뒤 진행한 정합성 작업의 현재 상태. 각 항목의 자세한 근거와 수치는 링크한 디렉터리의
 README에 있다. 브랜치: npusim `mosaic`, MOSAIC `npusim-ddr3` -> `mosaic`.
@@ -10,10 +10,11 @@ README에 있다. 브랜치: npusim `mosaic`, MOSAIC `npusim-ddr3` -> `mosaic`.
 | Gemmini GEMM, L2 warm (6점) | GemminiRocketConfig RTL (Verilator) | MAPE 4.4%, 최대 7.9% | 완료 (`phase2/`) |
 | Gemmini GEMM, L2 cold + DDR3 (7점) | 같은 RTL + SimDRAM/DRAMSim2 DDR3-1333 | MAPE 9.0% (메모리 바운드 -1.4%, -8.6%) | 16x512x512 -28.9% 남음 |
 | TPU v4 PaLM decode | Pope et al. 2023 공개 지연 | NPUsim 41-60% 짧음 | attention 미포함 시점의 결과, 재평가 필요 |
-| TPU v5e decode GEMM (M 1..128) | Colab v5e-1 실측, weight 스트리밍 | MAPE 약 5% (-0.3..-8%) | 완료 (`tpu_v5e/`) |
+| TPU v5e decode GEMM (M 1..128) | Colab v5e-1 실측, weight 스트리밍 | MAPE 5.4% (MOSAIC HBM2e REFSB: 3.2%); MAC·바이트 정확, 오차는 유효 대역폭 | 완료 (`tpu_v5e/`) |
 | TPU v5e compute-bound GEMM | 같은 실측 | -1..+12% | 완료 |
-| TPU v5e decode attention | 같은 실측, KV 스트리밍 | B >= 8 MAPE 8.3%, B = 1 17.6% | **이번에 모델 연결** |
-| TPU v5e 작은/비정렬 GEMM | 같은 실측 | -10..-36% | 원인 후보만, 미반영 |
+| TPU v5e decode attention | 같은 실측, KV 스트리밍 | B >= 8 MAPE 8.3%, B = 1 17.6% | 모델 연결 (`[kvcache] batch`) |
+| TPU v5e 작은/비정렬 GEMM | 같은 실측 | -35..+15% | 원인 확인(512열 padding, 고정 비용), 미반영 |
+| TPU v5e HBM 효율 | HBM 순차 읽기 732-757 GB/s | 뱅크별 refresh 숨김 모델 751 GB/s | 시뮬레이션에서 가설 성립, TPU 판별은 HBM probe 대기 |
 
 ## 1. Gemmini RTL (`validation/phase2/`)
 
@@ -63,6 +64,18 @@ cache append, MAC, softmax, 점유량이 batch배가 된다. `compare_attention.
 (MXU 4 x 128^2 MAC/cycle, softmax 0.005 cycle/score)이고, 단계가 KV 읽기에 묶여 있어 결과에 거의 영향이 없다.
 일관된 -7%는 GEMM과 같은 HBM 효율 차이다.
 
+latency 너머의 비교 (`compare_metrics.py`, REPORT 3.7): NPUsim의 MAC 수(busy scalar-MAC)와 DRAM 바이트를 실제
+작업량과, 유효 HBM 대역폭과 MXU 활용률을 양쪽에서 비교한다.
+- decode GEMM: MAC·바이트 1.000 (정확). latency 오차는 전부 유효 대역폭 (NPUsim 761-799 vs 실측 711-757 GB/s).
+- 비정렬 GEMM: 검증 매핑이 출력 열을 4 MXU x 128 = 512열 단위로 채워 MAC·바이트를 20-46% 더 센다. TPU는 128 단위
+  (1100/1024 시간비 1.27 = 1152^2/1024^2). 작은 GEMM은 실측 유효 대역폭이 낮다(고정 비용). 두 오류가 상쇄되어 K=N
+  1100은 -4%로 맞아 보이고 1024는 -27%다.
+
+op별 프로파일 (`xprof_stats.py`): 저장된 trace를 XProf hlo_stats / roofline / op_profile로 op별 FLOPs, 바이트,
+FLOP 처리율, HBM / VMEM 대역폭, 병목 판정 CSV로 바꾼다. 스트리밍 GEMM은 HBM 바운드(679 GB/s), 프로그램당 GEMM
+하나는 VMEM 읽기 바운드(2.7 TB/s)임을 수치로 확인했다. 벤치는 이제 모든 케이스를 trace하고, 하드웨어 카운터
+(`perf_counters`, 기본 설정에서는 비어 있음)를 채우는 프로파일러 설정을 탐색한다. 4차 실행(모든 케이스 trace) 진행 중.
+
 측정 방법에서 얻은 교훈 (다음 TPU 측정에 그대로 적용):
 - 같은 입력 버퍼를 반복하면 XLA cross-program prefetch가 copy를 생략해 weight가 칩 위에 남는다 (warm: 3-4배 빠름).
 - 프로그램 하나에 GEMM 하나면 HBM -> VMEM copy와 연산이 직렬이 된다 (rot: HBM 바운드 GEMM이 25-50% 느림).
@@ -78,7 +91,8 @@ cache append, MAC, softmax, 점유량이 batch배가 된다. `compare_attention.
 1. HBM 효율: 뱅크별 refresh 숨김 모델이 실측(89-92%)을 재현한다. TPU가 실제로 그런지 Colab HBM probe
    (`tpu_v5e/tpu_v5e1_hbm_probe.ipynb`)로 판별할 것. compute-bound GEMM이 MOSAIC 경로에서 4-12% 빨라지는 원인도.
 2. PaLM/TPU v4 비교에 attention 모델을 넣어 41-60% 공백 재평가 (tpu_v4 + `[kvcache]` attention).
-3. 작은/비정렬 GEMM: GEMM당 고정 비용(약 1-2 us)과 4 MXU 열 분할 단위 (1024 -> 1100: NPUsim 1.6배, 실측 1.27배).
+3. 작은/비정렬 GEMM: 검증 매핑을 128열 단위로 MXU에 나누기(512열 padding 제거), GEMM당 고정 비용의 원인을 4차
+   실행 trace로 확인해 반영.
 4. decode 레이어의 원소 단위 연산(잔차, gate/up 분리; GEMM만 레이어가 GEMM 4개 합보다 1-12% 김).
 5. int8 weight의 tpu_v5e 설정 비교 (실측은 있음).
 6. 8칩 collective: Kaggle v5e-8 (`kaggle_tpu_bench.ipynb`) 실행 대기.
@@ -91,6 +105,11 @@ cache append, MAC, softmax, 점유량이 batch배가 된다. `compare_attention.
 LD_LIBRARY_PATH=<npusim libs> python3 validation/phase2/compare_cold.py
 # TPU v5e attention: NPUsim vs 실측
 LD_LIBRARY_PATH=<npusim libs> python3 validation/tpu_v5e/compare_attention.py
+# TPU v5e GEMM: latency + MAC·바이트·유효 대역폭·MXU 활용률 / 분석 DRAM vs MOSAIC HBM2e
+LD_LIBRARY_PATH=<npusim libs> python3 validation/tpu_v5e/compare_metrics.py
+LD_LIBRARY_PATH=<npusim libs> python3 validation/tpu_v5e/compare_hbm.py [--mosaic-dram .../hbm2e_tpu_v5e_refsb.yaml]
+# op별 프로파일 (pip install xprof)
+python3 validation/tpu_v5e/xprof_stats.py validation/tpu_v5e/results/<run>
 # TPU v5e GEMM: NPUsim vs 실측 (compare_v5e.py, 브랜치 tpu-measure)
 python3 validation/tpu_v5e/colab_summary.py validation/tpu_v5e/results/2026-11-03_colab_v5e1_followup3
 # TPU 측정: Colab v5e-1에서 tpu_v5e1_stream_bench.ipynb Run All (단계 선택: %env TPU_BENCH_SECTIONS=...)

@@ -11,11 +11,16 @@ NPUsim의 `tpu_v5e.cfg`(공개 사양만으로 만든 구조 설정, 측정값�
 | compute-bound GEMM (M 512, 2048, 1024^3 이상) | 187-192 TFLOPS (사양 197) | -6..+12% | |
 | decode attention (B >= 8) | KV 바이트 / 약 745 GB/s | **MAPE 8.3%** (-6..-8%, 1개 -17.8%) | B = 1은 MAPE 17.6% |
 | decode 레이어 | = GEMM만 레이어 + attention (2.4% 이내) | projection GEMM 4개가 GEMM만 레이어의 -4..-11% | 원소 단위 연산 미모델 |
-| 작은/비정렬 GEMM (M 100..512, K=N 1000..2048) | | -35..+15% (평균 -0.5..-25%) | 고정 오버헤드, MXU 분할 |
+| 작은/비정렬 GEMM (M 100..512, K=N 1000..2048) | | -35..+15% (평균 -0.5..-25%) | NPUsim이 512열 단위로 padding(+20-46% MAC/바이트), TPU는 128 단위; 작은 GEMM 고정 비용 (3.7) |
 | HBM 순차 읽기 | 732-757 GB/s (사양 819의 89-92%) | 분석 모델은 819 가정 | MOSAIC HBM2e 698 GB/s (85%), 뱅크별 refresh 숨김 751 GB/s (91.7%) |
 
 남은 차이의 주원인은 하나다: NPUsim의 분석 DRAM 모델이 HBM 사양 대역폭(819 GB/s)을 그대로 쓰는데 실측 실효
 대역폭은 89-92%다. decode GEMM과 attention의 일관된 -5..-8%가 이것이다.
+
+latency 너머(3.7): decode GEMM에서 NPUsim의 MAC 수와 HBM 바이트는 실제와 정확히 같고(1.000), 오차는 전부 유효 대역폭
+(NPUsim 761-799 vs 실측 711-757 GB/s)이다. 비정렬 GEMM에서는 NPUsim의 512열 단위 padding(작업 과다)과 대역폭 과대평가
+(고정 비용 누락)가 상쇄되어 latency가 우연히 맞는 경우가 있다. refresh(4.1): 뱅크별 refresh를 다른 bank 접근 뒤에 숨기는
+모델이 실측 HBM 효율을 재현한다(751 GB/s, decode GEMM MAPE 3.2%).
 
 ## 1. 비교 대상
 
