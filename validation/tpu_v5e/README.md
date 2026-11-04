@@ -176,4 +176,20 @@ attention runs unrolled. `compare_stack.py` compares the layers; `compare_v5e.py
   35%), which bounds what the small-kernel errors can say.
 - int8 weights stream at 650-740 GB/s of weight bytes; at M = 512 the int8 GEMMs take the bf16 time
   (~180 TFLOPS), i.e. the MXU runs bf16 after dequantization, as `tpu_v5e_int8w.cfg` assumes.
-- `hbm_read` is still invalid (64 MB in 0.69 us).
+- `hbm_read` is still invalid in this run (64 MB in 0.69 us); fixed in follow-up 3.
+
+### 2026-11-03, Colab TPU v5e-1, follow-up 3 (`results/2026-11-03_colab_v5e1_followup3/`)
+
+Third run of the same script with `hbm_read` fixed. `compare_gemm*.csv` here are follow-up 2's (the same
+shapes: only their `npusim_us` is used, by `compare_stack.py`).
+
+- HBM read: 64 MB 731.6 GB/s, 256 MB 749.4, 1 GB 754.9, 4 GB 756.9 GB/s -- 89-92% of the specified 819,
+  the ~750 GB/s the GEMM and attention streams sustain, now measured directly. Same yardstick for the DRAM
+  models: Ramulator2 HBM2e probe 674.8 GB/s (AllBank refresh) / 726.9 (no refresh), NPUsim's ~1 MiB
+  Ramulator streams ~715; the analytical `[dram]` 819.
+- Decode layers: full NPUsim+Ramulator2 mean -0.7% / MAPE 3.5% (analytic -8.6% / 8.6%), gemm_only +3.6% /
+  3.6% (-8.0% / 8.0%).
+- Over the three runs (55 GEMMs): streamed decode GEMMs analytic mean -4.3% / MAPE 4.9%, Ramulator2 +5.2%
+  / 6.2%, run-to-run CV 0.8% (max 2.8%); odd small GEMMs analytic -14.6% / 15.1%, Ramulator2 -6.9% / 9.7%,
+  CV 4.3% (max 21%). Decode layers differ by 1.0% (max 5.1%) between runs 2 and 3, streamed GEMMs 1.2%,
+  attention 4.6% (large cases at 1.10-1.12x the KV roofline again).
