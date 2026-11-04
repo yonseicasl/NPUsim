@@ -258,3 +258,32 @@ unzip to rerun); `xprof/{hlo_stats,roofline,programs}.csv` are `xprof_stats.py`'
   XProf's perf_counters tool and its perf_counters / utilization_viewer tables are empty (`xprof_stats.py RESULTS
   --case counters --counters`). On Colab's TPU v5e the profile stops at per-op time, XLA's FLOPs and bytes, and
   the bandwidth / bound-by derived from them.
+
+## XLA's tiling, 128-column work and the per-kernel cost (`xla_windows.py`, `compare_windows.py`)
+
+`xla_windows.py RESULTS` reads each GEMM's matmul `window_config` from the run's optimized HLO
+(`results/2026-11-04_colab_v5e1_profile/xla_windows.csv`): windows per dimension, a window's K rows and 128-column
+lane tiles, buffering_level 2. M <= 128 at K 4096 uses K x 512-column windows (NPUsim's strip); M 512 uses 256
+columns; K=N <= 1280 is ONE window (the whole weight in VMEM, no pipeline -- why small GEMMs run slow);
+14336 x 4096 splits K into 28 windows of 512 rows. Columns go by lane tiles: 1100 is 9 blocks, unpadded.
+
+`compare_windows.py` (log/csv in the profile run's directory), the run's 50 cold bf16 GEMMs:
+
+| setup | decode (11) | compute (4) | small / unaligned (35) | all (50) |
+|---|---|---|---|---|
+| A palm mapping, strips rounded up, no setup | 4.8% | 3.5% | 13.1% | 10.5% |
+| B A + layer_setup_cycle 330 (0.22 us, tpu_v5e.cfg) | 4.8% | 3.5% | 12.7% | 10.3% |
+| C one XLA window simulated, its column blocks alone on the MXUs | 10.8% | 75.1% | 14.0% | 18.2% |
+| **D 128-column work on 4 MXUs + XLA's window pipeline + 330** | **5.2%** | **6.4%** | **8.2%** | **7.4%** |
+
+D: the work is validation/palm's 4-MXU mapping extended to ceil(N/128)/4 strips (fractional: only 128-column
+padding); its per-stage totals are split over XLA's n windows and run XLA's way -- a window is DMAed whole before its
+compute, the next fetched meanwhile: t = 330 + D/n + (n-1) max(D/n, C/n) + C/n (D = DRAM busy, C = the slowest
+on-chip stage). Structural, not fitted. NPUsim's MAC count at K=N 1100 / 1152 / 1280 goes 1.46 / 1.33 / 1.20 ->
+1.10 / 1.00 / 1.00 x real (1100 pads K and N to 1152, as the MXU does), bytes to <= 1.09 x XLA's; aligned small GEMMs
+128 / 200 / 256 / 512 x 1024^2 go -34 / -22 / -21 / -16% -> -14 / +1 / +5 / -12%.
+C failed instructively: a 2-block window (M 512) on 2 of 4 MXUs doubles the compute (+84%); XLA keeps all four MXUs
+busy over another dimension. Left: the effective HBM rate (D still streams at 749-798 vs 716-755 GB/s measured --
+the MOSAIC HBM2e REFSB config addresses it, REPORT 4.1); compute-bound now -4..-9% (the window pipeline overlaps
+better than NPUsim's own fill); single-run noise of the us-scale GEMMs (100x1024 measured 3.6 here, 4.9-5.4 in the
+other runs). Next: the window pipeline as a native NPUsim option (DRAM-level tiles delivered whole).

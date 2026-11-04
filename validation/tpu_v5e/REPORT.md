@@ -204,6 +204,28 @@ compare_metrics.*`)가 측정한 GEMM 55개마다 NPUsim의 MAC 수(busy scalar-
 - 하드웨어 카운터: 후보 프로파일러 설정 다섯 가지 모두 받아들여졌지만 어느 trace에도 perf_counters 도구가 없고 표는
   비어 있다. Colab TPU v5e의 프로파일은 op별 시간, XLA FLOPs와 바이트, 그로부터 계산한 대역폭과 병목 판정까지다.
 
+### 3.9 XLA 타일링, 128열 작업, 커널당 고정 비용 (`compare_windows.py`)
+
+XLA가 각 GEMM에 쓴 타일링(HLO의 matmul `window_config`, `xla_windows.py`)을 NPUsim에 반영했다. M <= 128, K 4096은
+K x 512열 window(NPUsim strip과 같음), M 512는 256열, K=N <= 1280은 **window 하나**(weight 전체를 VMEM에 올린 뒤 계산,
+파이프라인 없음 -- 작은 GEMM이 느린 이유), 14336 x 4096은 K를 512행 window 28개로 나눈다. 열은 128열 lane tile 단위다.
+
+| 설정 | decode (11) | compute (4) | 작은/비정렬 (35) | 전체 (50) |
+|---|---|---|---|---|
+| A 기존 매핑, strip 올림, 고정 비용 없음 | 4.8% | 3.5% | 13.1% | 10.5% |
+| B A + 커널당 0.22 us (`layer_setup_cycle = 330`) | 4.8% | 3.5% | 12.7% | 10.3% |
+| C window 하나 시뮬레이션, 열 블록만 MXU에 분할 | 10.8% | 75.1% | 14.0% | 18.2% |
+| **D 128열 단위 작업 (4 MXU) + XLA window 파이프라인 + 0.22 us** | **5.2%** | **6.4%** | **8.2%** | **7.4%** |
+
+D: 작업은 4-MXU 매핑을 ceil(N/128)/4 strip(분수)으로 확장해 128열 padding만 남기고, 단계별 총비용을 XLA window n개로
+나눠 "window 통째 로드 -> 계산, 다음 window 미리 로드"로 합성한다: t = 330 + D/n + (n-1) max(D/n, C/n) + C/n. 구조값만
+쓴다. MAC 수는 K=N 1100 / 1152 / 1280에서 1.46 / 1.33 / 1.20 -> 1.10 / 1.00 / 1.00배(1100은 K와 N을 1152로, MXU와 같은
+단위), 바이트는 XLA의 1.09배 이하. 정렬된 작은 GEMM(128 / 200 / 256 / 512 x 1024^2)은 -34 / -22 / -21 / -16% ->
+-14 / +1 / +5 / -12%. C가 실패한 이유: 2블록 window(M 512)를 MXU 2개에만 올려 연산이 두 배(+84%); XLA는 다른 차원으로
+4개 MXU를 모두 쓴다. 남은 것: 유효 HBM 속도(D도 749-798 vs 실측 716-755 GB/s, 4.1의 HBM2e REFSB가 해당), compute-bound
+-4..-9%(window 파이프라인이 NPUsim 자체 fill보다 잘 겹침), 수 us GEMM의 측정 잡음. 다음: window 파이프라인을 NPUsim
+코어의 선택 옵션으로(DRAM 계층 타일을 통째로 전달).
+
 ## 4. MOSAIC HBM2e
 
 `configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}`(MOSAIC): HBM2e 2 stack = 16채널 x 2 pseudo channel, 3.2 Gbps,

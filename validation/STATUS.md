@@ -92,8 +92,9 @@ XLA의 HBM 바이트와 FLOPs가 GEMM 114개 전부에서 shape 계산과 같다
 1. HBM 효율: 뱅크별 refresh 숨김 모델이 실측(89-92%)을 재현한다. TPU가 실제로 그런지 Colab HBM probe
    (`tpu_v5e/tpu_v5e1_hbm_probe.ipynb`)로 판별할 것. compute-bound GEMM이 MOSAIC 경로에서 4-12% 빨라지는 원인도.
 2. PaLM/TPU v4 비교에 attention 모델을 넣어 41-60% 공백 재평가 (tpu_v4 + `[kvcache]` attention).
-3. 작은/비정렬 GEMM: 검증 매핑을 128열 단위로 MXU에 나누기(512열 padding 제거), 커널당 고정 비용(약 1 us)과
-   weight 타일 하나 정도의 fill/drain을 NPUsim에 반영 (원인은 4차 실행 trace로 확인됨, REPORT 3.8).
+3. 작은/비정렬 GEMM: 128열 단위 작업 + XLA window 파이프라인 + 커널당 0.22 us(`tpu_v5e.cfg layer_setup_cycle = 330`)를
+   비교 계층에서 합성해 전체 MAPE 10.5% -> 7.4%, 작은 GEMM 13.1% -> 8.2% (REPORT 3.9). 남은 일: window 파이프라인을
+   NPUsim 코어 옵션으로, compute-bound -4..-9%.
 4. decode 레이어의 원소 단위 연산(잔차, gate/up 분리; GEMM만 레이어가 GEMM 4개 합보다 1-12% 김).
 5. int8 weight의 tpu_v5e 설정 비교 (실측은 있음).
 6. 8칩 collective: Kaggle v5e-8 (`kaggle_tpu_bench.ipynb`) 실행 대기.
