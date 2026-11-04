@@ -188,6 +188,22 @@ compare_metrics.*`)가 측정한 GEMM 55개마다 NPUsim의 MAC 수(busy scalar-
 3. 측정 쪽 바이트와 FLOPs를 모든 케이스에서 XLA 수치로 확인하려면 trace가 필요하다: `tpu_v5e1_stream_bench`가 이제 모든
    케이스를 trace하고 `xprof_stats.py`가 op별 표로 바꾼다(README "Per-op profile").
 
+### 3.8 모든 케이스 프로파일 (2026-11-04, `results/2026-11-04_colab_v5e1_profile/`)
+
+164개 케이스 전부의 trace를 XProf로 변환했다(`xprof_stats.py`, op 1845행).
+
+- trace의 op 시간은 같은 실행의 반복 측정 시간과 중앙값 -0.6% 차이다(작은 GEMM +1.7%). 프로파일러 부하는 무시할 수준.
+- GEMM 114개 전부에서 XLA의 HBM 바이트 = weight + 입력(1.0000), FLOPs = 2MKN x 1.0003-1.003. 측정 쪽 작업량이
+  shape 계산과 정확히 같으므로 3.7의 유효 대역폭과 MXU 활용률은 그대로 믿을 수 있다. (벤치가 출력을 fusion 안에서
+  합산하므로 출력은 HBM에 쓰이지 않는다. M = 1 int8 GEMV의 FLOPs 3배는 XLA cost model이 int8 -> bf16 변환을 센 것이다.)
+- 작은 GEMM: 반복마다 fusion 하나뿐이고 추가 copy는 없다. fusion 자체가 2-3 MB weight에서 410-450 GB/s로 돈다. HBM
+  속도를 실측 750 GB/s로 고정하면 남는 시간 t0 = t - 바이트/750은 약 1 us + 스트림과 겹치지 않는 연산이고, 그 비중이
+  크기와 함께 준다(K=N 1024에서 M 100 -> 256일 때 t0 2.0 -> 3.6 us, 4096^2에서 M 1 -> 128일 때 0.8 -> 3.4 us). 즉
+  커널당 고정 비용 약 1 us와 weight 타일 하나 정도의 파이프라인 fill/drain이다. NPUsim에 반영할 것: 커널당 고정 비용,
+  fill/drain 타일 크기, 128열 단위 MXU 분할(3.7).
+- 하드웨어 카운터: 후보 프로파일러 설정 다섯 가지 모두 받아들여졌지만 어느 trace에도 perf_counters 도구가 없고 표는
+  비어 있다. Colab TPU v5e의 프로파일은 op별 시간, XLA FLOPs와 바이트, 그로부터 계산한 대역폭과 병목 판정까지다.
+
 ## 4. MOSAIC HBM2e
 
 `configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}`(MOSAIC): HBM2e 2 stack = 16채널 x 2 pseudo channel, 3.2 Gbps,

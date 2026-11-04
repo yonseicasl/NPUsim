@@ -236,3 +236,25 @@ Hardware counters: XProf's perf_counters and utilization_viewer tools exist but 
 options. The bench's `counters` section traces one GEMM under candidate `advanced_configuration` options
 (undocumented; names from XProf and Cloud TPU profiler options); `xprof_stats.py RESULTS --list-tools --case counters`
 shows which, if any, fills them.
+
+## Results: 2026-11-04 Colab v5e-1, every case profiled (`results/2026-11-04_colab_v5e1_profile/`)
+
+`tpu_v5e1_stream_bench` with `TPU_BENCH_TRACE=all`: 164 traces and cost analyses, no errors. The raw archive
+`results/2026-11-04_colab_v5e1_profile.zip` holds the traces and HLO (unpacked `traces/`, `hlo/` are not committed;
+unzip to rerun); `xprof/{hlo_stats,roofline,programs}.csv` are `xprof_stats.py`'s per-op tables (1845 op rows).
+
+- **The per-op times are the loop times**: the profiled GEMM fusions take -0.6% (median) of the loop-slope time
+  measured in the same run (+1.7% for the small GEMMs), so tracing does not perturb them.
+- **Measured work = the shape's work**: on all 114 GEMM programs XLA's HBM bytes equal weights + input exactly
+  (1.0000; the bench reduces the output inside the fusion, so it is never written) and XLA's FLOPs are 2MKN x
+  1.0003-1.003 (the reduction). Exception: M = 1 int8 GEMVs count 3x, the int8 -> bf16 converts in XLA's cost model,
+  not MXU work.
+- **Small GEMMs: one fusion, no extra copies**; the fusion itself runs at ~410-450 GB/s for 2-3 MB of weights (650 at
+  34 MB, 750 at 235 MB). With the HBM rate fixed at the measured 750 GB/s, the remainder t0 = t - bytes/750 is ~1 us
+  plus a share of the compute that does not overlap the stream, which shrinks with size: t0 2.0 -> 3.6 us as M goes
+  100 -> 256 at K=N 1024 (compute 1.1 -> 2.7 us), 0.8 -> 3.4 us as M goes 1 -> 128 at 4096^2 (compute 0.2 -> 22 us).
+  That is a fixed per-kernel cost of ~1 us and a pipeline fill / drain of about one weight tile.
+- **Hardware counters are not available**: all five candidate profiler options were accepted, but no trace has
+  XProf's perf_counters tool and its perf_counters / utilization_viewer tables are empty (`xprof_stats.py RESULTS
+  --case counters --counters`). On Colab's TPU v5e the profile stops at per-op time, XLA's FLOPs and bytes, and
+  the bandwidth / bound-by derived from them.

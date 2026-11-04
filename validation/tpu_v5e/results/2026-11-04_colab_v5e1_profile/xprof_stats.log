@@ -1,0 +1,718 @@
+
+== attn_b128_l2048: 9 ops
+  category=convolution fusion | hlo_op_name=fusion.39 | occurrences=2 | total_self_time=2840 | model_flop_rate=3077 | measured_memory_bw=726.2 | hbm_bw=704.2 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.37 | occurrences=2 | total_self_time=1425 | model_flop_rate=3073 | measured_memory_bw=725 | hbm_bw=703.1 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.41 | occurrences=2 | total_self_time=1425 | model_flop_rate=3062 | measured_memory_bw=725.3 | hbm_bw=703.3 | operational_intensity=3.932 | bound_by=HBM
+
+== attn_b128_l512: 11 ops
+  category=convolution fusion | hlo_op_name=fusion.32 | occurrences=2 | total_self_time=712.8 | model_flop_rate=3066 | measured_memory_bw=723.5 | hbm_bw=701.5 | operational_intensity=3.946 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.30 | occurrences=2 | total_self_time=358.2 | model_flop_rate=3056 | measured_memory_bw=725.3 | hbm_bw=697.9 | operational_intensity=3.925 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.34 | occurrences=2 | total_self_time=357.5 | model_flop_rate=3051 | measured_memory_bw=726.8 | hbm_bw=699.4 | operational_intensity=3.909 | bound_by=HBM
+
+== attn_b128_l8192: 10 ops
+  category=convolution fusion | hlo_op_name=fusion.37 | occurrences=2 | total_self_time=5693 | model_flop_rate=3077 | measured_memory_bw=724.9 | hbm_bw=702.6 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.34 | occurrences=2 | total_self_time=5680 | model_flop_rate=3084 | measured_memory_bw=726.6 | hbm_bw=704.6 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.39 | occurrences=2 | total_self_time=5680 | model_flop_rate=3072 | measured_memory_bw=726.6 | hbm_bw=704.6 | operational_intensity=3.937 | bound_by=HBM
+
+== attn_b1_l2048: 8 ops
+  category=convolution fusion | hlo_op_name=fusion.24 | occurrences=4 | total_self_time=30.21 | model_flop_rate=2265 | measured_memory_bw=534.5 | hbm_bw=517.3 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.26 | occurrences=4 | total_self_time=27.45 | model_flop_rate=2483 | measured_memory_bw=588 | hbm_bw=569.1 | operational_intensity=3.932 | bound_by=HBM
+  category=loop fusion | hlo_op_name=fusion.25 | occurrences=4 | total_self_time=1.136 | model_flop_rate=692 | measured_memory_bw=430.6 | hbm_bw=0 | operational_intensity=1.497 | bound_by=VMEM Read
+
+== attn_b1_l32768: 28 ops
+  category=convolution fusion | hlo_op_name=fusion.86 | occurrences=2 | total_self_time=181.1 | model_flop_rate=3023 | measured_memory_bw=712 | hbm_bw=690.3 | operational_intensity=3.954 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.83 | occurrences=2 | total_self_time=181 | model_flop_rate=3024 | measured_memory_bw=712.2 | hbm_bw=690.5 | operational_intensity=3.954 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.80 | occurrences=2 | total_self_time=181 | model_flop_rate=3024 | measured_memory_bw=712.3 | hbm_bw=690.7 | operational_intensity=3.954 | bound_by=HBM
+
+== attn_b1_l512: 8 ops
+  category=convolution fusion | hlo_op_name=fusion.24 | occurrences=4 | total_self_time=9.39 | model_flop_rate=1822 | measured_memory_bw=432.3 | hbm_bw=416 | operational_intensity=3.925 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.26 | occurrences=4 | total_self_time=8.831 | model_flop_rate=1929 | measured_memory_bw=459.7 | hbm_bw=442.3 | operational_intensity=3.909 | bound_by=HBM
+  category=loop fusion | hlo_op_name=fusion.25 | occurrences=4 | total_self_time=0.7825 | model_flop_rate=251.1 | measured_memory_bw=157.2 | hbm_bw=0 | operational_intensity=1.487 | bound_by=VMEM Read
+
+== attn_b1_l8192: 8 ops
+  category=convolution fusion | hlo_op_name=fusion.24 | occurrences=4 | total_self_time=95.89 | model_flop_rate=2854 | measured_memory_bw=672.5 | hbm_bw=651.8 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.26 | occurrences=4 | total_self_time=93.96 | model_flop_rate=2902 | measured_memory_bw=686.3 | hbm_bw=665.2 | operational_intensity=3.937 | bound_by=HBM
+  category=loop fusion | hlo_op_name=fusion.25 | occurrences=4 | total_self_time=2.719 | model_flop_rate=1157 | measured_memory_bw=718.7 | hbm_bw=0 | operational_intensity=1.499 | bound_by=VMEM Read
+
+== attn_b32_l2048: 11 ops
+  category=convolution fusion | hlo_op_name=fusion.39 | occurrences=2 | total_self_time=712.7 | model_flop_rate=3066 | measured_memory_bw=723.5 | hbm_bw=701.5 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.37 | occurrences=2 | total_self_time=358 | model_flop_rate=3058 | measured_memory_bw=721.5 | hbm_bw=698.3 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.41 | occurrences=2 | total_self_time=357.5 | model_flop_rate=3050 | measured_memory_bw=722.5 | hbm_bw=699.2 | operational_intensity=3.932 | bound_by=HBM
+
+== attn_b32_l32768: 10 ops
+  category=convolution fusion | hlo_op_name=fusion.34 | occurrences=2 | total_self_time=5678 | model_flop_rate=3085 | measured_memory_bw=726.6 | hbm_bw=704.6 | operational_intensity=3.954 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.37 | occurrences=2 | total_self_time=5677 | model_flop_rate=3085 | measured_memory_bw=726.7 | hbm_bw=704.6 | operational_intensity=3.954 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.39 | occurrences=2 | total_self_time=5677 | model_flop_rate=3073 | measured_memory_bw=726.7 | hbm_bw=704.6 | operational_intensity=3.939 | bound_by=HBM
+
+== attn_b32_l512: 94 ops
+  category=convolution fusion | hlo_op_name=fusion.118 | occurrences=2 | total_self_time=93.09 | model_flop_rate=5868 | measured_memory_bw=1385 | hbm_bw=671.4 | operational_intensity=3.946 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.120 | occurrences=2 | total_self_time=93.08 | model_flop_rate=5869 | measured_memory_bw=1385 | hbm_bw=671.4 | operational_intensity=3.946 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.110 | occurrences=2 | total_self_time=93.07 | model_flop_rate=5870 | measured_memory_bw=1385 | hbm_bw=671.6 | operational_intensity=3.946 | bound_by=HBM
+
+== attn_b32_l8192: 10 ops
+  category=convolution fusion | hlo_op_name=fusion.34 | occurrences=2 | total_self_time=1423 | model_flop_rate=3077 | measured_memory_bw=725 | hbm_bw=703 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.39 | occurrences=2 | total_self_time=1422 | model_flop_rate=3067 | measured_memory_bw=725.4 | hbm_bw=703.5 | operational_intensity=3.937 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.37 | occurrences=2 | total_self_time=1422 | model_flop_rate=3080 | measured_memory_bw=725.6 | hbm_bw=703.3 | operational_intensity=3.953 | bound_by=HBM
+
+== attn_b8_l2048: 94 ops
+  category=convolution fusion | hlo_op_name=fusion.165 | occurrences=2 | total_self_time=92.19 | model_flop_rate=5926 | measured_memory_bw=1398 | hbm_bw=678 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.161 | occurrences=2 | total_self_time=92.18 | model_flop_rate=5927 | measured_memory_bw=1399 | hbm_bw=678 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.169 | occurrences=2 | total_self_time=92.09 | model_flop_rate=5932 | measured_memory_bw=1400 | hbm_bw=678.6 | operational_intensity=3.947 | bound_by=HBM
+
+== attn_b8_l32768: 10 ops
+  category=convolution fusion | hlo_op_name=fusion.37 | occurrences=2 | total_self_time=1422 | model_flop_rate=3079 | measured_memory_bw=725.2 | hbm_bw=703.1 | operational_intensity=3.954 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.34 | occurrences=2 | total_self_time=1422 | model_flop_rate=3079 | measured_memory_bw=725.2 | hbm_bw=703.3 | operational_intensity=3.954 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.39 | occurrences=2 | total_self_time=1422 | model_flop_rate=3068 | measured_memory_bw=725.4 | hbm_bw=703.4 | operational_intensity=3.939 | bound_by=HBM
+
+== attn_b8_l512: 8 ops
+  category=convolution fusion | hlo_op_name=fusion.23 | occurrences=4 | total_self_time=51.02 | model_flop_rate=2682 | measured_memory_bw=636.5 | hbm_bw=612.5 | operational_intensity=3.925 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.25 | occurrences=4 | total_self_time=49.94 | model_flop_rate=2730 | measured_memory_bw=650.4 | hbm_bw=625.8 | operational_intensity=3.909 | bound_by=HBM
+  category=loop fusion | hlo_op_name=fusion.24 | occurrences=4 | total_self_time=1.724 | model_flop_rate=911.9 | measured_memory_bw=571 | hbm_bw=0 | operational_intensity=1.487 | bound_by=VMEM Read
+
+== attn_b8_l8192: 12 ops
+  category=convolution fusion | hlo_op_name=fusion.37 | occurrences=2 | total_self_time=358.5 | model_flop_rate=3054 | measured_memory_bw=719.5 | hbm_bw=697.4 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.34 | occurrences=2 | total_self_time=358.4 | model_flop_rate=3055 | measured_memory_bw=719.7 | hbm_bw=697.6 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.39 | occurrences=2 | total_self_time=357.4 | model_flop_rate=3051 | measured_memory_bw=721.6 | hbm_bw=699.4 | operational_intensity=3.937 | bound_by=HBM
+
+== counters_0: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=368.2 | model_flop_rate=5836 | measured_memory_bw=680.3 | hbm_bw=680.3 | operational_intensity=7.99 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.099 | model_flop_rate=723.4 | measured_memory_bw=84.32 | hbm_bw=84.32 | operational_intensity=7.99 | bound_by=HBM
+
+== counters_1: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=368.8 | model_flop_rate=5827 | measured_memory_bw=679.2 | hbm_bw=679.2 | operational_intensity=7.99 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.099 | model_flop_rate=722.3 | measured_memory_bw=84.19 | hbm_bw=84.19 | operational_intensity=7.99 | bound_by=HBM
+
+== counters_2: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=368.3 | model_flop_rate=5836 | measured_memory_bw=680.2 | hbm_bw=680.2 | operational_intensity=7.99 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.288 | model_flop_rate=723 | measured_memory_bw=84.27 | hbm_bw=84.27 | operational_intensity=7.99 | bound_by=HBM
+
+== counters_3: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=368.7 | model_flop_rate=5828 | measured_memory_bw=679.3 | hbm_bw=679.3 | operational_intensity=7.99 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.099 | model_flop_rate=722.4 | measured_memory_bw=84.2 | hbm_bw=84.2 | operational_intensity=7.99 | bound_by=HBM
+
+== counters_4: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=368.5 | model_flop_rate=5832 | measured_memory_bw=679.7 | hbm_bw=679.7 | operational_intensity=7.99 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.105 | model_flop_rate=722.9 | measured_memory_bw=84.26 | hbm_bw=84.26 | operational_intensity=7.99 | bound_by=HBM
+
+== decode_b128_l2048_full: 72 ops
+  category=convolution fusion | hlo_op_name=fusion.138 | occurrences=2 | total_self_time=1426 | model_flop_rate=3071 | measured_memory_bw=724.6 | hbm_bw=701.3 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.131 | occurrences=2 | total_self_time=1426 | model_flop_rate=3071 | measured_memory_bw=724.6 | hbm_bw=701.3 | operational_intensity=3.947 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.140 | occurrences=2 | total_self_time=1422 | model_flop_rate=3069 | measured_memory_bw=726.9 | hbm_bw=703.5 | operational_intensity=3.932 | bound_by=HBM
+
+== decode_b128_l2048_gemm_only: 32 ops
+  category=convolution fusion | hlo_op_name=fusion.59 | occurrences=2 | total_self_time=692.6 | model_flop_rate=8.682e+04 | measured_memory_bw=654.2 | hbm_bw=654.2 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.62 | occurrences=2 | total_self_time=659.5 | model_flop_rate=9.118e+04 | measured_memory_bw=687.1 | hbm_bw=687.1 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.60 | occurrences=2 | total_self_time=165.3 | model_flop_rate=1.82e+05 | measured_memory_bw=1430 | hbm_bw=106.3 | operational_intensity=118.6 | bound_by=Compute
+
+== decode_b128_l512_full: 72 ops
+  category=convolution fusion | hlo_op_name=fusion.135 | occurrences=2 | total_self_time=688.1 | model_flop_rate=8.74e+04 | measured_memory_bw=658.6 | hbm_bw=658.6 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.142 | occurrences=2 | total_self_time=660.2 | model_flop_rate=9.109e+04 | measured_memory_bw=686.3 | hbm_bw=686.3 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.138 | occurrences=2 | total_self_time=358.5 | model_flop_rate=3053 | measured_memory_bw=724.6 | hbm_bw=697.3 | operational_intensity=3.925 | bound_by=HBM
+
+== decode_b128_l512_gemm_only: 32 ops
+  category=convolution fusion | hlo_op_name=fusion.59 | occurrences=2 | total_self_time=696.8 | model_flop_rate=8.63e+04 | measured_memory_bw=650.3 | hbm_bw=650.3 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.62 | occurrences=2 | total_self_time=659.8 | model_flop_rate=9.113e+04 | measured_memory_bw=686.8 | hbm_bw=686.8 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.63 | occurrences=2 | total_self_time=165.3 | model_flop_rate=1.819e+05 | measured_memory_bw=1429 | hbm_bw=106.3 | operational_intensity=118.6 | bound_by=Compute
+
+== decode_b128_l8192_full: 51 ops
+  category=convolution fusion | hlo_op_name=fusion.138 | occurrences=2 | total_self_time=5693 | model_flop_rate=3077 | measured_memory_bw=725 | hbm_bw=702.7 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.131 | occurrences=2 | total_self_time=5692 | model_flop_rate=3077 | measured_memory_bw=725 | hbm_bw=702.7 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.133 | occurrences=2 | total_self_time=5676 | model_flop_rate=3074 | measured_memory_bw=727 | hbm_bw=704.7 | operational_intensity=3.937 | bound_by=HBM
+
+== decode_b128_l8192_gemm_only: 32 ops
+  category=convolution fusion | hlo_op_name=fusion.59 | occurrences=2 | total_self_time=693 | model_flop_rate=8.677e+04 | measured_memory_bw=653.8 | hbm_bw=653.8 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.62 | occurrences=2 | total_self_time=660.4 | model_flop_rate=9.104e+04 | measured_memory_bw=686.1 | hbm_bw=686.1 | operational_intensity=123.6 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.63 | occurrences=2 | total_self_time=165.6 | model_flop_rate=1.817e+05 | measured_memory_bw=1427 | hbm_bw=106.2 | operational_intensity=118.6 | bound_by=Compute
+
+== decode_b1_l2048_full: 69 ops
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.46 | occurrences=2 | total_self_time=623.9 | model_flop_rate=1882 | measured_memory_bw=701.5 | hbm_bw=701.5 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.38 | occurrences=2 | total_self_time=623.6 | model_flop_rate=1883 | measured_memory_bw=701.8 | hbm_bw=701.8 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.34 | occurrences=2 | total_self_time=136.1 | model_flop_rate=1849 | measured_memory_bw=689.1 | hbm_bw=688.8 | operational_intensity=2.499 | bound_by=HBM
+
+== decode_b1_l2048_gemm_only: 45 ops
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.18 | occurrences=2 | total_self_time=623.8 | model_flop_rate=1882 | measured_memory_bw=701.5 | hbm_bw=701.5 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.22 | occurrences=2 | total_self_time=623.8 | model_flop_rate=1883 | measured_memory_bw=701.5 | hbm_bw=701.5 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.16 | occurrences=2 | total_self_time=136.1 | model_flop_rate=1848 | measured_memory_bw=688.9 | hbm_bw=688.6 | operational_intensity=2.499 | bound_by=HBM
+
+== decode_b1_l512_full: 63 ops
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.38 | occurrences=2 | total_self_time=624 | model_flop_rate=1882 | measured_memory_bw=701.3 | hbm_bw=701.3 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.46 | occurrences=2 | total_self_time=623.6 | model_flop_rate=1883 | measured_memory_bw=701.7 | hbm_bw=701.7 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.42 | occurrences=2 | total_self_time=135.7 | model_flop_rate=1855 | measured_memory_bw=691.3 | hbm_bw=691 | operational_intensity=2.499 | bound_by=HBM
+
+== decode_b1_l512_gemm_only: 45 ops
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.22 | occurrences=2 | total_self_time=623.9 | model_flop_rate=1882 | measured_memory_bw=701.4 | hbm_bw=701.4 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.18 | occurrences=2 | total_self_time=623.8 | model_flop_rate=1882 | measured_memory_bw=701.5 | hbm_bw=701.5 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.16 | occurrences=2 | total_self_time=136 | model_flop_rate=1851 | measured_memory_bw=689.7 | hbm_bw=689.4 | operational_intensity=2.499 | bound_by=HBM
+
+== decode_b1_l8192_full: 89 ops
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.38 | occurrences=2 | total_self_time=623.8 | model_flop_rate=1882 | measured_memory_bw=701.5 | hbm_bw=701.5 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.46 | occurrences=2 | total_self_time=623.8 | model_flop_rate=1883 | measured_memory_bw=701.6 | hbm_bw=701.6 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.42 | occurrences=2 | total_self_time=135.7 | model_flop_rate=1854 | measured_memory_bw=691 | hbm_bw=690.7 | operational_intensity=2.499 | bound_by=HBM
+
+== decode_b1_l8192_gemm_only: 45 ops
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.18 | occurrences=2 | total_self_time=623.9 | model_flop_rate=1882 | measured_memory_bw=701.5 | hbm_bw=701.5 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.22 | occurrences=2 | total_self_time=623.8 | model_flop_rate=1883 | measured_memory_bw=701.6 | hbm_bw=701.6 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=multiply_reduce_fusion.16 | occurrences=2 | total_self_time=136 | model_flop_rate=1850 | measured_memory_bw=689.6 | hbm_bw=689.3 | operational_intensity=2.499 | bound_by=HBM
+
+== decode_b32_l2048_full: 65 ops
+  category=convolution fusion | hlo_op_name=fusion.135 | occurrences=2 | total_self_time=659.5 | model_flop_rate=2.28e+04 | measured_memory_bw=669.3 | hbm_bw=669.3 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.142 | occurrences=2 | total_self_time=630.3 | model_flop_rate=2.385e+04 | measured_memory_bw=700.3 | hbm_bw=700.3 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.131 | occurrences=2 | total_self_time=357.9 | model_flop_rate=3059 | measured_memory_bw=721.8 | hbm_bw=698.6 | operational_intensity=3.947 | bound_by=HBM
+
+== decode_b32_l2048_gemm_only: 32 ops
+  category=convolution fusion | hlo_op_name=fusion.59 | occurrences=2 | total_self_time=664.9 | model_flop_rate=2.261e+04 | measured_memory_bw=663.9 | hbm_bw=663.9 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.62 | occurrences=2 | total_self_time=630.9 | model_flop_rate=2.383e+04 | measured_memory_bw=699.7 | hbm_bw=699.7 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.58 | occurrences=2 | total_self_time=93.06 | model_flop_rate=2.308e+04 | measured_memory_bw=682.1 | hbm_bw=676.8 | operational_intensity=31.51 | bound_by=HBM
+
+== decode_b32_l512_full: 71 ops
+  category=convolution fusion | hlo_op_name=fusion.135 | occurrences=2 | total_self_time=659.9 | model_flop_rate=2.278e+04 | measured_memory_bw=668.9 | hbm_bw=668.9 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.142 | occurrences=2 | total_self_time=631.3 | model_flop_rate=2.381e+04 | measured_memory_bw=699.2 | hbm_bw=699.2 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.130 | occurrences=2 | total_self_time=92.81 | model_flop_rate=2.316e+04 | measured_memory_bw=684.1 | hbm_bw=678.9 | operational_intensity=31.53 | bound_by=HBM
+
+== decode_b32_l512_gemm_only: 32 ops
+  category=convolution fusion | hlo_op_name=fusion.59 | occurrences=2 | total_self_time=665.5 | model_flop_rate=2.259e+04 | measured_memory_bw=663.3 | hbm_bw=663.3 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.62 | occurrences=2 | total_self_time=631.5 | model_flop_rate=2.381e+04 | measured_memory_bw=699 | hbm_bw=699 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=convolution_add_fusion.5 | occurrences=2 | total_self_time=93.11 | model_flop_rate=2.307e+04 | measured_memory_bw=686.9 | hbm_bw=676.5 | operational_intensity=31.28 | bound_by=HBM
+
+== decode_b32_l8192_full: 65 ops
+  category=convolution fusion | hlo_op_name=fusion.138 | occurrences=2 | total_self_time=1422 | model_flop_rate=3079 | measured_memory_bw=725.6 | hbm_bw=703.2 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.131 | occurrences=2 | total_self_time=1422 | model_flop_rate=3080 | measured_memory_bw=725.6 | hbm_bw=703.3 | operational_intensity=3.953 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.140 | occurrences=2 | total_self_time=1421 | model_flop_rate=3069 | measured_memory_bw=725.9 | hbm_bw=703.6 | operational_intensity=3.937 | bound_by=HBM
+
+== decode_b32_l8192_gemm_only: 32 ops
+  category=convolution fusion | hlo_op_name=fusion.59 | occurrences=2 | total_self_time=660.4 | model_flop_rate=2.276e+04 | measured_memory_bw=668.4 | hbm_bw=668.4 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.62 | occurrences=2 | total_self_time=630.6 | model_flop_rate=2.384e+04 | measured_memory_bw=699.9 | hbm_bw=699.9 | operational_intensity=31.72 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.58 | occurrences=2 | total_self_time=93.3 | model_flop_rate=2.302e+04 | measured_memory_bw=680.3 | hbm_bw=675.1 | operational_intensity=31.51 | bound_by=HBM
+
+== decode_b8_l2048_gemm_only: 26 ops
+  category=convolution fusion | hlo_op_name=fusion.68 | occurrences=2 | total_self_time=633.5 | model_flop_rate=5932 | measured_memory_bw=692.1 | hbm_bw=692.1 | operational_intensity=7.982 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.65 | occurrences=2 | total_self_time=628 | model_flop_rate=5984 | measured_memory_bw=698.2 | hbm_bw=698.2 | operational_intensity=7.982 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.64 | occurrences=2 | total_self_time=181.2 | model_flop_rate=5928 | measured_memory_bw=692 | hbm_bw=692 | operational_intensity=7.979 | bound_by=HBM
+
+== decode_b8_l512_full: 67 ops
+  category=convolution fusion | hlo_op_name=fusion.138 | occurrences=2 | total_self_time=632.5 | model_flop_rate=5942 | measured_memory_bw=693.3 | hbm_bw=693.3 | operational_intensity=7.983 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.131 | occurrences=2 | total_self_time=628.3 | model_flop_rate=5982 | measured_memory_bw=697.9 | hbm_bw=697.9 | operational_intensity=7.983 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.137 | occurrences=2 | total_self_time=92.6 | model_flop_rate=5803 | measured_memory_bw=678.9 | hbm_bw=676.3 | operational_intensity=7.96 | bound_by=HBM
+
+== decode_b8_l512_gemm_only: 26 ops
+  category=convolution fusion | hlo_op_name=fusion.68 | occurrences=2 | total_self_time=633.3 | model_flop_rate=5934 | measured_memory_bw=692.4 | hbm_bw=692.4 | operational_intensity=7.982 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.65 | occurrences=2 | total_self_time=628 | model_flop_rate=5984 | measured_memory_bw=698.2 | hbm_bw=698.2 | operational_intensity=7.982 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.67 | occurrences=2 | total_self_time=180.9 | model_flop_rate=5938 | measured_memory_bw=693.1 | hbm_bw=693.1 | operational_intensity=7.979 | bound_by=HBM
+
+== decode_b8_l8192_full: 63 ops
+  category=convolution fusion | hlo_op_name=fusion.138 | occurrences=2 | total_self_time=632.4 | model_flop_rate=5944 | measured_memory_bw=693.4 | hbm_bw=693.4 | operational_intensity=7.983 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.131 | occurrences=2 | total_self_time=628 | model_flop_rate=5985 | measured_memory_bw=698.2 | hbm_bw=698.2 | operational_intensity=7.983 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.127 | occurrences=2 | total_self_time=358.2 | model_flop_rate=3056 | measured_memory_bw=720 | hbm_bw=697.9 | operational_intensity=3.953 | bound_by=HBM
+
+== decode_b8_l8192_gemm_only: 26 ops
+  category=convolution fusion | hlo_op_name=fusion.68 | occurrences=2 | total_self_time=633.2 | model_flop_rate=5935 | measured_memory_bw=692.4 | hbm_bw=692.4 | operational_intensity=7.982 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.65 | occurrences=2 | total_self_time=627.8 | model_flop_rate=5986 | measured_memory_bw=698.4 | hbm_bw=698.4 | operational_intensity=7.982 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.64 | occurrences=2 | total_self_time=181.3 | model_flop_rate=5925 | measured_memory_bw=691.6 | hbm_bw=691.6 | operational_intensity=7.979 | bound_by=HBM
+
+== decode_stack_b8_l2048: 69 ops
+  category=convolution fusion | hlo_op_name=fusion.138 | occurrences=2 | total_self_time=632.8 | model_flop_rate=5939 | measured_memory_bw=692.9 | hbm_bw=692.9 | operational_intensity=7.983 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.131 | occurrences=2 | total_self_time=628.1 | model_flop_rate=5984 | measured_memory_bw=698.1 | hbm_bw=698.1 | operational_intensity=7.983 | bound_by=HBM
+  category=convolution fusion | hlo_op_name=fusion.134 | occurrences=2 | total_self_time=92.17 | model_flop_rate=2969 | measured_memory_bw=700.6 | hbm_bw=678.1 | operational_intensity=3.947 | bound_by=HBM
+
+== gemm_100x1000x1000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=40.2 | model_flop_rate=3.992e+04 | measured_memory_bw=407.7 | hbm_bw=407.7 | operational_intensity=91.18 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.269 | model_flop_rate=4615 | measured_memory_bw=47.14 | hbm_bw=47.14 | operational_intensity=91.17 | bound_by=HBM
+
+== gemm_100x1024x1024_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=40.75 | model_flop_rate=4.129e+04 | measured_memory_bw=420.9 | hbm_bw=420.9 | operational_intensity=91.37 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.138 | model_flop_rate=4793 | measured_memory_bw=48.86 | hbm_bw=48.86 | operational_intensity=91.36 | bound_by=HBM
+
+== gemm_100x1100x1100_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=47.96 | model_flop_rate=4.048e+04 | measured_memory_bw=410.1 | hbm_bw=410.1 | operational_intensity=91.92 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.386 | model_flop_rate=4726 | measured_memory_bw=47.89 | hbm_bw=47.89 | operational_intensity=91.91 | bound_by=HBM
+
+== gemm_100x1152x1152_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=49.13 | model_flop_rate=4.333e+04 | measured_memory_bw=437.5 | hbm_bw=437.5 | operational_intensity=92.25 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.269 | model_flop_rate=5079 | measured_memory_bw=51.28 | hbm_bw=51.28 | operational_intensity=92.25 | bound_by=HBM
+
+== gemm_100x1280x1280_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=57.92 | model_flop_rate=4.536e+04 | measured_memory_bw=454.4 | hbm_bw=454.4 | operational_intensity=92.97 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=5368 | measured_memory_bw=53.77 | hbm_bw=53.77 | operational_intensity=92.97 | bound_by=HBM
+
+== gemm_100x2000x2000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=116.7 | model_flop_rate=5.494e+04 | measured_memory_bw=536.4 | hbm_bw=536.4 | operational_intensity=95.38 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.266 | model_flop_rate=6680 | measured_memory_bw=65.23 | hbm_bw=65.23 | operational_intensity=95.38 | bound_by=HBM
+
+== gemm_100x2048x2048_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=119.8 | model_flop_rate=5.611e+04 | measured_memory_bw=547.3 | hbm_bw=547.3 | operational_intensity=95.48 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.105 | model_flop_rate=6836 | measured_memory_bw=66.68 | hbm_bw=66.68 | operational_intensity=95.48 | bound_by=HBM
+
+== gemm_128x1000x1000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=43.26 | model_flop_rate=4.749e+04 | measured_memory_bw=388.6 | hbm_bw=388.6 | operational_intensity=113.8 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.236 | model_flop_rate=5523 | measured_memory_bw=45.19 | hbm_bw=45.19 | operational_intensity=113.8 | bound_by=HBM
+
+== gemm_128x1024x1024_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=42.82 | model_flop_rate=5.03e+04 | measured_memory_bw=410.5 | hbm_bw=410.5 | operational_intensity=114.1 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.072 | model_flop_rate=5866 | measured_memory_bw=47.88 | hbm_bw=47.88 | operational_intensity=114.1 | bound_by=HBM
+
+== gemm_128x1100x1100_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=51.53 | model_flop_rate=4.822e+04 | measured_memory_bw=390.6 | hbm_bw=390.6 | operational_intensity=115 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=5668 | measured_memory_bw=45.92 | hbm_bw=45.92 | operational_intensity=115 | bound_by=HBM
+
+== gemm_128x1152x1152_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=52.14 | model_flop_rate=5.226e+04 | measured_memory_bw=421.4 | hbm_bw=421.4 | operational_intensity=115.5 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.237 | model_flop_rate=6151 | measured_memory_bw=49.6 | hbm_bw=49.6 | operational_intensity=115.5 | bound_by=HBM
+
+== gemm_128x1280x1280_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=62.33 | model_flop_rate=5.396e+04 | measured_memory_bw=430.8 | hbm_bw=430.8 | operational_intensity=116.6 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.364 | model_flop_rate=6399 | measured_memory_bw=51.1 | hbm_bw=51.1 | operational_intensity=116.6 | bound_by=HBM
+
+== gemm_128x14336x4096_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1315 | model_flop_rate=9.152e+04 | measured_memory_bw=686.3 | hbm_bw=686.3 | operational_intensity=124.2 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.269 | model_flop_rate=1.141e+04 | measured_memory_bw=85.58 | hbm_bw=85.58 | operational_intensity=124.2 | bound_by=HBM
+
+== gemm_128x14336x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1315 | model_flop_rate=9.152e+04 | measured_memory_bw=686.3 | hbm_bw=686.3 | operational_intensity=124.2 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.101 | model_flop_rate=1.141e+04 | measured_memory_bw=85.59 | hbm_bw=85.59 | operational_intensity=124.2 | bound_by=HBM
+
+== gemm_128x14336x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=765 | model_flop_rate=1.573e+05 | measured_memory_bw=607.6 | hbm_bw=607.6 | operational_intensity=241.1 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.425 | model_flop_rate=1.957e+04 | measured_memory_bw=75.61 | hbm_bw=75.61 | operational_intensity=241.1 | bound_by=HBM
+
+== gemm_128x14336x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=764.6 | model_flop_rate=1.574e+05 | measured_memory_bw=608 | hbm_bw=608 | operational_intensity=241.1 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.096 | model_flop_rate=1.959e+04 | measured_memory_bw=75.69 | hbm_bw=75.69 | operational_intensity=241.1 | bound_by=HBM
+
+== gemm_128x2000x2000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=120.3 | model_flop_rate=6.818e+04 | measured_memory_bw=527.1 | hbm_bw=527.1 | operational_intensity=120.5 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=4.045 | model_flop_rate=8246 | measured_memory_bw=63.74 | hbm_bw=63.74 | operational_intensity=120.5 | bound_by=HBM
+
+== gemm_128x2048x2048_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=123.9 | model_flop_rate=6.94e+04 | measured_memory_bw=535.8 | hbm_bw=535.8 | operational_intensity=120.6 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.104 | model_flop_rate=8464 | measured_memory_bw=65.34 | hbm_bw=65.34 | operational_intensity=120.6 | bound_by=HBM
+
+== gemm_128x4096x28672_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2525 | model_flop_rate=9.528e+04 | measured_memory_bw=696.2 | hbm_bw=696.2 | operational_intensity=127.5 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.384 | model_flop_rate=1.189e+04 | measured_memory_bw=86.9 | hbm_bw=86.9 | operational_intensity=127.5 | bound_by=HBM
+
+== gemm_128x4096x28672_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2524 | model_flop_rate=9.532e+04 | measured_memory_bw=696.4 | hbm_bw=696.4 | operational_intensity=127.5 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.099 | model_flop_rate=1.19e+04 | measured_memory_bw=86.94 | hbm_bw=86.94 | operational_intensity=127.5 | bound_by=HBM
+
+== gemm_128x4096x28672_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1498 | model_flop_rate=1.606e+05 | measured_memory_bw=589.4 | hbm_bw=589.4 | operational_intensity=253.8 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.357 | model_flop_rate=2.003e+04 | measured_memory_bw=73.51 | hbm_bw=73.51 | operational_intensity=253.8 | bound_by=Compute
+
+== gemm_128x4096x28672_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1500 | model_flop_rate=1.604e+05 | measured_memory_bw=588.5 | hbm_bw=588.5 | operational_intensity=253.8 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.104 | model_flop_rate=2.001e+04 | measured_memory_bw=73.41 | hbm_bw=73.41 | operational_intensity=253.8 | bound_by=Compute
+
+== gemm_128x4096x4096_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=395.9 | model_flop_rate=8.686e+04 | measured_memory_bw=651.2 | hbm_bw=651.2 | operational_intensity=124.2 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.107 | model_flop_rate=1.077e+04 | measured_memory_bw=80.77 | hbm_bw=80.77 | operational_intensity=124.2 | bound_by=HBM
+
+== gemm_128x4096x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=395.6 | model_flop_rate=8.693e+04 | measured_memory_bw=651.8 | hbm_bw=651.8 | operational_intensity=124.2 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.096 | model_flop_rate=1.078e+04 | measured_memory_bw=80.84 | hbm_bw=80.84 | operational_intensity=124.2 | bound_by=HBM
+
+== gemm_128x4096x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=243.3 | model_flop_rate=1.413e+05 | measured_memory_bw=545.8 | hbm_bw=545.8 | operational_intensity=241.1 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.163 | model_flop_rate=1.744e+04 | measured_memory_bw=67.35 | hbm_bw=67.35 | operational_intensity=241.1 | bound_by=HBM
+
+== gemm_128x4096x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=243.3 | model_flop_rate=1.413e+05 | measured_memory_bw=545.9 | hbm_bw=545.9 | operational_intensity=241.1 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.098 | model_flop_rate=1.744e+04 | measured_memory_bw=67.38 | hbm_bw=67.38 | operational_intensity=241.1 | bound_by=HBM
+
+== gemm_128x4096x6144_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=573.5 | model_flop_rate=8.991e+04 | measured_memory_bw=667.4 | hbm_bw=667.4 | operational_intensity=125.5 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.261 | model_flop_rate=1.118e+04 | measured_memory_bw=82.96 | hbm_bw=82.96 | operational_intensity=125.5 | bound_by=HBM
+
+== gemm_128x4096x6144_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=573.5 | model_flop_rate=8.991e+04 | measured_memory_bw=667.5 | hbm_bw=667.5 | operational_intensity=125.5 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.459 | model_flop_rate=1.117e+04 | measured_memory_bw=82.93 | hbm_bw=82.93 | operational_intensity=125.5 | bound_by=HBM
+
+== gemm_128x4096x6144_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=340.7 | model_flop_rate=1.514e+05 | measured_memory_bw=573.2 | hbm_bw=573.2 | operational_intensity=245.9 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.266 | model_flop_rate=1.874e+04 | measured_memory_bw=70.98 | hbm_bw=70.98 | operational_intensity=245.9 | bound_by=HBM
+
+== gemm_128x4096x6144_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=339.7 | model_flop_rate=1.518e+05 | measured_memory_bw=574.9 | hbm_bw=574.9 | operational_intensity=245.9 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.099 | model_flop_rate=1.88e+04 | measured_memory_bw=71.22 | hbm_bw=71.22 | operational_intensity=245.9 | bound_by=HBM
+
+== gemm_1x14336x4096_bf16_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=1250 | model_flop_rate=1879 | measured_memory_bw=700 | hbm_bw=699.8 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=5.332 | model_flop_rate=86.03 | measured_memory_bw=80.12 | hbm_bw=40.06 | operational_intensity=1 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.341 | model_flop_rate=232.8 | measured_memory_bw=86.77 | hbm_bw=86.77 | operational_intensity=2.498 | bound_by=HBM
+
+== gemm_1x14336x4096_bf16_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=1250 | model_flop_rate=1879 | measured_memory_bw=700.1 | hbm_bw=699.9 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=5.447 | model_flop_rate=84.21 | measured_memory_bw=78.43 | hbm_bw=39.21 | operational_intensity=1 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.17 | model_flop_rate=232.8 | measured_memory_bw=86.78 | hbm_bw=86.78 | operational_intensity=2.498 | bound_by=HBM
+
+== gemm_1x14336x4096_int8_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=633.3 | model_flop_rate=4451 | measured_memory_bw=691.3 | hbm_bw=690.8 | operational_intensity=5.996 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=5.43 | model_flop_rate=84.48 | measured_memory_bw=78.69 | hbm_bw=39.34 | operational_intensity=1 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.341 | model_flop_rate=546.6 | measured_memory_bw=84.97 | hbm_bw=84.97 | operational_intensity=5.991 | bound_by=HBM
+
+== gemm_1x14336x4096_int8_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=633.1 | model_flop_rate=4452 | measured_memory_bw=691.5 | hbm_bw=691 | operational_intensity=5.996 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=5.29 | model_flop_rate=86.72 | measured_memory_bw=80.77 | hbm_bw=40.38 | operational_intensity=1 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.29 | model_flop_rate=546.9 | measured_memory_bw=85.02 | hbm_bw=85.02 | operational_intensity=5.991 | bound_by=HBM
+
+== gemm_1x4096x28672_bf16_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=2492 | model_flop_rate=1885 | measured_memory_bw=702.3 | hbm_bw=702.1 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.525 | model_flop_rate=37.18 | measured_memory_bw=34.63 | hbm_bw=17.31 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.356 | model_flop_rate=234.7 | measured_memory_bw=87.48 | hbm_bw=87.48 | operational_intensity=2.499 | bound_by=HBM
+
+== gemm_1x4096x28672_bf16_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=2493 | model_flop_rate=1885 | measured_memory_bw=702.3 | hbm_bw=702.1 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.56 | model_flop_rate=36.82 | measured_memory_bw=34.29 | hbm_bw=17.14 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.152 | model_flop_rate=234.7 | measured_memory_bw=87.48 | hbm_bw=87.48 | operational_intensity=2.499 | bound_by=HBM
+
+== gemm_1x4096x28672_int8_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=1255 | model_flop_rate=4490 | measured_memory_bw=697.3 | hbm_bw=697 | operational_intensity=5.996 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.708 | model_flop_rate=35.35 | measured_memory_bw=32.93 | hbm_bw=16.46 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.388 | model_flop_rate=556.9 | measured_memory_bw=86.53 | hbm_bw=86.53 | operational_intensity=5.993 | bound_by=HBM
+
+== gemm_1x4096x28672_int8_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=1255 | model_flop_rate=4491 | measured_memory_bw=697.5 | hbm_bw=697.1 | operational_intensity=5.996 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.695 | model_flop_rate=35.47 | measured_memory_bw=33.04 | hbm_bw=16.52 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.18 | model_flop_rate=557.1 | measured_memory_bw=86.56 | hbm_bw=86.56 | operational_intensity=5.993 | bound_by=HBM
+
+== gemm_1x4096x4096_bf16_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=364.7 | model_flop_rate=1840 | measured_memory_bw=685.8 | hbm_bw=685.5 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.405 | model_flop_rate=38.49 | measured_memory_bw=35.85 | hbm_bw=17.93 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.144 | model_flop_rate=224.4 | measured_memory_bw=83.68 | hbm_bw=83.68 | operational_intensity=2.498 | bound_by=HBM
+
+== gemm_1x4096x4096_bf16_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=364.9 | model_flop_rate=1839 | measured_memory_bw=685.5 | hbm_bw=685.2 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.396 | model_flop_rate=38.59 | measured_memory_bw=35.95 | hbm_bw=17.97 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.158 | model_flop_rate=224.3 | measured_memory_bw=83.65 | hbm_bw=83.65 | operational_intensity=2.498 | bound_by=HBM
+
+== gemm_1x4096x4096_int8_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=190.4 | model_flop_rate=4229 | measured_memory_bw=657.1 | hbm_bw=656.5 | operational_intensity=5.994 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.755 | model_flop_rate=34.91 | measured_memory_bw=32.51 | hbm_bw=16.25 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.146 | model_flop_rate=503.6 | measured_memory_bw=78.34 | hbm_bw=78.34 | operational_intensity=5.987 | bound_by=HBM
+
+== gemm_1x4096x4096_int8_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=190.2 | model_flop_rate=4235 | measured_memory_bw=658 | hbm_bw=657.3 | operational_intensity=5.994 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.456 | model_flop_rate=37.92 | measured_memory_bw=35.32 | hbm_bw=17.66 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.269 | model_flop_rate=504.6 | measured_memory_bw=78.5 | hbm_bw=78.5 | operational_intensity=5.987 | bound_by=HBM
+
+== gemm_1x4096x6144_bf16_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=542.5 | model_flop_rate=1856 | measured_memory_bw=691.6 | hbm_bw=691.3 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.539 | model_flop_rate=37.04 | measured_memory_bw=34.5 | hbm_bw=17.25 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.473 | model_flop_rate=227.9 | measured_memory_bw=84.98 | hbm_bw=84.98 | operational_intensity=2.498 | bound_by=HBM
+
+== gemm_1x4096x6144_bf16_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=542.2 | model_flop_rate=1856 | measured_memory_bw=691.9 | hbm_bw=691.6 | operational_intensity=2.499 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.578 | model_flop_rate=36.64 | measured_memory_bw=34.13 | hbm_bw=17.06 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.184 | model_flop_rate=228.1 | measured_memory_bw=85.06 | hbm_bw=85.06 | operational_intensity=2.498 | bound_by=HBM
+
+== gemm_1x4096x6144_int8_cold: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=277.6 | model_flop_rate=4351 | measured_memory_bw=675.9 | hbm_bw=675.3 | operational_intensity=5.995 | bound_by=HBM
+  category=while | hlo_op_name=while.11 | occurrences=1 | total_self_time=3.486 | model_flop_rate=525.8 | measured_memory_bw=81.76 | hbm_bw=81.76 | operational_intensity=5.989 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.436 | model_flop_rate=38.14 | measured_memory_bw=35.53 | hbm_bw=17.76 | operational_intensity=0.9999 | bound_by=HBM
+
+== gemm_1x4096x6144_int8_warm: 4 ops
+  category=loop fusion | hlo_op_name=fusion.2 | occurrences=8 | total_self_time=276.7 | model_flop_rate=4365 | measured_memory_bw=678.1 | hbm_bw=677.6 | operational_intensity=5.995 | bound_by=HBM
+  category=loop fusion | hlo_op_name=add_reduce_fusion.2 | occurrences=8 | total_self_time=3.848 | model_flop_rate=34.07 | measured_memory_bw=31.73 | hbm_bw=15.86 | operational_intensity=0.9999 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.183 | model_flop_rate=527.3 | measured_memory_bw=81.99 | hbm_bw=81.99 | operational_intensity=5.989 | bound_by=HBM
+
+== gemm_200x1000x1000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=50.38 | model_flop_rate=6.371e+04 | measured_memory_bw=354.9 | hbm_bw=354.9 | operational_intensity=167.2 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.281 | model_flop_rate=7477 | measured_memory_bw=41.66 | hbm_bw=41.66 | operational_intensity=167.2 | bound_by=HBM
+
+== gemm_200x1024x1024_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=51.22 | model_flop_rate=6.57e+04 | measured_memory_bw=364.6 | hbm_bw=364.6 | operational_intensity=167.8 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.104 | model_flop_rate=7744 | measured_memory_bw=42.98 | hbm_bw=42.98 | operational_intensity=167.8 | bound_by=HBM
+
+== gemm_200x1100x1100_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=60.43 | model_flop_rate=6.425e+04 | measured_memory_bw=352.6 | hbm_bw=352.6 | operational_intensity=169.7 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.286 | model_flop_rate=7617 | measured_memory_bw=41.81 | hbm_bw=41.81 | operational_intensity=169.7 | bound_by=HBM
+
+== gemm_200x1152x1152_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=61.81 | model_flop_rate=6.889e+04 | measured_memory_bw=375.5 | hbm_bw=375.5 | operational_intensity=170.9 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.269 | model_flop_rate=8178 | measured_memory_bw=44.58 | hbm_bw=44.58 | operational_intensity=170.8 | bound_by=HBM
+
+== gemm_200x1280x1280_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=74 | model_flop_rate=7.101e+04 | measured_memory_bw=381.5 | hbm_bw=381.5 | operational_intensity=173.4 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=8501 | measured_memory_bw=45.67 | hbm_bw=45.67 | operational_intensity=173.4 | bound_by=HBM
+
+== gemm_200x2000x2000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=136.7 | model_flop_rate=9.376e+04 | measured_memory_bw=479.5 | hbm_bw=479.5 | operational_intensity=182.1 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.788 | model_flop_rate=1.14e+04 | measured_memory_bw=58.33 | hbm_bw=58.33 | operational_intensity=182.1 | bound_by=HBM
+
+== gemm_200x2048x2048_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=139.9 | model_flop_rate=9.61e+04 | measured_memory_bw=490.5 | hbm_bw=490.5 | operational_intensity=182.5 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.101 | model_flop_rate=1.175e+04 | measured_memory_bw=59.98 | hbm_bw=59.98 | operational_intensity=182.5 | bound_by=HBM
+
+== gemm_256x1000x1000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=57.2 | model_flop_rate=7.182e+04 | measured_memory_bw=327.2 | hbm_bw=327.2 | operational_intensity=204.4 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.24 | model_flop_rate=8497 | measured_memory_bw=38.71 | hbm_bw=38.71 | operational_intensity=204.4 | bound_by=HBM
+
+== gemm_256x1024x1024_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=56.61 | model_flop_rate=7.61e+04 | measured_memory_bw=345 | hbm_bw=345 | operational_intensity=205.4 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.075 | model_flop_rate=9022 | measured_memory_bw=40.91 | hbm_bw=40.91 | operational_intensity=205.4 | bound_by=HBM
+
+== gemm_256x1100x1100_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=68.79 | model_flop_rate=7.224e+04 | measured_memory_bw=323.1 | hbm_bw=323.1 | operational_intensity=208.2 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.246 | model_flop_rate=8624 | measured_memory_bw=38.57 | hbm_bw=38.57 | operational_intensity=208.2 | bound_by=HBM
+
+== gemm_256x1152x1152_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=69.17 | model_flop_rate=7.879e+04 | measured_memory_bw=349.4 | hbm_bw=349.4 | operational_intensity=210 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.254 | model_flop_rate=9406 | measured_memory_bw=41.72 | hbm_bw=41.72 | operational_intensity=210 | bound_by=HBM
+
+== gemm_256x1280x1280_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=82.94 | model_flop_rate=8.11e+04 | measured_memory_bw=353.2 | hbm_bw=353.2 | operational_intensity=213.8 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.395 | model_flop_rate=9739 | measured_memory_bw=42.42 | hbm_bw=42.42 | operational_intensity=213.8 | bound_by=HBM
+
+== gemm_256x2000x2000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=148.3 | model_flop_rate=1.107e+05 | measured_memory_bw=453.4 | hbm_bw=453.4 | operational_intensity=227.3 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.381 | model_flop_rate=1.352e+04 | measured_memory_bw=55.41 | hbm_bw=55.41 | operational_intensity=227.3 | bound_by=HBM
+
+== gemm_256x2048x2048_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=153.3 | model_flop_rate=1.122e+05 | measured_memory_bw=458.6 | hbm_bw=458.6 | operational_intensity=227.9 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.099 | model_flop_rate=1.375e+04 | measured_memory_bw=56.19 | hbm_bw=56.19 | operational_intensity=227.9 | bound_by=HBM
+
+== gemm_32x14336x4096_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1265 | model_flop_rate=2.377e+04 | measured_memory_bw=696.8 | hbm_bw=696.8 | operational_intensity=31.77 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.266 | model_flop_rate=2964 | measured_memory_bw=86.88 | hbm_bw=86.88 | operational_intensity=31.77 | bound_by=HBM
+
+== gemm_32x14336x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1266 | model_flop_rate=2.376e+04 | measured_memory_bw=696.6 | hbm_bw=696.6 | operational_intensity=31.77 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.096 | model_flop_rate=2963 | measured_memory_bw=86.87 | hbm_bw=86.87 | operational_intensity=31.77 | bound_by=HBM
+
+== gemm_32x14336x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=654.8 | model_flop_rate=4.594e+04 | measured_memory_bw=678.6 | hbm_bw=678.6 | operational_intensity=63.05 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.265 | model_flop_rate=5714 | measured_memory_bw=84.41 | hbm_bw=84.41 | operational_intensity=63.05 | bound_by=HBM
+
+== gemm_32x14336x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=653.9 | model_flop_rate=4.6e+04 | measured_memory_bw=679.5 | hbm_bw=679.5 | operational_intensity=63.05 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.096 | model_flop_rate=5723 | measured_memory_bw=84.54 | hbm_bw=84.54 | operational_intensity=63.05 | bound_by=HBM
+
+== gemm_32x4096x28672_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2508 | model_flop_rate=2.398e+04 | measured_memory_bw=698.6 | hbm_bw=698.6 | operational_intensity=31.97 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=2994 | measured_memory_bw=87.21 | hbm_bw=87.21 | operational_intensity=31.97 | bound_by=HBM
+
+== gemm_32x4096x28672_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2508 | model_flop_rate=2.399e+04 | measured_memory_bw=698.6 | hbm_bw=698.6 | operational_intensity=31.97 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.194 | model_flop_rate=2994 | measured_memory_bw=87.22 | hbm_bw=87.22 | operational_intensity=31.97 | bound_by=HBM
+
+== gemm_32x4096x28672_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1277 | model_flop_rate=4.711e+04 | measured_memory_bw=686.9 | hbm_bw=686.9 | operational_intensity=63.88 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=5874 | measured_memory_bw=85.64 | hbm_bw=85.64 | operational_intensity=63.88 | bound_by=HBM
+
+== gemm_32x4096x28672_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1276 | model_flop_rate=4.713e+04 | measured_memory_bw=687.1 | hbm_bw=687.1 | operational_intensity=63.88 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.095 | model_flop_rate=5876 | measured_memory_bw=85.68 | hbm_bw=85.68 | operational_intensity=63.88 | bound_by=HBM
+
+== gemm_32x4096x4096_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=371.1 | model_flop_rate=2.316e+04 | measured_memory_bw=678.9 | hbm_bw=678.9 | operational_intensity=31.78 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.105 | model_flop_rate=2871 | measured_memory_bw=84.16 | hbm_bw=84.16 | operational_intensity=31.77 | bound_by=HBM
+
+== gemm_32x4096x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=371.9 | model_flop_rate=2.311e+04 | measured_memory_bw=677.4 | hbm_bw=677.4 | operational_intensity=31.78 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.096 | model_flop_rate=2865 | measured_memory_bw=83.98 | hbm_bw=83.98 | operational_intensity=31.78 | bound_by=HBM
+
+== gemm_32x4096x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=198.8 | model_flop_rate=4.323e+04 | measured_memory_bw=638.5 | hbm_bw=638.5 | operational_intensity=63.06 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.214 | model_flop_rate=5318 | measured_memory_bw=78.54 | hbm_bw=78.54 | operational_intensity=63.06 | bound_by=HBM
+
+== gemm_32x4096x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=194.7 | model_flop_rate=4.416e+04 | measured_memory_bw=652.1 | hbm_bw=652.1 | operational_intensity=63.06 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.104 | model_flop_rate=5433 | measured_memory_bw=80.23 | hbm_bw=80.23 | operational_intensity=63.06 | bound_by=HBM
+
+== gemm_32x4096x6144_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=548.6 | model_flop_rate=2.35e+04 | measured_memory_bw=687.1 | hbm_bw=687.1 | operational_intensity=31.85 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.266 | model_flop_rate=2920 | measured_memory_bw=85.38 | hbm_bw=85.38 | operational_intensity=31.85 | bound_by=HBM
+
+== gemm_32x4096x6144_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=548.5 | model_flop_rate=2.35e+04 | measured_memory_bw=687.2 | hbm_bw=687.2 | operational_intensity=31.85 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.092 | model_flop_rate=2922 | measured_memory_bw=85.42 | hbm_bw=85.42 | operational_intensity=31.85 | bound_by=HBM
+
+== gemm_32x4096x6144_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=281.6 | model_flop_rate=4.579e+04 | measured_memory_bw=672.9 | hbm_bw=672.9 | operational_intensity=63.38 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.274 | model_flop_rate=5658 | measured_memory_bw=83.14 | hbm_bw=83.14 | operational_intensity=63.38 | bound_by=HBM
+
+== gemm_32x4096x6144_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=281.7 | model_flop_rate=4.576e+04 | measured_memory_bw=672.5 | hbm_bw=672.5 | operational_intensity=63.38 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.204 | model_flop_rate=5656 | measured_memory_bw=83.12 | hbm_bw=83.12 | operational_intensity=63.38 | bound_by=HBM
+
+== gemm_512x1000x1000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=82.41 | model_flop_rate=9.97e+04 | measured_memory_bw=273.4 | hbm_bw=273.4 | operational_intensity=339.6 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=1.199e+04 | measured_memory_bw=32.87 | hbm_bw=32.87 | operational_intensity=339.6 | bound_by=Compute
+
+== gemm_512x1024x1024_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=74.86 | model_flop_rate=1.151e+05 | measured_memory_bw=313.1 | hbm_bw=313.1 | operational_intensity=342.3 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.101 | model_flop_rate=1.381e+04 | measured_memory_bw=37.58 | hbm_bw=37.58 | operational_intensity=342.3 | bound_by=Compute
+
+== gemm_512x1100x1100_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=98.98 | model_flop_rate=1.004e+05 | measured_memory_bw=266.9 | hbm_bw=266.9 | operational_intensity=350.3 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.271 | model_flop_rate=1.215e+04 | measured_memory_bw=32.3 | hbm_bw=32.3 | operational_intensity=350.3 | bound_by=Compute
+
+== gemm_512x1152x1152_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=98.11 | model_flop_rate=1.111e+05 | measured_memory_bw=291.1 | hbm_bw=291.1 | operational_intensity=355.4 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.269 | model_flop_rate=1.344e+04 | measured_memory_bw=35.22 | hbm_bw=35.22 | operational_intensity=355.4 | bound_by=Compute
+
+== gemm_512x1280x1280_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=108.7 | model_flop_rate=1.237e+05 | measured_memory_bw=314.3 | hbm_bw=314.3 | operational_intensity=366.6 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.265 | model_flop_rate=1.501e+04 | measured_memory_bw=38.15 | hbm_bw=38.15 | operational_intensity=366.6 | bound_by=Compute
+
+== gemm_512x14336x4096_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2577 | model_flop_rate=1.868e+05 | measured_memory_bw=382 | hbm_bw=382 | operational_intensity=455.4 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=2.332e+04 | measured_memory_bw=47.69 | hbm_bw=47.69 | operational_intensity=455.4 | bound_by=Compute
+
+== gemm_512x14336x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2574 | model_flop_rate=1.87e+05 | measured_memory_bw=382.5 | hbm_bw=382.5 | operational_intensity=455.4 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.402 | model_flop_rate=2.334e+04 | measured_memory_bw=47.75 | hbm_bw=47.75 | operational_intensity=455.4 | bound_by=Compute
+
+== gemm_512x14336x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2576 | model_flop_rate=1.869e+05 | measured_memory_bw=212.3 | hbm_bw=212.3 | operational_intensity=819.7 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.265 | model_flop_rate=2.333e+04 | measured_memory_bw=26.51 | hbm_bw=26.51 | operational_intensity=819.7 | bound_by=Compute
+
+== gemm_512x14336x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2576 | model_flop_rate=1.868e+05 | measured_memory_bw=212.3 | hbm_bw=212.3 | operational_intensity=819.7 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.312 | model_flop_rate=2.333e+04 | measured_memory_bw=26.5 | hbm_bw=26.5 | operational_intensity=819.7 | bound_by=Compute
+
+== gemm_512x2000x2000_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=240.6 | model_flop_rate=1.364e+05 | measured_memory_bw=311.2 | hbm_bw=311.2 | operational_intensity=408.3 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=1.682e+04 | measured_memory_bw=38.37 | hbm_bw=38.37 | operational_intensity=408.2 | bound_by=Compute
+
+== gemm_512x2048x2048_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=231.2 | model_flop_rate=1.488e+05 | measured_memory_bw=337.8 | hbm_bw=337.8 | operational_intensity=410.2 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.291 | model_flop_rate=1.834e+04 | measured_memory_bw=41.64 | hbm_bw=41.64 | operational_intensity=410.2 | bound_by=Compute
+
+== gemm_512x4096x28672_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=5135 | model_flop_rate=1.874e+05 | measured_memory_bw=346.9 | hbm_bw=346.9 | operational_intensity=503.2 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.377 | model_flop_rate=2.341e+04 | measured_memory_bw=43.33 | hbm_bw=43.33 | operational_intensity=503.2 | bound_by=Compute
+
+== gemm_512x4096x28672_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=5129 | model_flop_rate=1.876e+05 | measured_memory_bw=347.3 | hbm_bw=347.3 | operational_intensity=503.2 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.224 | model_flop_rate=2.344e+04 | measured_memory_bw=43.38 | hbm_bw=43.38 | operational_intensity=503.2 | bound_by=Compute
+
+== gemm_512x4096x28672_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=5230 | model_flop_rate=1.84e+05 | measured_memory_bw=173.3 | hbm_bw=173.3 | operational_intensity=989 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.268 | model_flop_rate=2.299e+04 | measured_memory_bw=21.65 | hbm_bw=21.65 | operational_intensity=989 | bound_by=Compute
+
+== gemm_512x4096x28672_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=5229 | model_flop_rate=1.84e+05 | measured_memory_bw=173.3 | hbm_bw=173.3 | operational_intensity=989 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.141 | model_flop_rate=2.299e+04 | measured_memory_bw=21.65 | hbm_bw=21.65 | operational_intensity=989 | bound_by=Compute
+
+== gemm_512x4096x4096_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=795.8 | model_flop_rate=1.728e+05 | measured_memory_bw=353.4 | hbm_bw=353.4 | operational_intensity=455.4 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.1 | model_flop_rate=2.152e+04 | measured_memory_bw=44.01 | hbm_bw=44.01 | operational_intensity=455.4 | bound_by=Compute
+
+== gemm_512x4096x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=795.3 | model_flop_rate=1.729e+05 | measured_memory_bw=353.6 | hbm_bw=353.6 | operational_intensity=455.4 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.098 | model_flop_rate=2.153e+04 | measured_memory_bw=44.03 | hbm_bw=44.03 | operational_intensity=455.4 | bound_by=Compute
+
+== gemm_512x4096x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=772.4 | model_flop_rate=1.781e+05 | measured_memory_bw=202.3 | hbm_bw=202.3 | operational_intensity=819.8 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.101 | model_flop_rate=2.217e+04 | measured_memory_bw=25.19 | hbm_bw=25.19 | operational_intensity=819.8 | bound_by=Compute
+
+== gemm_512x4096x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=772.1 | model_flop_rate=1.781e+05 | measured_memory_bw=202.4 | hbm_bw=202.4 | operational_intensity=819.8 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.095 | model_flop_rate=2.218e+04 | measured_memory_bw=25.2 | hbm_bw=25.2 | operational_intensity=819.8 | bound_by=Compute
+
+== gemm_512x4096x6144_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1158 | model_flop_rate=1.782e+05 | measured_memory_bw=351 | hbm_bw=351 | operational_intensity=472.9 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.399 | model_flop_rate=2.221e+04 | measured_memory_bw=43.74 | hbm_bw=43.74 | operational_intensity=472.9 | bound_by=Compute
+
+== gemm_512x4096x6144_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1156 | model_flop_rate=1.784e+05 | measured_memory_bw=351.4 | hbm_bw=351.4 | operational_intensity=472.9 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.099 | model_flop_rate=2.224e+04 | measured_memory_bw=43.8 | hbm_bw=43.8 | operational_intensity=472.9 | bound_by=Compute
+
+== gemm_512x4096x6144_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1140 | model_flop_rate=1.809e+05 | measured_memory_bw=191.8 | hbm_bw=191.8 | operational_intensity=878.2 | bound_by=Compute
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.272 | model_flop_rate=2.255e+04 | measured_memory_bw=23.91 | hbm_bw=23.91 | operational_intensity=878.2 | bound_by=Compute
+
+== gemm_512x4096x6144_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1140 | model_flop_rate=1.809e+05 | measured_memory_bw=191.9 | hbm_bw=191.9 | operational_intensity=878.2 | bound_by=Compute
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.099 | model_flop_rate=2.255e+04 | measured_memory_bw=23.92 | hbm_bw=23.92 | operational_intensity=878.2 | bound_by=Compute
+
+== gemm_8x14336x4096_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1260 | model_flop_rate=5968 | measured_memory_bw=695.7 | hbm_bw=695.7 | operational_intensity=7.989 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.571 | model_flop_rate=743.8 | measured_memory_bw=86.72 | hbm_bw=86.72 | operational_intensity=7.989 | bound_by=HBM
+
+== gemm_8x14336x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1260 | model_flop_rate=5968 | measured_memory_bw=695.7 | hbm_bw=695.7 | operational_intensity=7.989 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.479 | model_flop_rate=743.9 | measured_memory_bw=86.72 | hbm_bw=86.72 | operational_intensity=7.989 | bound_by=HBM
+
+== gemm_8x14336x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=636.9 | model_flop_rate=1.181e+04 | measured_memory_bw=689.6 | hbm_bw=689.6 | operational_intensity=15.95 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.34 | model_flop_rate=1468 | measured_memory_bw=85.75 | hbm_bw=85.75 | operational_intensity=15.95 | bound_by=HBM
+
+== gemm_8x14336x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=637.7 | model_flop_rate=1.179e+04 | measured_memory_bw=688.7 | hbm_bw=688.7 | operational_intensity=15.95 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.101 | model_flop_rate=1467 | measured_memory_bw=85.68 | hbm_bw=85.68 | operational_intensity=15.95 | bound_by=HBM
+
+== gemm_8x4096x28672_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2519 | model_flop_rate=5969 | measured_memory_bw=694.9 | hbm_bw=694.9 | operational_intensity=8 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.373 | model_flop_rate=745.1 | measured_memory_bw=86.74 | hbm_bw=86.74 | operational_intensity=8 | bound_by=HBM
+
+== gemm_8x4096x28672_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=2502 | model_flop_rate=6011 | measured_memory_bw=699.8 | hbm_bw=699.8 | operational_intensity=8 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.19 | model_flop_rate=750.4 | measured_memory_bw=87.36 | hbm_bw=87.36 | operational_intensity=8 | bound_by=HBM
+
+== gemm_8x4096x28672_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1256 | model_flop_rate=1.197e+04 | measured_memory_bw=697 | hbm_bw=697 | operational_intensity=16 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.371 | model_flop_rate=1492 | measured_memory_bw=86.9 | hbm_bw=86.9 | operational_intensity=16 | bound_by=HBM
+
+== gemm_8x4096x28672_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=1256 | model_flop_rate=1.197e+04 | measured_memory_bw=697.1 | hbm_bw=697.1 | operational_intensity=16 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.096 | model_flop_rate=1493 | measured_memory_bw=86.93 | hbm_bw=86.93 | operational_intensity=16 | bound_by=HBM
+
+== gemm_8x4096x4096_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=368.9 | model_flop_rate=5825 | measured_memory_bw=679 | hbm_bw=679 | operational_intensity=7.99 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.099 | model_flop_rate=722.1 | measured_memory_bw=84.16 | hbm_bw=84.16 | operational_intensity=7.99 | bound_by=HBM
+
+== gemm_8x4096x4096_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=192.9 | model_flop_rate=1.114e+04 | measured_memory_bw=650.5 | hbm_bw=650.5 | operational_intensity=15.95 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.107 | model_flop_rate=1370 | measured_memory_bw=80.03 | hbm_bw=80.03 | operational_intensity=15.95 | bound_by=HBM
+
+== gemm_8x4096x4096_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=192.4 | model_flop_rate=1.117e+04 | measured_memory_bw=652.2 | hbm_bw=652.2 | operational_intensity=15.95 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.104 | model_flop_rate=1374 | measured_memory_bw=80.23 | hbm_bw=80.23 | operational_intensity=15.95 | bound_by=HBM
+
+== gemm_8x4096x6144_bf16_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=550.3 | model_flop_rate=5857 | measured_memory_bw=682.4 | hbm_bw=682.4 | operational_intensity=7.994 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.265 | model_flop_rate=727.8 | measured_memory_bw=84.79 | hbm_bw=84.79 | operational_intensity=7.994 | bound_by=HBM
+
+== gemm_8x4096x6144_bf16_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=547.7 | model_flop_rate=5885 | measured_memory_bw=685.6 | hbm_bw=685.6 | operational_intensity=7.994 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.386 | model_flop_rate=731.1 | measured_memory_bw=85.17 | hbm_bw=85.17 | operational_intensity=7.994 | bound_by=HBM
+
+== gemm_8x4096x6144_int8_cold: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=282.4 | model_flop_rate=1.141e+04 | measured_memory_bw=665.6 | hbm_bw=665.6 | operational_intensity=15.97 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.421 | model_flop_rate=1409 | measured_memory_bw=82.2 | hbm_bw=82.2 | operational_intensity=15.97 | bound_by=HBM
+
+== gemm_8x4096x6144_int8_warm: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=282.4 | model_flop_rate=1.142e+04 | measured_memory_bw=665.8 | hbm_bw=665.8 | operational_intensity=15.97 | bound_by=HBM
+  category=while | hlo_op_name=while.2 | occurrences=1 | total_self_time=3.092 | model_flop_rate=1411 | measured_memory_bw=82.32 | hbm_bw=82.32 | operational_intensity=15.97 | bound_by=HBM
+
+== hbm_1024mb: 3 ops
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.5 | occurrences=2 | total_self_time=2841 | model_flop_rate=1890 | measured_memory_bw=704 | hbm_bw=704 | operational_intensity=2.5 | bound_by=HBM
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.4 | occurrences=2 | total_self_time=2841 | model_flop_rate=1890 | measured_memory_bw=704 | hbm_bw=704 | operational_intensity=2.5 | bound_by=HBM
+  category=while | hlo_op_name=while | occurrences=1 | total_self_time=1.631 | model_flop_rate=944.6 | measured_memory_bw=351.9 | hbm_bw=351.9 | operational_intensity=2.5 | bound_by=HBM
+
+== hbm_256mb: 3 ops
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.4 | occurrences=2 | total_self_time=713.7 | model_flop_rate=1881 | measured_memory_bw=700.6 | hbm_bw=700.6 | operational_intensity=2.5 | bound_by=HBM
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.5 | occurrences=2 | total_self_time=713.4 | model_flop_rate=1881 | measured_memory_bw=700.9 | hbm_bw=700.9 | operational_intensity=2.5 | bound_by=HBM
+  category=while | hlo_op_name=while | occurrences=1 | total_self_time=1.5 | model_flop_rate=939.5 | measured_memory_bw=350 | hbm_bw=350 | operational_intensity=2.5 | bound_by=HBM
+
+== hbm_4096mb: 3 ops
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.4 | occurrences=2 | total_self_time=1.135e+04 | model_flop_rate=1892 | measured_memory_bw=704.7 | hbm_bw=704.7 | operational_intensity=2.5 | bound_by=HBM
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.5 | occurrences=2 | total_self_time=1.135e+04 | model_flop_rate=1892 | measured_memory_bw=704.8 | hbm_bw=704.8 | operational_intensity=2.5 | bound_by=HBM
+  category=while | hlo_op_name=while | occurrences=1 | total_self_time=1.656 | model_flop_rate=945.8 | measured_memory_bw=352.3 | hbm_bw=352.3 | operational_intensity=2.5 | bound_by=HBM
+
+== hbm_64mb: 9 ops
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.21 | occurrences=2 | total_self_time=181.9 | model_flop_rate=1845 | measured_memory_bw=687.2 | hbm_bw=687.2 | operational_intensity=2.5 | bound_by=HBM
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.18 | occurrences=2 | total_self_time=181.9 | model_flop_rate=1845 | measured_memory_bw=687.4 | hbm_bw=687.4 | operational_intensity=2.5 | bound_by=HBM
+  category=loop fusion | hlo_op_name=convert_reduce_fusion.16 | occurrences=2 | total_self_time=181.8 | model_flop_rate=1846 | measured_memory_bw=687.5 | hbm_bw=687.5 | operational_intensity=2.5 | bound_by=HBM
+
+== stream_gemm_8x4096x4096_bf16: 2 ops
+  category=convolution fusion | hlo_op_name=convert_reduce_fusion.2 | occurrences=8 | total_self_time=368.8 | model_flop_rate=5828 | measured_memory_bw=679.3 | hbm_bw=679.3 | operational_intensity=7.99 | bound_by=HBM
+  category=while | hlo_op_name=while.4 | occurrences=1 | total_self_time=3.101 | model_flop_rate=722.4 | measured_memory_bw=84.2 | hbm_bw=84.2 | operational_intensity=7.99 | bound_by=HBM
+
+== stream_gemm_8x4096x4096_bf16_isolated: 3 ops
+  category=copy-done | hlo_op_name=copy-done | occurrences=1 | total_self_time=44.71 | model_flop_rate=0 | measured_memory_bw=699 | hbm_bw=0 | operational_intensity=0 | bound_by=VMEM Write
+  category=convolution fusion | hlo_op_name=fusion | occurrences=1 | total_self_time=11.72 | model_flop_rate=2.29e+04 | measured_memory_bw=2676 | hbm_bw=10.41 | operational_intensity=7.969 | bound_by=VMEM Read
+  category=copy-start | hlo_op_name=copy-start | occurrences=1 | total_self_time=0.01375 | model_flop_rate=0 | measured_memory_bw=6.818e+06 | hbm_bw=2.273e+06 | operational_intensity=0 | bound_by=HBM
+
+wrote ./xprof/hlo_stats.csv (1845 rows), roofline.csv (4346), programs.csv (328)

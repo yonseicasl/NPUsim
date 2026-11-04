@@ -73,8 +73,9 @@ latency 너머의 비교 (`compare_metrics.py`, REPORT 3.7): NPUsim의 MAC 수(b
 
 op별 프로파일 (`xprof_stats.py`): 저장된 trace를 XProf hlo_stats / roofline / op_profile로 op별 FLOPs, 바이트,
 FLOP 처리율, HBM / VMEM 대역폭, 병목 판정 CSV로 바꾼다. 스트리밍 GEMM은 HBM 바운드(679 GB/s), 프로그램당 GEMM
-하나는 VMEM 읽기 바운드(2.7 TB/s)임을 수치로 확인했다. 벤치는 이제 모든 케이스를 trace하고, 하드웨어 카운터
-(`perf_counters`, 기본 설정에서는 비어 있음)를 채우는 프로파일러 설정을 탐색한다. 4차 실행(모든 케이스 trace) 진행 중.
+하나는 VMEM 읽기 바운드(2.7 TB/s)임을 수치로 확인했다. 4차 실행(2026-11-04, 164개 케이스 전부 trace, REPORT 3.8):
+XLA의 HBM 바이트와 FLOPs가 GEMM 114개 전부에서 shape 계산과 같다(측정 쪽 작업량 확인); 작은 GEMM의 추가 시간은 커널당
+약 1 us + weight 타일 하나 정도의 fill/drain; 하드웨어 카운터는 어떤 프로파일러 설정으로도 수집되지 않는다.
 
 측정 방법에서 얻은 교훈 (다음 TPU 측정에 그대로 적용):
 - 같은 입력 버퍼를 반복하면 XLA cross-program prefetch가 copy를 생략해 weight가 칩 위에 남는다 (warm: 3-4배 빠름).
@@ -91,8 +92,8 @@ FLOP 처리율, HBM / VMEM 대역폭, 병목 판정 CSV로 바꾼다. 스트리�
 1. HBM 효율: 뱅크별 refresh 숨김 모델이 실측(89-92%)을 재현한다. TPU가 실제로 그런지 Colab HBM probe
    (`tpu_v5e/tpu_v5e1_hbm_probe.ipynb`)로 판별할 것. compute-bound GEMM이 MOSAIC 경로에서 4-12% 빨라지는 원인도.
 2. PaLM/TPU v4 비교에 attention 모델을 넣어 41-60% 공백 재평가 (tpu_v4 + `[kvcache]` attention).
-3. 작은/비정렬 GEMM: 검증 매핑을 128열 단위로 MXU에 나누기(512열 padding 제거), GEMM당 고정 비용의 원인을 4차
-   실행 trace로 확인해 반영.
+3. 작은/비정렬 GEMM: 검증 매핑을 128열 단위로 MXU에 나누기(512열 padding 제거), 커널당 고정 비용(약 1 us)과
+   weight 타일 하나 정도의 fill/drain을 NPUsim에 반영 (원인은 4차 실행 trace로 확인됨, REPORT 3.8).
 4. decode 레이어의 원소 단위 연산(잔차, gate/up 분리; GEMM만 레이어가 GEMM 4개 합보다 1-12% 김).
 5. int8 weight의 tpu_v5e 설정 비교 (실측은 있음).
 6. 8칩 collective: Kaggle v5e-8 (`kaggle_tpu_bench.ipynb`) 실행 대기.

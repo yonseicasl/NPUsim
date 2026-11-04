@@ -68,6 +68,7 @@ def main():
     ap.add_argument("--case", default="")
     ap.add_argument("--top", type=int, default=8)
     ap.add_argument("--list-tools", action="store_true")
+    ap.add_argument("--counters", action="store_true", help="only report the hardware-counter tables' row counts")
     a = ap.parse_args()
     out = os.path.join(a.results, "xprof")
     os.makedirs(out, exist_ok=True)
@@ -81,6 +82,14 @@ def main():
             continue
         if a.list_tools:
             print(case, r2t.xspace_to_tool_names(xplanes))
+        if a.counters:   # hardware counters: are XProf's perf_counters / utilization_viewer tables filled?
+            for tool in ("perf_counters", "utilization_viewer"):
+                try:
+                    n = len(table(convert(xplanes, tool)))
+                except Exception as e:
+                    n = f"error {e!r}"[:80]
+                print(f"{case}: {tool} rows = {n}")
+            continue
         rows = table(convert(xplanes, "hlo_stats"))
         hlo += [dict(case=case, **r) for r in rows]
         roof += [dict(case=case, **r) for r in table(convert(xplanes, "roofline_model"))]
@@ -88,6 +97,8 @@ def main():
         print(f"\n== {case}: {len(rows)} ops")
         for r in sorted(rows, key=lambda r: -(r.get("total_self_time") or 0))[:a.top]:
             print("  " + " | ".join(f"{k}={fmt(r.get(k))}" for k in SHOW if k in r))
+    if a.counters:   # counter check only: keep the per-op tables already written
+        return
     write(os.path.join(out, "hlo_stats.csv"), hlo)
     write(os.path.join(out, "roofline.csv"), roof)
     write(os.path.join(out, "programs.csv"), progs)
