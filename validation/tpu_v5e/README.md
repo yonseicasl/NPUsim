@@ -1,5 +1,7 @@
 # TPU v5e-8 measurements (Kaggle)
 
+Consolidated comparison report (Korean): [REPORT.md](REPORT.md). This README keeps the per-run records.
+
 Measured ground truth for NPUsim's TPU modeling (refs/tpu/README.md): single-chip GEMMs, HBM bandwidth,
 8-chip collectives, and a tensor-parallel Llama-2-70B-shaped decode layer split into components. The
 PaLM decode comparison (validation/palm/) leaves 41-60% of the measured latency unattributed; the decode

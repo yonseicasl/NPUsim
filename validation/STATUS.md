@@ -40,7 +40,7 @@ README에 있다. 브랜치: npusim `mosaic`, MOSAIC `npusim-ddr3` -> `mosaic`.
   순차 읽기 698 GB/s (85.2%, 전체 뱅크 refresh), refresh 없이 748 (91.3%), 실측 732-757 (89-92%). TPU는 refresh를
   대부분 숨긴다. NPUsim decode GEMM에 연결하면 MAPE 5.4% (819 GB/s) -> 4.4% (`tpu_v5e/compare_hbm.py`).
 
-## 3. TPU v5e 단일 칩 (`validation/tpu_v5e/`)
+## 3. TPU v5e 단일 칩 (`validation/tpu_v5e/`, 종합 보고서 `tpu_v5e/REPORT.md`)
 
 측정: Colab v5e-1, `tpu_v5e1_stream_bench.py` 3회 (결과 `results/2026-11-03_colab_v5e1_followup*`, 원본 zip
 포함). 병렬 세션의 `measure_tpu.py` warm/rot 결과(브랜치 `tpu-measure`, zip은 `results/`)와 대조했다.
