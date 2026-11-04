@@ -1,0 +1,4 @@
+NPUsim: 60 runs on 6 threads ...
+v5e_100x1000x1024_4x1mxu failed:
+Error: accelerator config requires exactly one non-zero [accelerator] section
+

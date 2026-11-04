@@ -85,6 +85,7 @@ npu_t::npu_t() :
  num_pes(1),
  compression_type(compression_type_t::DENSE),
  num_skipped_timing_layers(0),
+    program_setup_cycle(0.0),
  multi_chip(NULL),
  dram(NULL),
  decomp(NULL),
@@ -192,6 +193,13 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
         if(section_config.name == "accelerator") {
             section_config.get_setting("num_pes", &num_pes);
+            // Once-per-run cost, outside every layer: what a program pays to start (e.g. a TPU XLA
+            // program's first operand fetch before any kernel overlaps it). Default 0.
+            section_config.get_setting("program_setup_cycle", &program_setup_cycle);
+            if(program_setup_cycle < 0.0) {
+                std::cerr << "Error: [accelerator] program_setup_cycle must be >= 0" << std::endl;
+                exit(1);
+            }
     
             // Initialize compression type : Dense, CSR, CSC, SparseMap.
             std::string compression_str;
@@ -1621,7 +1629,16 @@ void npu_t::print_total_result(const std::string m_accelerator_config, const std
     // L11/P4-14: hand the rollup its timing scope before printing, so the scope line appears
     // next to the latency it qualifies rather than only as a trailing warning.
     network_stats->excluded_timing_layers = num_skipped_timing_layers;
+    // The run's once-per-program cost goes into the network totals only (the layer reports stay
+    // per layer): both latency axes, as it is a serial prologue no layer overlaps.
+    network_stats->layer_latency += program_setup_cycle;
+    network_stats->stage_axis_compute += program_setup_cycle;
     network_stats->print_results(output_file);
+    if(program_setup_cycle > 0.0) {
+        output_file << "Program setup         :" << std::setw(11) << std::fixed << std::setprecision(1)
+                    << program_setup_cycle << " cycles (once per run, included in the latencies above)"
+                    << std::endl;
+    }
     print_workload_provenance(output_file);
     if(num_skipped_timing_layers > 0) {
         const std::string warning = "WARNING: partial timing result; " +

@@ -16,6 +16,7 @@ import argparse
 import csv
 import math
 import os
+import re
 import shutil
 import statistics
 import sys
@@ -26,6 +27,7 @@ import palm_decode as palm  # noqa: E402
 
 palm.MXUS, palm.CLOCK_HZ = 4, 1.5e9        # TPU v5e; palm.gemm_files / run_gemm read these
 ACCEL, DIM, MTILE = "tpu_v5e", 128, 512
+IN_PROGRAM = False
 PEAK, HBM = 4 * DIM * DIM * 2 * 1.5e9, 819e9
 D, HKV, DH = 4096, 8, 128                  # measure_tpu.py's Llama-3-8B decode layer
 PROJ = {"qkv": (4096, 6144), "o_proj": (4096, 4096), "ffn_up": (4096, 28672), "ffn_down": (14336, 4096)}
@@ -38,16 +40,27 @@ def num(r, k):
 def simulate(shapes, jobs):
     """{(M, K, N): seconds} on NPUsim."""
     tmp, cfgroot, rundir = palm.workdir((ACCEL,))
+    if IN_PROGRAM:                            # kernels inside a loop/chain do not pay the program's start
+        p = os.path.join(cfgroot, "accelerators", f"{ACCEL}.cfg")
+        open(p, "w").write(re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", open(p).read()))
     plan, todo = {}, {}
     mxus = palm.MXUS
 
-    def add(mtile, K, ncols, chips):
-        """Queue a GEMM of ncols output columns over `chips` MXUs; returns its run name."""
-        name = f"v5e_{mtile}x{K}x{ncols}_{chips}mxu"
+    def add(mtile, K, ncols, chips, ksplit=1):
+        """Queue a GEMM of ncols output columns over `chips` MXUs, each MXU group also splitting the reduction
+        dimension K `ksplit` ways (partial sums); returns its run name."""
+        name = f"v5e_{mtile}x{K}x{ncols}_{chips}x{ksplit}mxu"
         if name not in todo:
             palm.MXUS = chips                 # gemm_files reads it: CHIPS_Y = chips
             palm.gemm_files(cfgroot, rundir, name, ACCEL, mtile, K, ncols)
             palm.MXUS = mxus
+            if ksplit > 1:                    # CHIPS_Y also takes a C (= K) factor; the GLB keeps the rest
+                p = os.path.join(cfgroot, "mappings", ACCEL, name, "ws.map")
+                s = open(p).read()
+                s = s.replace(f"CHIPS_Y = {chips}, 1, 1, 1, 1,", f"CHIPS_Y = {chips}, 1, 1, 1, {ksplit},")
+                s = re.sub(r"GLB     = 1, 1, 1, 1, (\d+),",
+                           lambda m: f"GLB     = 1, 1, 1, 1, {math.ceil(int(m.group(1)) / ksplit)},", s)
+                open(p, "w").write(s)
             todo[name] = (cfgroot, rundir, name, ACCEL)
         return name
 
@@ -55,19 +68,24 @@ def simulate(shapes, jobs):
         mt = math.ceil(M / MTILE)
         mtile = math.ceil(M / mt)
         nb = math.ceil(N / DIM)               # 128-column blocks
-        strips = math.ceil(nb / mxus)         # rounds of one block per MXU; a partial last round is a whole one
-        # Fewer blocks than MXUs: only nb MXUs work (8 x 4096 x 128: 2.85 us on 1 MXU vs 2.75 measured; padded to
-        # 4 MXUs it was 5.55). A partial last round counts whole: charging its column share instead put the
-        # K = N 1100-1280 GEMMs at -20..-32% (whole rounds -2..-20%): small strips cost their round, not bytes.
-        # 1 or 2 rounds are simulated as is, more extrapolated from 2 and 4. Not from 1 and 2: with Ramulator the
-        # first strip's DRAM fill is exposed and partly hidden from the second strip on, so the 1 -> 2 step is
-        # below the steady per-strip time (8192^3 extrapolated under the compute roofline).
+        strips = nb / mxus                    # blocks per MXU; fractional when the last round is partial
+        # Fewer blocks than MXUs: nb MXUs take the columns and the rest split K (partial sums), so all 4 stream
+        # weights. On one MXU its 128-element port caps an N = 128 GEMM at 384 GB/s while the TPU streams 621 GB/s
+        # (8 x K x 128, K 4096 -> 16384); split 4 ways NPUsim streams 759 GB/s.
+        # A partial last round is charged its column share: XLA tiles finer than whole 4-MXU rounds (K = N
+        # 1024 -> 1100: measured 1.27x, column share 1.22x, whole rounds 1.6x). Whole rounds matched the absolute
+        # K = N 1100-1280 times better only by covering the fixed per-kernel time NPUsim lacked.
+        # 1 or 2 rounds are simulated as is, between 1 and 2 interpolated, more extrapolated from 2 and 4. Not from
+        # 1 and 2: with Ramulator the first strip's DRAM fill is exposed and partly hidden from the second strip on,
+        # so the 1 -> 2 step is below the steady per-strip time (8192^3 extrapolated under the compute roofline).
         if nb < mxus:
-            plan[M, K, N] = (mt, [add(mtile, K, nb * DIM, nb)], None)
-        elif strips <= 2:
-            plan[M, K, N] = (mt, [add(mtile, K, strips * mxus * DIM, mxus)], None)
+            ks = max(1, min(mxus // nb, math.ceil(K / DIM)))
+            plan[M, K, N] = (mt, [add(mtile, K, nb * DIM, nb, ks)], None)
+        elif strips in (1, 2):
+            plan[M, K, N] = (mt, [add(mtile, K, int(strips) * mxus * DIM, mxus)], None)
         else:
-            plan[M, K, N] = (mt, [add(mtile, K, x * mxus * DIM, mxus) for x in (2, 4)], ((2, 4), strips))
+            s = (1, 2) if strips < 2 else (2, 4)
+            plan[M, K, N] = (mt, [add(mtile, K, x * mxus * DIM, mxus) for x in s], (s, strips))
     print(f"NPUsim: {len(todo)} runs on {jobs} threads ...", flush=True)
     with ThreadPoolExecutor(jobs) as ex:
         sim = dict(zip(todo, ex.map(palm.run_gemm, todo.values())))
@@ -96,7 +114,11 @@ def main():
                     "streams on MOSAIC's Ramulator2 instead of the analytical [dram] (needs a MOSAIC build)")
     ap.add_argument("--accel", default=ACCEL, help="configs/accelerators/<name>.cfg (tpu_v5e_int8w: int8 weights)")
     ap.add_argument("--gemm", default="gemm.csv", help="GEMM measurements in RESULTS_DIR")
+    ap.add_argument("--in-program", action="store_true", help="the GEMMs ran inside a loop or chain of one "
+                    "program (streamed, odd_gemm, per-kernel slopes): no program_setup_cycle per GEMM")
     a = ap.parse_args()
+    global IN_PROGRAM
+    IN_PROGRAM = a.in_program
     ACCEL = a.accel
     palm.MOSAIC_DRAM = a.dram and os.path.abspath(a.dram)
     gemm = list(csv.DictReader(open(os.path.join(a.results, a.gemm))))

@@ -304,12 +304,16 @@ def smallk():
     chain   n dependent matmuls y = y @ W_i (W_i distinct, K x K) in ONE program, n = 1..32: the slope over n
             is what one more kernel costs inside a program (as in a model's layer), the n = 1 intercept the
             program's own overhead.
+    oddchain the odd small GEMMs (M 100-512, K = N 1000-2048) as chains of 1 and 8 in one program: the per-kernel
+            slope is their in-program cost (no one-kernel program fixed part, no operand copies).
+    copy_us is the copy-start/done time inside each module (operands staged into on-chip memory).
     Writes smallk.csv (all points) and smallk_fit.csv (intercepts and slopes).
     """
     dev = jax.devices()[0]
     rows, fits = [], []
     put = lambda k, s, scale=1.0: jax.device_put((rnd(k, s).astype(F32) * scale).astype(BF16), dev)
     ops_sum = lambda r: r["ops"] and round(sum(r["ops"].values()), 3)
+    copy_sum = lambda r: r["ops"] and round(sum(v for k, v in r["ops"].items() if "copy-" in k), 3)
 
     ks = (128, 512, 2048) if ARGS.quick else (128, 256, 512, 1024, 2048, 4096, 8192, 16384)
     mn = [(8, 128)] if ARGS.quick else [(8, 128), (8, 1024), (128, 128), (128, 1024)]
@@ -321,7 +325,7 @@ def smallk():
             r = bench(f, sets, f"smallk_{M}x{K}x{N}")
             rows.append(dict(kind="ksweep", M=M, K=K, N=N, n=1, bytes=2 * (M * K + K * N + M * N), sets=r["sets"],
                              wall_us=round(r["wall_us"], 3), device_us=r["device_us"] and round(r["device_us"], 3),
-                             ops_us=ops_sum(r)))
+                             ops_us=ops_sum(r), copy_us=copy_sum(r)))
             pts.append(rows[-1])
             print(f"smallk ksweep {M:4d} x {K:5d} x {N:5d}  {fmt(r)}  ops {rows[-1]['ops_us']}")
         for col in ("device_us", "ops_us"):
@@ -339,7 +343,7 @@ def smallk():
         r = bench(g, sets, f"smallk_floor_{M}x{D}")
         rows.append(dict(kind="floor", M=M, K=D, N=0, n=1, bytes=4 * M * D, sets=r["sets"],
                          wall_us=round(r["wall_us"], 3), device_us=r["device_us"] and round(r["device_us"], 3),
-                         ops_us=ops_sum(r)))
+                         ops_us=ops_sum(r), copy_us=copy_sum(r)))
         print(f"smallk floor  {M:4d} x {D:5d}  {fmt(r)}  ops {rows[-1]['ops_us']}")
 
     ns = (1, 2, 4, 8) if ARGS.quick else (1, 2, 4, 8, 16, 32)
@@ -356,7 +360,7 @@ def smallk():
             r = bench(jax.jit(h), sets, f"smallk_chain_{M}x{K}_n{n}")
             rows.append(dict(kind="chain", M=M, K=K, N=K, n=n, bytes=2 * (M * K + n * K * K + M * K), sets=r["sets"],
                              wall_us=round(r["wall_us"], 3), device_us=r["device_us"] and round(r["device_us"], 3),
-                             ops_us=ops_sum(r)))
+                             ops_us=ops_sum(r), copy_us=copy_sum(r)))
             pts.append(rows[-1])
             print(f"smallk chain  {M:4d} x {K:5d} n={n:2d}  {fmt(r)}  ops {rows[-1]['ops_us']}")
         xy = [(p["n"], p["device_us"]) for p in pts if p["device_us"] is not None]
@@ -364,6 +368,30 @@ def smallk():
             a, b = linfit(*zip(*xy))
             fits.append(dict(kind="chain", M=M, N=K, time="device_us", fixed_us=round(a, 3), per_kernel_us=round(b, 3)))
             print(f"  fit chain: program {a:.3f} us + {b:.3f} us per kernel")
+
+    # The odd small GEMMs (K = N around multiples of 128) inside one program: 1 and 8 dependent y = y @ W_i; the
+    # per-kernel slope (t8 - t1) / 7 is their cost without the one-kernel program's fixed part and copies.
+    odd = [(128, 1024), (128, 1100)] if ARGS.quick else \
+        [(m, k) for m in (100, 128, 200, 256, 512) for k in (1000, 1024, 1100, 1152, 1280, 2000, 2048)]
+    for M, K in odd:
+        t = {}
+        for n in (1, 8):
+            def h(x, *ws):
+                for w in ws:
+                    x = x @ w
+                return x
+            sets = [(put(1000 * i + 7, (M, K)), *[put(1000 * i + j + 8, (K, K), K ** -0.5) for j in range(n)])
+                    for i in range(nsets(2 * (M * K + n * K * K)))]
+            r = bench(jax.jit(h), sets, f"smallk_oddchain_{M}x{K}_n{n}")
+            rows.append(dict(kind="oddchain", M=M, K=K, N=K, n=n, bytes=2 * (M * K + n * K * K + M * K),
+                             sets=r["sets"], wall_us=round(r["wall_us"], 3),
+                             device_us=r["device_us"] and round(r["device_us"], 3), ops_us=ops_sum(r),
+                             copy_us=copy_sum(r)))
+            t[n] = r["device_us"]
+            print(f"smallk oddchain {M:4d} x {K:5d} n={n}  {fmt(r)}  ops {rows[-1]['ops_us']} copy {rows[-1]['copy_us']}")
+        if t[1] is not None and t[8] is not None:
+            fits.append(dict(kind="oddchain", M=M, N=K, time="device_us", fixed_us=round(t[1] - (t[8] - t[1]) / 7, 3),
+                             per_kernel_us=round((t[8] - t[1]) / 7, 3)))
     write("smallk.csv", rows)
     write("smallk_fit.csv", fits)
 

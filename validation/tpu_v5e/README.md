@@ -246,3 +246,38 @@ re-run with it (mean / MAPE, analytic | Ramulator2):
 | int8 streamed, M <= 128 (16) | -8.3 / 8.3% \| +1.9 / 3.5% | unchanged |
 | compute-bound GEMMs, rotated (kernel) | +5.9 / 7.5% \| +8.3 / 8.7% | +6.3 / 7.5% \| +8.5 / 8.6% |
 | decode layer full, follow-up 3 (12) | -8.6 / 8.6% \| -0.7 / 3.5% | unchanged |
+
+### Small GEMMs: program setup, finer column split, K split (2026-11-04)
+
+Three changes, each from its own evidence (mean / MAPE, analytic | Ramulator2; "before" = the previous
+commit):
+
+1. `program_setup_cycle = 1035` (new `[accelerator]` knob in NPUsim, `scheduler/npu.cc`: added once per run
+   to the network totals, default 0): the smallk chain intercept, 0.69 us at 1500 MHz. One NPUsim run is one
+   program; `compare_v5e.py --in-program` zeroes it for kernels measured inside a loop or chain.
+2. A partial last round of 128-column strips is charged its column share (XLA tiles finer: K = N
+   1024 -> 1100 measured 1.27x, column share 1.22x, whole rounds 1.6x).
+3. Fewer than 4 column blocks: the idle MXUs split K (partial sums), so all 4 stream weights (one MXU's
+   128-element port capped N = 128 at 384 GB/s; the TPU streams 621 GB/s there).
+
+| (measurement context) | before | after |
+|---|---|---|
+| smallk K sweep, isolated (32) | -28.9 / 33.2% \\| -24.9 / 29.3% | -8.8 / 16.1% \\| -2.9 / 12.2% |
+| smallk2 K sweep, isolated, rerun (32) | | -8.9 / 16.2% \\| -3.1 / 12.2% |
+| rotated small GEMMs, isolated (6, module) | -20.2 / 23.8% \\| -14.6 / 22.0% | -1.5 / 16.6% \\| +3.9 / 12.9% |
+| compute-bound GEMMs, isolated (kernel) | +6.3 / 7.5% \\| +8.5 / 8.6% | +7.2 / 7.2% \\| +9.0 / 9.0% |
+| odd small GEMMs in a `while` loop, follow-up 2 (35) | -13.9 / 15.2% \\| -6.3 / 10.1% | -22.2 / 23.3% \\| -15.2 / 17.0% |
+| odd small GEMMs chained in one program, per kernel (35) | | +33.6 / 33.6% \\| +45.7 / 45.7% |
+| streamed decode GEMMs, int8 GEMMs, decode layers | | unchanged |
+
+The smallk2 run (`results/2026-11-04_colab_v5e1_smallk2/`, raw `.zip` beside it) repeats smallk within
+1% and adds `copy_us` and the odd-shape chains (`gemm_oddchain.csv` = their per-kernel slopes):
+
+- Isolated kernels are a serial copy plus a kernel: XLA stages the weights into on-chip memory (0.4 us +
+  bytes / ~750 GB/s, the sustained HBM read rate) and only then runs the kernel. That is the 543-653 GB/s
+  of the isolated K sweep: no lower HBM bandwidth, the copy does not overlap the compute.
+- Chained in one program, an odd small GEMM costs its weight bytes at ~712 GB/s: its start overlaps the
+  previous kernel. NPUsim charges every GEMM its own fill, drain and first DMA, ~1-1.3 us too much each
+  (+34%). Inside a `while` loop (follow-up 2) the same shapes take 1-3 us more per iteration than in the
+  chain, so NPUsim is short there. Open: an inter-layer overlap model (layer i+1's prologue under layer
+  i's tail) for chained kernels, the per-iteration cost of loops, XLA's serial staging for isolated ones.

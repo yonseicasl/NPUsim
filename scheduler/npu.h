@@ -287,6 +287,7 @@ protected:
     unsigned num_pes;                               // The number of processing elements for each processors.
     compression_type_t compression_type;            // Compression type : Dense, CSR, CSC, SparseMap
     unsigned num_skipped_timing_layers;             // Layers excluded from accelerator timing.
+    double program_setup_cycle;                     // [accelerator] once-per-run cost (cycles), see npu.cc.
     // Validate physical component counts before connecting the hierarchy.
     void validate_accelerator_components();
     // Validate mapping-selected active components before a layer starts.
