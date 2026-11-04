@@ -87,18 +87,47 @@ XLA의 HBM 바이트와 FLOPs가 GEMM 114개 전부에서 shape 계산과 같다
 - 루프 결과와 무관한 읽기는 루프 밖으로 빠진다. 읽기마다 carry를 섞는다. 컴파일된 HLO로 확인할 것.
 - Colab에서 JAX가 TPU를 못 찾으면 경고만 내고 CPU로 돈다. 벤치는 TPU가 없으면 첫 셀에서 멈춘다.
 
-## 4. 남은 과제 (우선순위 순)
+## 4. 남은 과제 (2026-11-04 기준, 묶음별 우선순위 순)
 
-1. HBM 효율: 뱅크별 refresh 숨김 모델이 실측(89-92%)을 재현한다. TPU가 실제로 그런지 Colab HBM probe
-   (`tpu_v5e/tpu_v5e1_hbm_probe.ipynb`)로 판별할 것. compute-bound GEMM이 MOSAIC 경로에서 4-12% 빨라지는 원인도.
-2. PaLM/TPU v4 비교에 attention 모델을 넣어 41-60% 공백 재평가 (tpu_v4 + `[kvcache]` attention).
-3. 작은/비정렬 GEMM: 128열 단위 작업 + XLA window 파이프라인 + 커널당 0.22 us(`tpu_v5e.cfg layer_setup_cycle = 330`)를
-   비교 계층에서 합성해 전체 MAPE 10.5% -> 7.4%, 작은 GEMM 13.1% -> 8.2% (REPORT 3.9). 남은 일: window 파이프라인을
-   NPUsim 코어 옵션으로, compute-bound -4..-9%.
-4. decode 레이어의 원소 단위 연산(잔차, gate/up 분리; GEMM만 레이어가 GEMM 4개 합보다 1-12% 김).
-5. int8 weight의 tpu_v5e 설정 비교 (실측은 있음).
-6. 8칩 collective: Kaggle v5e-8 (`kaggle_tpu_bench.ipynb`) 실행 대기.
-7. Gemmini 16x512x512: 1절의 (a), (b).
+### A. TPU v5e 모델링 (NPUsim)
+
+1. **window 파이프라인과 128열 작업을 NPUsim 코어 옵션으로.** 지금은 `compare_windows.py` 설정 D가 NPUsim의 단계별
+   비용으로 합성한다(전체 MAPE 7.4%). DRAM 계층 타일을 통째로 전달하고(window 전송이 끝난 뒤 on-chip 작업 시작, 다음
+   window는 미리 로드) 열을 128 단위로 MXU에 나누는 매핑을 NPUsim이 직접 내게 하면, decode 레이어와 다른 워크로드에도
+   그대로 적용된다. 현재 매핑은 window 안의 반복을 GLB에 두면 window 안에서 로드와 연산이 겹치고, GLB 아래로 내리면
+   on-chip 단계까지 전부 직렬이 된다(REPORT 3.9의 실험).
+2. **설정 D + MOSAIC HBM2e REFSB.** D의 유효 HBM 속도가 749-798 GB/s로 실측 716-755보다 높다. `hbm2e_tpu_v5e_refsb`
+   (순차 읽기 751 GB/s)와 결합해 decode GEMM의 남은 -5%를 확인한다.
+3. **compute-bound GEMM.** D에서 -4..-9% (window 파이프라인이 실제보다 잘 겹침), MOSAIC 경로에서는 4-12% 빨라짐(분석
+   DRAM 쪽 비용까지 대체하는 것으로 보임). 두 원인 확인.
+4. **decode 레이어의 원소 단위 연산.** 잔차 덧셈, gate/up 분리로 GEMM만 레이어가 GEMM 4개 합보다 1-12% 길다. NPUsim
+   레이어 시간 = projection GEMM 4개 + attention 단계 + 이 몫.
+5. **attention B = 1** (MAPE 17.6%): 짧은 KV 읽기의 고정 비용.
+6. **int8 weight**: 실측(decode 크기에서 bf16의 절반)은 있고, NPUsim tpu_v5e int8 설정과의 비교가 남음.
+
+### B. 측정 대기
+
+7. **HBM probe** (`tpu_v5e/tpu_v5e1_hbm_probe.ipynb`, Colab v5e-1): TPU가 refresh를 뱅크별로 숨기는지(burst + 휴지 vs
+   연속), 주소 매핑(stride sweep)을 판별. 결과로 `hbm2e_tpu_v5e_refsb`를 TPU v5e 기본 DRAM으로 삼을지 정한다.
+8. **8칩** (Kaggle v5e-8, `kaggle_tpu_bench.ipynb`): collective와 tensor-parallel decode. 다중 칩 NPUsim 검증의 기준.
+
+### C. 다른 대상
+
+9. **TPU v4 PaLM decode** (validation/palm, NPUsim 41-60% 짧음): attention 단계와 window 파이프라인을 넣어 재평가.
+10. **Gemmini 16x512x512** (-28.9%): golden DRAMSim2 scheme2 매핑을 재현하는 Ramulator2 매퍼 + NPUsim의 행 단위
+    strided 주소 스트림 (1절 (a), (b)).
+
+### D. 정리
+
+11. **병렬 세션 브랜치 `tpu-measure` 합치기**: measure_tpu.py, compare_v5e.py(좁은 N 매핑 수정 포함), smallk 결과.
+    `tpu_v5e.cfg`는 같은 내용이라 충돌 없음; `validation/tpu_v5e/README.md`는 손으로 합쳐야 함.
+
+### 끝난 것 (참고)
+
+- 하드웨어 카운터: Colab TPU v5e에서는 어떤 프로파일러 설정으로도 수집되지 않음 (REPORT 3.8). 프로파일은 op별 시간,
+  XLA FLOPs와 바이트, 그로부터 계산한 대역폭과 병목 판정까지.
+- 측정 쪽 작업량: GEMM 114개 전부에서 XLA의 HBM 바이트·FLOPs = shape 계산 (REPORT 3.8).
+- 커널당 고정 비용: 0.22 us (`layer_setup_cycle = 330`, 병렬 세션 측정).
 
 ## 5. 재현
 
