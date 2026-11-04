@@ -1,0 +1,12 @@
+kind,M,N,time,fixed_us,per_byte_GBps,per_kernel_us
+ksweep,8,128,device_us,1.016,653.4,
+ksweep,8,128,ops_us,1.057,663.4,
+ksweep,8,1024,device_us,0.953,608.8,
+ksweep,8,1024,ops_us,0.984,609.0,
+ksweep,128,128,device_us,1.189,652.0,
+ksweep,128,128,ops_us,1.23,657.0,
+ksweep,128,1024,device_us,1.115,543.3,
+ksweep,128,1024,ops_us,1.118,544.0,
+chain,8,128,device_us,0.691,,0.224
+chain,8,1024,device_us,1.845,,2.766
+chain,128,1024,device_us,4.067,,2.779

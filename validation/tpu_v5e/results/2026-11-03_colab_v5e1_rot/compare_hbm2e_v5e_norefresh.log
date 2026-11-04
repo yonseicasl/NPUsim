@@ -1,8 +1,8 @@
-NPUsim: 34 runs on 22 threads ...
+NPUsim: 34 runs on 7 threads ...
 
     M      K      N |  measured    copy   kernel    NPUsim  roofline us |     err   err_k  src
-  128    128    128 |      1.18    0.40     0.78      0.86      0.12    |  -26.9%  +10.7%  device
-  256    256    256 |      1.74    0.56     1.18      1.65      0.48    |   -5.3%  +39.6%  device
+  128    128    128 |      1.18    0.40     0.78      0.42      0.12    |  -64.8%  -46.8%  device
+  256    256    256 |      1.74    0.56     1.18      1.19      0.48    |  -31.4%   +1.1%  device
   512    512    512 |      4.69    1.11     3.58      3.49      1.92    |  -25.6%   -2.5%  device
  1024   1024   1024 |     19.04    3.21    15.83     16.55     10.92    |  -13.1%   +4.6%  device
  2048   2048   2048 |    103.06   11.51    91.55    105.44     87.38    |   +2.3%  +15.2%  device
@@ -36,7 +36,7 @@ NPUsim: 34 runs on 22 threads ...
   777   1234    555 |     13.20    3.10    10.10     16.11      5.41    |  +22.0%  +59.5%  device
  1000   1000   1000 |     18.71    3.15    15.56     16.34     10.17    |  -12.7%   +5.0%  device
   384    768   3072 |     18.88    6.68    12.20     16.22      9.36    |  -14.1%  +32.9%  device
-MAPE decode (M<=128) 13.9% (n=18), decode (M<=128) kernel 137.9% (n=18), other 13.0% (n=17), other kernel 11.9% (n=17)
+MAPE decode (M<=128) 16.1% (n=18), decode (M<=128) kernel 139.9% (n=18), other 14.5% (n=17), other kernel 9.7% (n=17)
 
 tp    B     L |    total     GEMM  unattr    attn  KVroof    psum  other nonGEMM | NPUsim GEMM     err   (us per layer)
  1    1   512 |    588.9    581.3     0.8     2.9     2.6     0.0    4.0    1.2% |       627.9   +7.9%

@@ -199,3 +199,32 @@ shapes: only their `npusim_us` is used, by `compare_stack.py`).
   / 6.2%, run-to-run CV 0.8% (max 2.8%); odd small GEMMs analytic -14.6% / 15.1%, Ramulator2 -6.9% / 9.7%,
   CV 4.3% (max 21%). Decode layers differ by 1.0% (max 5.1%) between runs 2 and 3, streamed GEMMs 1.2%,
   attention 4.6% (large cases at 1.10-1.12x the KV roofline again).
+
+### 2026-11-04, Colab TPU v5e-1, fixed per-kernel time (`results/2026-11-04_colab_v5e1_smallk/`)
+
+`measure_tpu.py --only smallk`; `gemm_smallk.csv` is its K sweep for `compare_v5e.py`.
+
+| | TPU | NPUsim analytic | NPUsim Ramulator2 |
+|---|---|---|---|
+| K sweep intercept, isolated kernel (M 8/128, N 128/1024) | 0.95-1.19 us | 0.11-0.76 us | 0.11-0.78 us |
+| K sweep slope | 543-653 GB/s | 408 (N 128 at M 8), 771-808 GB/s | 408, 715-717 GB/s |
+| smallest kernel (`x + 1`, one vreg) | 0.57 us | - | - |
+| chain of n matmuls in one program | 0.69 us + 0.22 us per kernel | - | - |
+| K sweep MAPE (32) | | 38.1% | 33.6% |
+
+- An isolated kernel pays ~1 us that does not scale with bytes; module time equals the op sum (launch is
+  outside the device time), so it is inside the kernel: the first operand's HBM latency and DMA start,
+  the array fill/drain and the result write-back, not overlapped with anything. In one program the next
+  kernel's operands are fetched during the current one: the chain costs 0.69 us once plus 0.22 us per
+  kernel (8 x 128 x 128), and 2 MB-weight kernels chain at 757 GB/s (2.77 us each). The decomposition is
+  inferred from the fits, not measured part by part. In a decode layer (~600 us, a few dozen kernels) the
+  per-kernel part is ~0.1%; the large isolated-kernel MAPE is the one-kernel-program case.
+- NPUsim models every GEMM as an isolated layer with its own fill but no per-kernel control cost
+  (`layer_setup_cycle` 0). Candidate with its own evidence, not applied: 0.22 us = 330 cycles at 1.5 GHz.
+- Narrow N: at M 8, N 128 NPUsim runs one MXU and its 128-element-per-cycle port (384 GB/s) limits it to
+  408 GB/s, while the TPU streams at 653 GB/s; how the TPU spreads such a GEMM is not known.
+- `compare_v5e.py` fix: N with fewer than 4 128-column blocks ran padded to 4 MXUs (N 128 simulated as
+  512, 4x the weights); now only nb MXUs work (8 x 4096 x 128: 2.85 us vs 2.75 measured). In the rotated
+  run 256^3 moves from +30% to -4% (kernel), 128^3 from +4% to -49% (its missing fixed time now shows). A
+  partial last round of strips still counts whole: charging its column share was tried and put the K = N
+  1100-1280 GEMMs at -20..-32% instead of -2..-20%.

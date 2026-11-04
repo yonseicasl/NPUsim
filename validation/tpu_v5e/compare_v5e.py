@@ -39,30 +39,46 @@ def simulate(shapes, jobs):
     """{(M, K, N): seconds} on NPUsim."""
     tmp, cfgroot, rundir = palm.workdir((ACCEL,))
     plan, todo = {}, {}
-    name = lambda mtile, K, s: f"v5e_{mtile}x{K}x{s * palm.MXUS * DIM}"
+    mxus = palm.MXUS
+
+    def add(mtile, K, ncols, chips):
+        """Queue a GEMM of ncols output columns over `chips` MXUs; returns its run name."""
+        name = f"v5e_{mtile}x{K}x{ncols}_{chips}mxu"
+        if name not in todo:
+            palm.MXUS = chips                 # gemm_files reads it: CHIPS_Y = chips
+            palm.gemm_files(cfgroot, rundir, name, ACCEL, mtile, K, ncols)
+            palm.MXUS = mxus
+            todo[name] = (cfgroot, rundir, name, ACCEL)
+        return name
+
     for M, K, N in shapes:
         mt = math.ceil(M / MTILE)
         mtile = math.ceil(M / mt)
-        strips = math.ceil(math.ceil(N / DIM) / palm.MXUS)
-        # 1 or 2 strips are simulated as is; more are extrapolated from 2 and 4 strips. Not from 1 and 2: with
-        # Ramulator the first strip's DRAM fill is exposed and partly hidden from the second strip on, so the
-        # 1 -> 2 step is below the steady per-strip time (8192^3 extrapolated under the compute roofline).
-        sims = (strips,) if strips <= 2 else (2, 4)
-        for s in sims:
-            if name(mtile, K, s) not in todo:
-                palm.gemm_files(cfgroot, rundir, name(mtile, K, s), ACCEL, mtile, K, s * palm.MXUS * DIM)
-                todo[name(mtile, K, s)] = (cfgroot, rundir, name(mtile, K, s), ACCEL)
-        plan[M, K, N] = (mt, [name(mtile, K, s) for s in sims], strips)
+        nb = math.ceil(N / DIM)               # 128-column blocks
+        strips = math.ceil(nb / mxus)         # rounds of one block per MXU; a partial last round is a whole one
+        # Fewer blocks than MXUs: only nb MXUs work (8 x 4096 x 128: 2.85 us on 1 MXU vs 2.75 measured; padded to
+        # 4 MXUs it was 5.55). A partial last round counts whole: charging its column share instead put the
+        # K = N 1100-1280 GEMMs at -20..-32% (whole rounds -2..-20%): small strips cost their round, not bytes.
+        # 1 or 2 rounds are simulated as is, more extrapolated from 2 and 4. Not from 1 and 2: with Ramulator the
+        # first strip's DRAM fill is exposed and partly hidden from the second strip on, so the 1 -> 2 step is
+        # below the steady per-strip time (8192^3 extrapolated under the compute roofline).
+        if nb < mxus:
+            plan[M, K, N] = (mt, [add(mtile, K, nb * DIM, nb)], None)
+        elif strips <= 2:
+            plan[M, K, N] = (mt, [add(mtile, K, strips * mxus * DIM, mxus)], None)
+        else:
+            plan[M, K, N] = (mt, [add(mtile, K, x * mxus * DIM, mxus) for x in (2, 4)], ((2, 4), strips))
     print(f"NPUsim: {len(todo)} runs on {jobs} threads ...", flush=True)
     with ThreadPoolExecutor(jobs) as ex:
         sim = dict(zip(todo, ex.map(palm.run_gemm, todo.values())))
     shutil.rmtree(tmp)
 
-    def scale(mt, names, strips):
-        if len(names) == 1:
+    def scale(mt, names, fit):
+        if fit is None:
             return mt * sim[names[0]]
-        t2, t4 = sim[names[0]], sim[names[1]]
-        return mt * (t2 + (strips - 2) * (t4 - t2) / 2)
+        (s0, s1), strips = fit
+        t0, t1 = sim[names[0]], sim[names[1]]
+        return mt * (t0 + (strips - s0) * (t1 - t0) / (s1 - s0))
     return {k: scale(*v) for k, v in plan.items()}
 
 
