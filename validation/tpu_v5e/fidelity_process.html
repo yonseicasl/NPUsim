@@ -176,6 +176,58 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--ru
   <p class="muted">값은 평균 오차 / MAPE입니다. 음수는 NPUsim이 실측보다 짧게 예측한다는 뜻입니다.</p>
 </section>
 
+<section aria-labelledby="h-gens">
+  <h2 id="h-gens">세대 비교와 검증 전략</h2>
+  <p>최종 목표는 TPU v7(Ironwood)에서의 정합성이지만, v7은 지금 쓸 수 없습니다. 그래서 접근 가능한 v5e와 v6e로 NPUsim을 검증하고 개선합니다. 이 방식이 정당하려면 v7의 구조 요소 가운데 무엇이 v5e·v6e에서 검증되고 무엇이 남는지 분명해야 합니다.</p>
+
+  <h3>칩 사양</h3>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>항목</th><th>v5e</th><th>v6e (Trillium)</th><th>v7 (Ironwood)</th></tr></thead>
+      <tbody>
+        <tr><td>TensorCore / 칩</td><td>1</td><td>1</td><td>2 (칩렛 2개, 칩렛마다 1개)</td></tr>
+        <tr><td>MXU</td><td>4개, 128×128</td><td>2개, 256×256</td><td>256×256 (개수는 Cloud 문서에 없음)</td></tr>
+        <tr><td>피크 bf16</td><td class="num">197 TFLOPS</td><td class="num">918 TFLOPS</td><td class="num">2,307 TFLOPS</td></tr>
+        <tr><td>저정밀도 피크</td><td class="num">int8 393 TOPS</td><td class="num">int8 1,836 TOPS</td><td class="num">FP8 4,614 TFLOPS</td></tr>
+        <tr><td>HBM</td><td class="num">16 GB, 819 GB/s</td><td class="num">32 GB, 1,638 GB/s</td><td class="num">192 GiB, 약 7,370 GB/s</td></tr>
+        <tr><td>ICI (칩당, 양방향)</td><td class="num">400 GB/s</td><td class="num">800 GB/s</td><td class="num">1,200 GB/s (링크 6개)</td></tr>
+        <tr><td>칩 간 연결</td><td>2D torus, 최대 256칩</td><td>2D torus, 최대 256칩</td><td>3D torus (4×4×4 큐브), 최대 9,216칩</td></tr>
+        <tr><td>SparseCore</td><td>없음</td><td>있음 (개수 미표기)</td><td>4개 (칩렛마다 2개)</td></tr>
+        <tr><td>JAX에서 보이는 장치</td><td>칩 하나 = 장치 1개</td><td>칩 하나 = 장치 1개</td><td>칩 하나 = 장치 2개 (칩렛마다)</td></tr>
+        <tr><td>공개 수치로 계산한 클럭</td><td class="num">1.50 GHz</td><td class="num">3.50 GHz <span class="pill warn">맞지 않음</span></td><td class="num">4.40 GHz <span class="pill warn">맞지 않음</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="figcap">출처: Google Cloud TPU 문서 (v5e, v6e, TPU7x 페이지, 2026-11 확인), Jouppi 외 2026 (arXiv 2606.15870) Table 1. v5e HBM은 Cloud 문서에 "800 GiBps"로 적혀 있고, NPUsim에는 HBM2e 2스택의 물리 값 819.2 GB/s를 씁니다. 클럭은 피크 ÷ (MXU 수 × 크기² × 2)로 계산했습니다. v6e와 v7은 공개된 MXU 수로는 현실적인 클럭이 나오지 않아, MXU 구성을 측정으로 확인해야 합니다.</p>
+
+  <h3>구조 요소별 검증 경로</h3>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>v7의 구조 요소</th><th>NPUsim에서 해당하는 부분</th><th>v5e</th><th>v6e</th><th>v7에서만 확인 가능</th></tr></thead>
+      <tbody>
+        <tr><td>weight-stationary 시스톨릭 MXU 타이밍</td><td><code>[systolic_array]</code>, strip 매핑</td><td><span class="pill good">검증</span> 128×128</td><td><span class="pill warn">검증 예정</span> 256×256</td><td>−</td></tr>
+        <tr><td>MXU 크기에 따른 채우기·비우기, 패딩 단위</td><td>열 분할, K 분할, <code>height/width</code></td><td>128 단위</td><td><span class="pill warn">검증 예정</span> 256 단위</td><td>−</td></tr>
+        <tr><td>HBM 스트리밍 효율</td><td><code>[dram]</code>, Ramulator2 HBM 설정</td><td><span class="pill good">검증</span> HBM2e, 92%</td><td><span class="pill warn">검증 예정</span> 2배 대역폭</td><td>HBM3E</td></tr>
+        <tr><td>XLA 프로그램·커널 비용</td><td><code>program_setup_cycle</code>, <code>layer_setup_cycle</code></td><td><span class="pill good">측정</span> 0.69 / 0.22 µs</td><td><span class="pill warn">재측정 예정</span></td><td>값은 세대마다 재측정</td></tr>
+        <tr><td>커널 사이 겹침 (prefetch)</td><td><code>interlayer_overlap</code></td><td><span class="pill good">검증</span> MAPE 11.9%</td><td><span class="pill warn">재확인 예정</span></td><td>−</td></tr>
+        <tr><td>decode 레이어 구성 (GEMM + attention)</td><td>레이어 합산, KV 스트림</td><td><span class="pill good">검증</span> MAPE 3.5%</td><td><span class="pill warn">재확인 예정</span></td><td>−</td></tr>
+        <tr><td>저정밀도 가중치</td><td><code>weight_format</code></td><td><span class="pill good">검증</span> int8</td><td>int8</td><td><span class="pill bad">FP8</span></td></tr>
+        <tr><td>SparseCore</td><td>없음</td><td>−</td><td><span class="pill warn">측정 가능</span></td><td>4개 구성</td></tr>
+        <tr><td>칩 간 collective</td><td>multi-chip, ICI 모델</td><td><span class="pill warn">v5e-8 대기</span> 2D torus</td><td><span class="pill warn">v6e-8 필요</span> 2D torus</td><td><span class="pill bad">3D torus</span></td></tr>
+        <tr><td>칩 안 두 칩렛 사이 통신</td><td>없음</td><td>−</td><td>−</td><td><span class="pill bad">v7에서만</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>단계적 검증의 논리</h3>
+  <div class="cols">
+    <div class="card"><h3>v5e: 기본 모델</h3><p>TensorCore 1개, 128×128 MXU, HBM2e의 가장 단순한 구성입니다. 시스톨릭 타이밍, HBM 스트리밍, XLA 프로그램·커널 비용, 커널 사이 겹침을 여기서 먼저 검증했습니다.</p></div>
+    <div class="card"><h3>v6e: MXU 세대 변화만 분리</h3><p>TensorCore 수와 2D torus는 v5e와 같고, MXU가 v7과 같은 256×256으로 바뀝니다. 그래서 v5e에서 맞춘 모델이 MXU 크기 변화를 따라가는지를 다른 변수 없이 확인할 수 있습니다. HBM 대역폭이 2배라 계산과 메모리의 균형점이 바뀌는지도 함께 봅니다.</p></div>
+    <div class="card"><h3>v7: 새로 생기는 요소</h3><p>칩렛 2개, FP8, HBM3E, 3D torus는 v5e·v6e에 없습니다. 이 요소들은 v7 결과에서 "검증 범위 밖"으로 분명히 적고, 접근이 생기면 이 항목부터 측정합니다.</p></div>
+    <div class="card"><h3>설정을 만드는 방식은 같다</h3><p><code>tpu_v5e.cfg</code>는 <code>tpu_v4.cfg</code>에서 MXU 수, 클럭, HBM 대역폭만 바꿔 만들었습니다. v6e와 v7도 같은 방식으로 스펙 값만 바꾸고, 측정으로 얻는 값(프로그램·커널 비용)만 세대마다 다시 잽니다. 세대마다 맞춤 보정을 하지 않으므로, v5e·v6e에서 확인한 정합성은 공통 구조 요소에 대한 v7 예측의 근거가 됩니다. v7에만 있는 요소는 이 근거에 포함되지 않습니다.</p></div>
+  </div>
+</section>
+
 <section aria-labelledby="h-stack">
   <h2 id="h-stack">TPU, JAX, XLA</h2>
   <p>TPU는 직접 프로그래밍하는 장치가 아닙니다. 사용자는 Python으로 계산을 적고, 컴파일러가 그것을 TPU 프로그램으로 바꿔 실행합니다. 측정값을 NPUsim과 비교하려면 이 경로에서 무엇이 실제로 실행되는지 알아야 합니다.</p>
@@ -407,7 +459,8 @@ results in /content/tpu_v5e_colab</pre>
     <li><strong>8칩 collective와 tp = 8 decode</strong>: PaLM 비교의 −41~−60%를 설명할 남은 후보입니다. Kaggle v5e-8 배정을 기다리고 있습니다.</li>
     <li><strong><code>while</code> 루프 반복 비용</strong>: <code>--only loopk</code> 측정 스크립트를 만들었고, Colab 실행이 필요합니다.</li>
     <li><strong>Ramulator2 연동의 스트림 시작 지연</strong>: 연쇄 실행에서 Ramulator2가 analytic보다 큰 오차(23.4%)를 보이는 원인입니다. 레이어 단위로 장치를 이어서 쓰는 연동이 필요합니다.</li>
-    <li><strong>256×256 MXU 세대</strong>: v6e나 Ironwood는 Kaggle에 없어, TRC나 유료 Cloud TPU가 필요합니다.</li>
+    <li><strong>v6e 측정</strong>: 256×256 MXU 세대를 확인하는 다음 단계입니다. Colab의 <code>v6e-1</code>(Pro+ 등 유료 등급에 있다는 2025년 사용자 보고가 있음), TRC, 유료 Cloud TPU 중 하나가 필요합니다. 같은 <code>measure_tpu.py</code>를 그대로 쓰고, NPUsim에는 스펙 값만 바꾼 <code>tpu_v6e.cfg</code>를 만듭니다. 공개 수치로는 MXU 구성과 클럭이 맞지 않으므로, 큰 GEMM의 처리량으로 MXU 구성부터 확인합니다.</li>
+    <li><strong>v7 고유 요소</strong>: 칩렛 사이 통신, FP8, HBM3E, 3D torus는 v7에 접근할 수 있을 때 측정합니다.</li>
   </ul>
 </section>
 
