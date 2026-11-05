@@ -182,6 +182,14 @@ public:
     /* Layer timeline (A1): per-level busy time on a shared analytical timeline and the
        segment-combined critical-path latency (overlap at double-buffered boundaries). */
     double layer_latency;
+    // Inter-layer overlap (network rollup, [accelerator] interlayer_overlap): a layer's prologue
+    // (until its last stage starts the first tile) and tail (after its first stage, DRAM, is done).
+    // Both 0 for layers whose timeline carries SFU / decompression / KV / attention extensions.
+    double overlap_head_cycle;
+    double overlap_tail_cycle;
+    bool interlayer_overlap;           // rollup: overlap each layer's prologue with the previous tail
+    double interlayer_prev_tail;       // rollup: tail of the last layer folded in
+    double interlayer_hidden_cycle;    // rollup: cycles hidden by the overlap
     double busy_cycle_pe;
     // CE7: per-stage busy composition (0=DRAM,1=multi-chip,2=GLB,3=PE array,4=PE).
     double stage_axis_access[5];

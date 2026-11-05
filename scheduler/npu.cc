@@ -86,6 +86,7 @@ npu_t::npu_t() :
  compression_type(compression_type_t::DENSE),
  num_skipped_timing_layers(0),
     program_setup_cycle(0.0),
+    interlayer_overlap(false),
  multi_chip(NULL),
  dram(NULL),
  decomp(NULL),
@@ -196,6 +197,9 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             // Once-per-run cost, outside every layer: what a program pays to start (e.g. a TPU XLA
             // program's first operand fetch before any kernel overlaps it). Default 0.
             section_config.get_setting("program_setup_cycle", &program_setup_cycle);
+            // Layers of one run overlap like kernels of one program: the next layer's off-chip prologue
+            // under the previous layer's tail (stats_t::update_network_stats). Default 0: serial layers.
+            section_config.get_setting("interlayer_overlap", &interlayer_overlap);
             if(program_setup_cycle < 0.0) {
                 std::cerr << "Error: [accelerator] program_setup_cycle must be >= 0" << std::endl;
                 exit(1);
@@ -658,6 +662,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         layer_stats[i]->update_tile_size(schedulers[i]);
     }
     network_stats = new stats_t();
+    network_stats->interlayer_overlap = interlayer_overlap;
     std::cout << "  Done!" << std::endl;
 }
 void npu_t::override_executable_layer_geometry() {

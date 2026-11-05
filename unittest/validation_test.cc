@@ -54,6 +54,16 @@ bool stall_is(size_t producer_tiles, double producer_cost, size_t consumer_tiles
            std::fabs(stall[1] - expected_consumer_stall) < 1e-9;
 }
 
+// Inter-layer overlap inputs: when the last stage starts its first tile (the prologue the next layer can
+// hide) and when the first stage finishes its last tile (the tail starts there).
+bool head_and_first_finish_are(size_t tiles, double producer_cost, double consumer_cost, unsigned depth,
+                               double expected_head, double expected_first_finish) {
+    double head = -1.0, first_finish = -1.0;
+    pipeline_timeline_cycles({uniform_tiles(tiles, producer_cost), uniform_tiles(tiles, consumer_cost)},
+                             {depth}, 0, &head, &first_finish);
+    return std::fabs(head - expected_head) < 1e-9 && std::fabs(first_finish - expected_first_finish) < 1e-9;
+}
+
 // L2 test helpers: state a width-conversion case the way a real config produces it --
 // payload bits plus the source-line / link / destination-line widths -- so the packet
 // boundaries under test are the physical ones, not an arbitrary count triple.
@@ -650,6 +660,12 @@ void validate_spatial_interconnect_contract() {
        // 3 + 4*10 = 43, and the producer spends 14 cycles blocked.
        pipeline_timeline_cycles({uniform_tiles(4, 3.0), uniform_tiles(4, 10.0)}, {2}) != 43.0 ||
        !stall_is(4, 3.0, 4, 10.0, 2, 14.0, 0.0) ||
+       // Producer (10/tile) feeding a consumer (3/tile), 4 tiles, depth 2: the consumer starts tile 0 at 10
+       // (the prologue) and the producer is done at 40, so the tail after it is 43 - 40 = 3.
+       !head_and_first_finish_are(4, 10.0, 3.0, 2, 10.0, 40.0) ||
+       // A slow consumer: prologue 3; back-pressure holds producer tiles 2 and 3 until consumer slots free
+       // (finishes 3, 6, 16, 26: the 14 stall cycles stall_is checks above), makespan 43.
+       !head_and_first_finish_are(4, 3.0, 10.0, 2, 3.0, 26.0) ||
        // The same chain with a deep enough buffer never stalls the producer.
        !stall_is(4, 3.0, 4, 10.0, 8, 0.0, 0.0) ||
        // Single buffering stalls the producer even when it is the slow side.

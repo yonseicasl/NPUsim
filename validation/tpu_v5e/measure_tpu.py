@@ -9,6 +9,8 @@ copy this one file to a Kaggle TPU notebook (TpuV5E8) or a TRC/Cloud TPU VM and 
                    time per named scope (qkv, attn, o_proj, ffn_*, norms, psum)
   smallk.csv       (--only smallk, not in the default set) fixed per-kernel time: K sweeps at small M, N,
                    the smallest elementwise kernel, chains of n matmuls in one program; fits in smallk_fit.csv
+  loopk.csv        (--only loopk, not in the default set) per-iteration cost of a while loop: n dependent
+                   matmuls as a fori_loop over stacked weights vs unrolled; fits in loopk_fit.csv
   env.json         devices, versions
 
 Device time comes from the profiler's perfetto trace (XLA module and op events on TPU:0); wall time
@@ -394,6 +396,57 @@ def smallk():
                              per_kernel_us=round((t[8] - t[1]) / 7, 3)))
     write("smallk.csv", rows)
     write("smallk_fit.csv", fits)
+
+
+def loopk():
+    """Per-iteration cost of a while loop (not in the default --only): n dependent y = y @ W_i (distinct K x K
+    weights) once as a jax.lax.fori_loop over a stacked [n, K, K] array (one dynamic slice per iteration, the
+    structure of a scanned layer stack) and once unrolled in the same program, n = 1, 4, 16. The slope over n
+    of each is its per-kernel cost; loop - unrolled is what a loop iteration adds. Writes loopk.csv and
+    loopk_fit.csv (copy_us: the module's copy-start/done time)."""
+    dev = jax.devices()[0]
+    put = lambda k, s, scale=1.0: jax.device_put((rnd(k, s).astype(F32) * scale).astype(BF16), dev)
+    ops_sum = lambda r: r["ops"] and round(sum(r["ops"].values()), 3)
+    copy_sum = lambda r: r["ops"] and round(sum(v for k, v in r["ops"].items() if "copy-" in k), 3)
+    shapes = [(8, 128), (128, 1024)] if ARGS.quick else [(8, 128), (100, 1000), (128, 1024), (256, 2048), (8, 4096)]
+    ns = (1, 4) if ARGS.quick else (1, 4, 16)
+    rows, fits = [], []
+
+    def looped(x, ws):
+        return jax.lax.fori_loop(0, ws.shape[0], lambda i, y: y @ ws[i], x)
+
+    def unrolled(x, ws):
+        for i in range(ws.shape[0]):
+            x = x @ ws[i]
+        return x
+
+    for M, K in shapes:
+        pts = {"loop": [], "unrolled": []}
+        for n in ns:
+            # weights scaled by 1/sqrt(K) keep the chained values in range; distinct sets rotate as elsewhere
+            sets = [(put(5000 * i + 1, (M, K)), put(5000 * i + 2, (n, K, K), K ** -0.5))
+                    for i in range(nsets(2 * (M * K + n * K * K)))]
+            for kind, fn in (("loop", looped), ("unrolled", unrolled)):
+                r = bench(jax.jit(fn), sets, f"loopk_{kind}_{M}x{K}_n{n}")
+                rows.append(dict(kind=kind, M=M, K=K, N=K, n=n, bytes=2 * (M * K + n * K * K + M * K), sets=r["sets"],
+                                 wall_us=round(r["wall_us"], 3), device_us=r["device_us"] and round(r["device_us"], 3),
+                                 ops_us=ops_sum(r), copy_us=copy_sum(r)))
+                pts[kind].append(rows[-1])
+                print(f"loopk {kind:8s} {M:4d} x {K:5d} n={n:2d}  {fmt(r)}  copy {rows[-1]['copy_us']}")
+        slope = {}
+        for kind, p in pts.items():
+            xy = [(q["n"], q["device_us"]) for q in p if q["device_us"] is not None]
+            if len(xy) >= 2:
+                a, b = linfit(*zip(*xy))
+                slope[kind] = b
+                fits.append(dict(kind=kind, M=M, N=K, fixed_us=round(a, 3), per_kernel_us=round(b, 3)))
+        if len(slope) == 2:
+            fits.append(dict(kind="loop_minus_unrolled", M=M, N=K, fixed_us="",
+                             per_kernel_us=round(slope["loop"] - slope["unrolled"], 3)))
+            print(f"  {M} x {K}: loop {slope['loop']:.3f} us, unrolled {slope['unrolled']:.3f} us per kernel "
+                  f"-> {slope['loop'] - slope['unrolled']:+.3f} us per loop iteration")
+    write("loopk.csv", rows)
+    write("loopk_fit.csv", fits)
 
 
 def main():

@@ -281,3 +281,33 @@ The smallk2 run (`results/2026-11-04_colab_v5e1_smallk2/`, raw `.zip` beside it)
   (+34%). Inside a `while` loop (follow-up 2) the same shapes take 1-3 us more per iteration than in the
   chain, so NPUsim is short there. Open: an inter-layer overlap model (layer i+1's prologue under layer
   i's tail) for chained kernels, the per-iteration cost of loops, XLA's serial staging for isolated ones.
+
+### Inter-layer overlap, copy-aware comparison, loop measurement (2026-11-04)
+
+- NPUsim `[accelerator] interlayer_overlap` (default 0; 1 in `tpu_v5e*.cfg`): each layer records its prologue
+  (until the last stage starts its first tile) and tail (after the first stage, DRAM, finishes) from the
+  per-tile pipeline (`pipeline_timeline_cycles` now returns both); the network rollup hides
+  min(tail_i, prologue_{i+1}) at every boundary -- the next layer's weights stream while the previous one
+  drains, its compute still starts after it. Layers with SFU / decompression / KV / attention extensions keep
+  0. Checked on chained 128 x 1024 x 1024 networks (1131 cycles hidden per boundary) and in
+  `unittest/validation_test.cc`; `run_validation.sh` and `run_stats_timeline_validation.sh` pass.
+- `compare_v5e.py --chain` compares per-kernel slopes of a chain with NPUsim's GEMM minus that overlap
+  (implies `--in-program`). Odd small GEMMs chained in one program (35, smallk2):
+
+  | | no overlap | with overlap |
+  |---|---|---|
+  | analytic, all | +33.6 / 33.6% | +11.3 / 11.9% |
+  | analytic, M 512 | +26.4 / 26.4% | -0.3 / 2.7% |
+  | Ramulator2, all | +45.7 / 45.7% | +23.2 / 23.4% |
+
+  Ramulator2 stays higher: each NPUsim tile stream starts a fresh device and pays its first access.
+- XLA's serial staging is kept out of NPUsim: where a module's copy time is recorded (`ops` copy entries, or a
+  `copy_us` column as in smallk2's `gemm_smallk.csv`), `compare_v5e.py` also reports kernel = measured - copy.
+  That kernel time is a VMEM-resident run, so it is meaningful against NPUsim for compute-bound isolated GEMMs
+  only; memory-bound isolated GEMMs are dominated by the copy and are not used as fidelity points.
+- `compare_v5e.py --in-program` read and rewrote the config copy in one expression, truncating it first: every
+  in-program comparison in `c4a9b06` failed and kept the previous CSVs (same conditions: program setup 0).
+  Fixed; all of them re-run.
+- `measure_tpu.py --only loopk` (not yet run on a TPU): n = 1, 4, 16 dependent matmuls as a `fori_loop` over
+  stacked weights and unrolled, M x K = 8 x 128, 100 x 1000, 128 x 1024, 256 x 2048, 8 x 4096; the
+  loop - unrolled slope is the per-iteration cost of a while loop (`loopk_fit.csv`).

@@ -28,6 +28,17 @@ import palm_decode as palm  # noqa: E402
 palm.MXUS, palm.CLOCK_HZ = 4, 1.5e9        # TPU v5e; palm.gemm_files / run_gemm read these
 ACCEL, DIM, MTILE = "tpu_v5e", 128, 512
 IN_PROGRAM = False
+CHAIN = False                              # per-kernel cost inside a chain: minus the inter-layer overlap
+
+
+def run_sim(args):
+    """(seconds, prologue s, tail s) of one NPUsim GEMM run (prologue/tail from its layer report)."""
+    sec = palm.run_gemm(args)
+    cfgroot, rundir, name, accel = args
+    m = re.search(r"Overlap prologue/tail\s*:\s*([\d.]+)\s*/\s*([\d.]+)",
+                  open(os.path.join(rundir, f"{accel}_{name}_layer_0.txt")).read())
+    head, tail = (float(m.group(1)), float(m.group(2))) if m else (0.0, 0.0)
+    return sec, head / palm.CLOCK_HZ, tail / palm.CLOCK_HZ
 PEAK, HBM = 4 * DIM * DIM * 2 * 1.5e9, 819e9
 D, HKV, DH = 4096, 8, 128                  # measure_tpu.py's Llama-3-8B decode layer
 PROJ = {"qkv": (4096, 6144), "o_proj": (4096, 4096), "ffn_up": (4096, 28672), "ffn_down": (14336, 4096)}
@@ -42,7 +53,8 @@ def simulate(shapes, jobs):
     tmp, cfgroot, rundir = palm.workdir((ACCEL,))
     if IN_PROGRAM:                            # kernels inside a loop/chain do not pay the program's start
         p = os.path.join(cfgroot, "accelerators", f"{ACCEL}.cfg")
-        open(p, "w").write(re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", open(p).read()))
+        text = open(p).read()                 # read before reopening for write (which truncates)
+        open(p, "w").write(re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", text))
     plan, todo = {}, {}
     mxus = palm.MXUS
 
@@ -88,15 +100,18 @@ def simulate(shapes, jobs):
             plan[M, K, N] = (mt, [add(mtile, K, x * mxus * DIM, mxus) for x in s], (s, strips))
     print(f"NPUsim: {len(todo)} runs on {jobs} threads ...", flush=True)
     with ThreadPoolExecutor(jobs) as ex:
-        sim = dict(zip(todo, ex.map(palm.run_gemm, todo.values())))
+        sim = dict(zip(todo, ex.map(run_sim, todo.values())))
     shutil.rmtree(tmp)
 
     def scale(mt, names, fit):
+        # In a chain the kernel's prologue runs under the previous kernel's tail (NPUsim's interlayer_overlap):
+        # one boundary per kernel, min(prologue, tail) of its (first) simulated run.
+        hidden = min(sim[names[0]][1], sim[names[0]][2]) if CHAIN else 0.0
         if fit is None:
-            return mt * sim[names[0]]
+            return mt * sim[names[0]][0] - hidden
         (s0, s1), strips = fit
-        t0, t1 = sim[names[0]], sim[names[1]]
-        return mt * (t0 + (strips - s0) * (t1 - t0) / (s1 - s0))
+        t0, t1 = sim[names[0]][0], sim[names[1]][0]
+        return mt * (t0 + (strips - s0) * (t1 - t0) / (s1 - s0)) - hidden
     return {k: scale(*v) for k, v in plan.items()}
 
 
@@ -116,9 +131,11 @@ def main():
     ap.add_argument("--gemm", default="gemm.csv", help="GEMM measurements in RESULTS_DIR")
     ap.add_argument("--in-program", action="store_true", help="the GEMMs ran inside a loop or chain of one "
                     "program (streamed, odd_gemm, per-kernel slopes): no program_setup_cycle per GEMM")
+    ap.add_argument("--chain", action="store_true", help="per-kernel slopes of a chain in one program: also "
+                    "subtract the inter-layer overlap with the previous kernel (implies --in-program)")
     a = ap.parse_args()
-    global IN_PROGRAM
-    IN_PROGRAM = a.in_program
+    global IN_PROGRAM, CHAIN
+    IN_PROGRAM, CHAIN = a.in_program or a.chain, a.chain
     ACCEL = a.accel
     palm.MOSAIC_DRAM = a.dram and os.path.abspath(a.dram)
     gemm = list(csv.DictReader(open(os.path.join(a.results, a.gemm))))
@@ -139,6 +156,8 @@ def main():
         meas = num(r, "device_us") if src == "device" else num(r, "wall_us")
         ops = dict(kv.rsplit("=", 1) for kv in (r.get("ops") or "").split(";") if "=" in kv)
         copy = sum(float(v) for k, v in ops.items() if "copy-" in k) if src == "device" else 0.0
+        if num(r, "copy_us") is not None:     # smallk: the module's copy-start/done time recorded directly
+            copy = num(r, "copy_us")
         kern = meas - copy
         s, roof = sim[M, K, N] * 1e6, roofline(M, K, N) * 1e6
         err, errk = 100 * (s / meas - 1), 100 * (s / kern - 1)
@@ -152,7 +171,7 @@ def main():
               f" {errk:+6.1f}%  {src}")
     print("MAPE " + ", ".join(f"{k} {statistics.mean(v):.1f}% (n={len(v)})" for k, v in errs.items()))
     tag = ("_" + a.accel if a.accel != "tpu_v5e" else "") + \
-        ("_" + os.path.splitext(os.path.basename(a.dram))[0] if a.dram else "")
+        ("_" + os.path.splitext(os.path.basename(a.dram))[0] if a.dram else "") + ("_chain" if a.chain else "")
     with open(os.path.join(a.results, f"compare_{os.path.splitext(a.gemm)[0]}{tag}.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, list(out[0]))
         w.writeheader()
