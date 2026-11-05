@@ -120,6 +120,18 @@ td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; whit
 .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
 
+/* code and terminal output */
+pre { margin: 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px;
+      overflow-x: auto; font: 400 0.84rem/1.6 var(--font-mono); color: var(--ink); }
+pre .c { color: var(--muted); }
+pre .k { color: var(--accent); }
+.figcap { font-size: 0.86rem; color: var(--muted); margin-top: -8px; }
+.flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.flow > div { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.flow b { font: 600 0.78rem/1.4 var(--font-mono); letter-spacing: 0.06em; color: var(--accent); }
+.flow span { font-size: 0.9rem; line-height: 1.5; }
+@media (max-width: 720px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
@@ -130,7 +142,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--ru
 <header>
   <div class="eyebrow">NPUsim · MOSAIC xPU engine · Cloud TPU v5e</div>
   <h1>NPUsim을 TPU v5e 실측에 맞춰 검증하고 개선한 과정</h1>
-  <p class="lede">공개 논문값과의 비교에서 시작해, Colab TPU v5e-1에서 직접 잰 커널·레이어 시간으로 NPUsim의 정합성을 평가했습니다. 측정 방식이 만든 착시를 하나씩 걸러 내고, 근거가 있는 항목만 모델에 반영했습니다.</p>
+  <p class="lede">공개 논문값과의 비교에서 시작해, Colab TPU v5e-1에서 직접 잰 커널·레이어 시간으로 NPUsim의 정합성을 평가했습니다. 측정은 Python과 JAX로 작성한 스크립트를 Colab 노트북에서 실행하고, XLA profiler가 기록한 TPU 장치 시간을 NPUsim 결과와 비교하는 방식입니다. 측정 방식이 만든 착시를 하나씩 걸러 내고, 근거가 있는 항목만 모델에 반영했습니다.</p>
   <div class="meta">
     <span>기간 2026-11-02 ~ 11-05</span>
     <span>장비 TPU v5 lite (v5e-1), JAX 0.11.2</span>
@@ -162,6 +174,105 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--ru
     </table>
   </div>
   <p class="muted">값은 평균 오차 / MAPE입니다. 음수는 NPUsim이 실측보다 짧게 예측한다는 뜻입니다.</p>
+</section>
+
+<section aria-labelledby="h-stack">
+  <h2 id="h-stack">TPU, JAX, XLA</h2>
+  <p>TPU는 직접 프로그래밍하는 장치가 아닙니다. 사용자는 Python으로 계산을 적고, 컴파일러가 그것을 TPU 프로그램으로 바꿔 실행합니다. 측정값을 NPUsim과 비교하려면 이 경로에서 무엇이 실제로 실행되는지 알아야 합니다.</p>
+  <div class="flow" aria-label="Python 코드에서 TPU 실행까지">
+    <div><b>PYTHON</b><span>계산을 NumPy처럼 적습니다. 예: <code>a @ b</code></span></div>
+    <div><b>JAX</b><span><code>jax.jit</code>이 함수를 추적해 계산 그래프로 만듭니다.</span></div>
+    <div><b>XLA</b><span>그래프를 최적화해 TPU용 프로그램으로 컴파일합니다.</span></div>
+    <div><b>TPU</b><span>프로그램 안의 커널이 MXU, 벡터 유닛, HBM을 씁니다.</span></div>
+  </div>
+  <div class="cols">
+    <div class="card">
+      <h3>JAX</h3>
+      <p>Google이 만든 Python 수치 계산 라이브러리입니다. NumPy와 거의 같은 문법(<code>jax.numpy</code>)으로 행렬 연산을 적으면, 같은 코드가 CPU, GPU, TPU에서 실행됩니다.</p>
+      <p><code>jax.jit</code>으로 감싼 함수는 처음 호출할 때 컴파일되고, 이후에는 컴파일된 프로그램이 장치에서 바로 실행됩니다. 호출은 비동기라 Python이 결과를 기다리지 않고 다음 명령을 보내므로, 시간을 잴 때는 <code>block_until_ready()</code>로 끝날 때까지 기다려야 합니다.</p>
+    </div>
+    <div class="card">
+      <h3>XLA</h3>
+      <p>JAX와 TensorFlow가 공통으로 쓰는 머신러닝 컴파일러입니다. 계산 그래프를 HLO라는 중간 표현으로 받아, 여러 연산을 하나의 커널로 합치고(fusion), 데이터를 HBM과 칩 안 메모리 중 어디에 둘지 정하고, TPU 명령으로 바꿉니다.</p>
+      <p>이번 측정에서 본 많은 현상이 XLA의 결정이었습니다. 칩 안에 들어가는 가중치를 먼저 복사해 두는 것, 반복 호출 사이에 입력을 남겨 두는 것, 다음 커널의 데이터를 미리 가져오는 것이 그 예입니다.</p>
+    </div>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>TPU 쪽 단위</th><th>뜻</th><th>NPUsim에서 대응하는 것</th></tr></thead>
+      <tbody>
+        <tr><td>프로그램 (XLA module)</td><td><code>jax.jit</code> 함수 하나를 컴파일한 결과. 호출 한 번이 실행 한 번</td><td>NPUsim 실행 한 번 (<code>model run ...</code>), <code>program_setup_cycle</code></td></tr>
+        <tr><td>커널 (fusion)</td><td>프로그램 안에서 한 번에 실행되는 연산 묶음. GEMM 하나가 보통 커널 하나</td><td>레이어 하나, <code>layer_setup_cycle</code></td></tr>
+        <tr><td>op</td><td>profiler trace에 찍히는 개별 실행 단위. 커널, 복사(<code>copy-start/done</code>) 등</td><td>파이프라인 단계별 시간 (DRAM, GLB, PE)</td></tr>
+        <tr><td>장치 시간 (device time)</td><td>TPU가 프로그램을 실제로 실행한 시간</td><td>Critical-path latency</td></tr>
+        <tr><td>wall time</td><td>Python에서 잰 시간. 명령을 보내는 비용(약 50 µs)이 섞임</td><td>비교에 쓰지 않음</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="h-colab">
+  <h2 id="h-colab">Colab에서 측정하기</h2>
+  <p>Colab은 브라우저에서 쓰는 Jupyter 노트북 환경이고, 언어는 Python입니다. 런타임 유형을 <code>v5e-1 TPU</code>로 바꾸면 TPU v5e 칩 1개가 붙은 가상 머신이 배정되고, JAX가 미리 설치되어 있습니다. 측정 스크립트 <code>measure_tpu.py</code>는 JAX만 쓰는 Python 파일 하나라 별도 설치 없이 실행됩니다.</p>
+  <h3>노트북 셀 순서</h3>
+<pre><span class="c"># 1. TPU 확인 (셀에 그대로, '!' 없이)</span>
+<span class="k">import</span> jax
+print(jax.default_backend(), jax.devices())     <span class="c"># tpu [TpuDevice(id=0, ...)]</span>
+
+<span class="c"># 2. 스크립트 파일 만들기: 첫 줄 아래에 measure_tpu.py 내용 전체를 붙여 넣음</span>
+%%writefile /content/measure_tpu.py
+
+<span class="c"># 3. 실행 (%run: 노트북 커널 안에서 실행. !python은 새 프로세스라 TPU를 잡지 못해 멈춤)</span>
+%run /content/measure_tpu.py --out /content/tpu_v5e_colab
+%run /content/measure_tpu.py --only smallk --out /content/tpu_v5e_smallk
+
+<span class="c"># 4. 결과 묶어 내려받기</span>
+!cd /content && zip -qr result.zip tpu_v5e_colab
+<span class="k">from</span> google.colab <span class="k">import</span> files; files.download(<span class="k">'/content/result.zip'</span>)</pre>
+  <p class="figcap">TPU는 한 번에 한 프로세스만 쓸 수 있습니다. 셀에서 <code>import jax</code>를 하면 노트북 커널이 TPU를 차지하므로, 스크립트도 같은 커널 안에서 <code>%run</code>으로 실행합니다. 세션이 끊기면 <code>/content</code>가 비워지니 결과는 바로 내려받습니다.</p>
+
+  <h3>측정 코드의 핵심 (간략화)</h3>
+<pre><span class="k">import</span> jax, jax.numpy <span class="k">as</span> jnp
+
+f = jax.jit(<span class="k">lambda</span> a, b: a @ b)                       <span class="c"># GEMM 하나 = XLA 프로그램 하나</span>
+sets = [(rand((8, 4096)), rand((4096, 4096))) <span class="k">for</span> i <span class="k">in</span> range(16)]  <span class="c"># 서로 다른 버퍼 512 MB 이상</span>
+f(*sets[0]).block_until_ready()                          <span class="c"># 첫 호출: 컴파일</span>
+
+<span class="k">with</span> jax.profiler.trace(<span class="k">"traces/gemm"</span>, create_perfetto_trace=<span class="k">True</span>):
+    <span class="k">for</span> i <span class="k">in</span> range(n):
+        out = f(*sets[i % len(sets)])                    <span class="c"># 호출마다 다른 버퍼</span>
+    out.block_until_ready()
+<span class="c"># perfetto_trace.json.gz에서 TPU:0의 'XLA Modules'(프로그램)와 'XLA Ops'(커널, 복사) 시간을 읽음</span></pre>
+
+  <h3>화면 출력</h3>
+<pre>{"jax": "0.11.2", "backend": "tpu", "n_devices": 1, "device_kind": "TPU v5 lite", ...}
+gemm     8 x  4096 x  4096  wall      60.3 us  device      56.4 us     4.76 TFLOPS
+gemm   100 x  1000 x  3000  wall      56.2 us  device      13.6 us    44.25 TFLOPS
+gemm   512 x  4096 x 28672  wall     640.0 us  device     637.5 us   188.64 TFLOPS
+...
+decode tp1 B8    L2048  wall     697.1 us  device     694.8 us  (구간별 시간: qkv, attn, ffn_up, ...)
+results in /content/tpu_v5e_colab</pre>
+  <p class="figcap">2026-11-03 Colab 측정(버퍼 회전)의 실제 값입니다. 한 줄이 GEMM 하나이고, M × K × N, wall time, 장치 시간, 실제 달성 처리량(2MKN ÷ 장치 시간)입니다. 작은 GEMM은 wall time이 명령 전송 비용(약 50 µs)에 묶여 있어 장치 시간으로 비교합니다.</p>
+
+  <h3>결과 파일</h3>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>파일</th><th>내용</th><th>주요 열</th></tr></thead>
+      <tbody>
+        <tr><td><code>env.json</code></td><td>JAX 버전, 장치 종류, 장치 수, 측정 시각</td><td><span class="mono">device_kind = "TPU v5 lite"</span></td></tr>
+        <tr><td><code>gemm.csv</code></td><td>GEMM 형태별 시간</td><td><span class="mono">M, K, N, sets, wall_us, device_us, tflops, ops</span></td></tr>
+        <tr><td><code>vector.csv</code></td><td>rmsnorm, softmax, SwiGLU, add</td><td><span class="mono">op, M, D, device_us</span></td></tr>
+        <tr><td><code>decode.csv</code></td><td>Llama-3-8B decode 레이어, 구간별 시간</td><td><span class="mono">batch, context, device_us, qkv_us, attn_us, ffn_up_us, ...</span></td></tr>
+        <tr><td><code>decode_ops.json</code></td><td>decode 레이어의 XLA op별 시간</td><td><span class="mono">"ffn_up|multiply_reduce_fusion": 311.5</span></td></tr>
+        <tr><td><code>collectives.csv</code></td><td>칩 간 통신 (칩이 2개 이상일 때만)</td><td><span class="mono">op, chips, bytes_per_chip, device_us</span></td></tr>
+        <tr><td><code>smallk.csv</code>, <code>smallk_fit.csv</code></td><td>작은 커널 고정 시간과 직선 맞추기 결과</td><td><span class="mono">kind, M, K, N, n, device_us, copy_us / fixed_us, per_kernel_us</span></td></tr>
+        <tr><td><code>loopk.csv</code>, <code>loopk_fit.csv</code></td><td><code>while</code> 루프와 펼친 실행의 커널당 시간</td><td><span class="mono">kind, M, K, n, device_us / per_kernel_us</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><code>gemm.csv</code>의 <code>ops</code> 열이 원인 분석의 출발점이었습니다. 예를 들어 8×4096×4096 한 줄은 <span class="mono">copy-done=44.75; fusion=11.67</span>로, 56.4 µs 중 44.8 µs가 가중치 복사이고 계산은 11.7 µs뿐이라는 것을 보여 줍니다. 단독 실행에서 XLA가 복사와 계산을 차례로 실행한다는 사실을 여기서 찾았습니다.</p>
+  <h3>NPUsim과 비교</h3>
+  <p>내려받은 폴더를 서버의 <code>validation/tpu_v5e/results/&lt;날짜&gt;/</code>에 두고 <code>compare_v5e.py</code>를 실행합니다. 측정된 모든 형태를 NPUsim으로 다시 시뮬레이션해, 실측·NPUsim·roofline과 오차를 표로 내고 <code>compare_gemm.csv</code>에 저장합니다. 측정 조건에 따라 <code>--in-program</code>(루프 안 커널), <code>--chain</code>(연쇄 안 커널), <code>--dram hbm2e_v5e.yaml</code>(Ramulator2 DRAM)을 붙입니다.</p>
 </section>
 
 <section aria-labelledby="h-process">
