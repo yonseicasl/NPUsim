@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NPUsim TPU v5e 정합성</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a lab-notebook report. A single reading column; the process runs down a vertical
+   signal trace (step markers on a line), with result tables and one to-scale chart in between. */
+:root {
+  --bg: #f4f6f7;          /* cool paper */
+  --surface: #ffffff;
+  --ink: #17232b;         /* graphite */
+  --muted: #5a6b75;
+  --rule: #d5dde1;
+  --accent: #0e6e74;      /* oscilloscope teal */
+  --accent-soft: #d9eeee;
+  --good: #2f7d3b;
+  --warn: #a8640a;
+  --bad: #b23a2e;
+  --font-display: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --step: 1.0rem;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1619; --surface: #162126; --ink: #e3eaed; --muted: #94a6ae; --rule: #2a3a41;
+    --accent: #4fc1c5; --accent-soft: #173a3d; --good: #6cc27a; --warn: #e0a04a; --bad: #ec7b6e;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1619; --surface: #162126; --ink: #e3eaed; --muted: #94a6ae; --rule: #2a3a41;
+  --accent: #4fc1c5; --accent-soft: #173a3d; --good: #6cc27a; --warn: #e0a04a; --bad: #ec7b6e;
+  color-scheme: dark;
+}
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 400 16px/1.7 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 880px; margin: 0 auto; padding-block: 48px 72px; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.3; margin: 0; }
+h1 { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; font-weight: 600; }
+h3 { font-size: 1.08rem; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font: 500 0.78rem/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+code, .mono { font-family: var(--font-mono); font-size: 0.9em; }
+code { background: var(--accent-soft); padding: 0.05em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+section { display: flex; flex-direction: column; gap: 18px; }
+a { color: var(--accent); }
+
+/* header */
+header { display: flex; flex-direction: column; gap: 14px; }
+.lede { font-size: 1.08rem; color: var(--ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font: 400 0.85rem/1.5 var(--font-mono); color: var(--muted); }
+
+/* headline figures: the four numbers this work produced */
+.figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+.fig { background: var(--surface); padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fig b { font: 600 1.7rem/1.1 var(--font-mono); color: var(--accent); font-variant-numeric: tabular-nums; }
+.fig span { font-size: 0.86rem; color: var(--muted); line-height: 1.45; }
+@media (max-width: 720px) { .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* process trace */
+.trace { list-style: none; margin: 0; padding: 0; position: relative; display: flex; flex-direction: column; gap: 30px; }
+.trace::before { content: ""; position: absolute; left: 15px; top: 6px; bottom: 6px; width: 2px; background: var(--rule); }
+.trace > li { position: relative; padding-left: 52px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.trace > li::before {
+  content: attr(data-n); position: absolute; left: 0; top: 0; width: 32px; height: 32px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--surface); border: 2px solid var(--accent);
+  font: 600 0.85rem/1 var(--font-mono); color: var(--accent);
+}
+.step-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.step-head .when { font: 400 0.8rem/1.4 var(--font-mono); color: var(--muted); }
+.finding { border-left: 3px solid var(--warn); background: var(--surface); padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 0.95rem; }
+.finding.fix { border-left-color: var(--good); }
+.finding strong { font-weight: 600; }
+ul.tight { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 4px; max-width: 70ch; }
+
+/* tables */
+.tbl { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 500 0.75rem/1.4 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pill { display: inline-block; font: 500 0.74rem/1.5 var(--font-mono); padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.pill.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+
+/* chart */
+.chart { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; overflow-x: auto; }
+.chart svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.chart text { font-family: var(--font-body); fill: var(--ink); }
+.chart .axis text { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.chart .grid line { stroke: var(--rule); stroke-width: 1; }
+.chart .seg { stroke: var(--muted); stroke-width: 2; }
+.chart .before { fill: var(--bg); stroke: var(--bad); stroke-width: 2; }
+.chart .after { fill: var(--accent); }
+.chart .val { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+/* two-column principles */
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+@media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+
+footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">NPUsim · MOSAIC xPU engine · Cloud TPU v5e</div>
+  <h1>NPUsim을 TPU v5e 실측에 맞춰 검증하고 개선한 과정</h1>
+  <p class="lede">공개 논문값과의 비교에서 시작해, Colab TPU v5e-1에서 직접 잰 커널·레이어 시간으로 NPUsim의 정합성을 평가했습니다. 측정 방식이 만든 착시를 하나씩 걸러 내고, 근거가 있는 항목만 모델에 반영했습니다.</p>
+  <div class="meta">
+    <span>기간 2026-11-02 ~ 11-05</span>
+    <span>장비 TPU v5 lite (v5e-1), JAX 0.11.2</span>
+    <span>브랜치 npusim tpu-measure @ 56fd804</span>
+  </div>
+</header>
+
+<section aria-labelledby="h-now">
+  <h2 id="h-now">현재 정합성</h2>
+  <div class="figures">
+    <div class="fig"><b>3.5%</b><span>decode 레이어 전체 MAPE<br>(Llama-3-8B, NPUsim + Ramulator2)</span></div>
+    <div class="fig"><b>3.5%</b><span>int8 가중치 decode GEMM MAPE<br>(M ≤ 128, Ramulator2)</span></div>
+    <div class="fig"><b>4.9%</b><span>이어서 실행한 decode GEMM MAPE<br>(analytic, 세 번 측정 평균)</span></div>
+    <div class="fig"><b>2.7%</b><span>연쇄 실행 GEMM, M = 512 MAPE<br>(레이어 사이 겹침 반영)</span></div>
+  </div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>측정 대상</th><th>조건</th><th>analytic DRAM</th><th>Ramulator2 HBM2e</th><th>판단</th></tr></thead>
+      <tbody>
+        <tr><td>decode 레이어 전체 (12가지 B×L)</td><td>레이어별 버퍼, 펼친 실행</td><td class="num">−8.6% / 8.6%</td><td class="num">−0.7% / 3.5%</td><td><span class="pill good">검증됨</span></td></tr>
+        <tr><td>decode 형태 GEMM (20개)</td><td>루프 안 스트리밍</td><td class="num">−4.3% / 4.9%</td><td class="num">+5.2% / 6.2%</td><td><span class="pill good">검증됨</span></td></tr>
+        <tr><td>int8 가중치 GEMM, M ≤ 128 (16개)</td><td>루프 안 스트리밍</td><td class="num">−8.3% / 8.3%</td><td class="num">+1.9% / 3.5%</td><td><span class="pill good">검증됨</span></td></tr>
+        <tr><td>계산 병목 GEMM (M ≥ 512)</td><td>단독 실행, 복사 제외</td><td class="num">+7.2% / 7.2%</td><td class="num">+9.0% / 9.0%</td><td><span class="pill good">검증됨</span></td></tr>
+        <tr><td>작은 GEMM, K 스윕 (32개)</td><td>단독 실행</td><td class="num">−8.8% / 16.1%</td><td class="num">−2.9% / 12.2%</td><td><span class="pill warn">개선 중</span></td></tr>
+        <tr><td>홀수 형태 GEMM (35개)</td><td>한 프로그램 안 연쇄</td><td class="num">+11.3% / 11.9%</td><td class="num">+23.2% / 23.4%</td><td><span class="pill warn">개선 중</span></td></tr>
+        <tr><td>홀수 형태 GEMM (35개)</td><td><code>while</code> 루프 안</td><td class="num">−22.2% / 23.3%</td><td class="num">−15.2% / 17.0%</td><td><span class="pill bad">미해결</span></td></tr>
+        <tr><td>PaLM decode (TPU v4, 다중 칩)</td><td>논문값 (Pope 외 2023)</td><td class="num">−41 ~ −60%</td><td class="num">−</td><td><span class="pill bad">측정 대기</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">값은 평균 오차 / MAPE입니다. 음수는 NPUsim이 실측보다 짧게 예측한다는 뜻입니다.</p>
+</section>
+
+<section aria-labelledby="h-process">
+  <h2 id="h-process">진행 과정</h2>
+  <ol class="trace">
+    <li data-n="1">
+      <div class="step-head"><h3>공개 자료로 출발점 잡기</h3><span class="when">11-02</span></div>
+      <p>최신 TPU 세대는 구조 정보만 공개되어 있고, 커널 단위 실측값은 없었습니다. 구조와 실측이 함께 공개된 TPU v4 PaLM decode 지연(Pope 외, MLSys 2023)으로 먼저 비교했습니다.</p>
+      <div class="finding"><strong>결과</strong>: NPUsim이 실측보다 41~60% 짧게 예측했습니다. 칩 안 GEMM은 roofline의 1.2~1.4배로 합리적이었으나, 공개 자료만으로는 나머지 시간이 통신·vector 연산·XLA 중 어디서 오는지 나눌 수 없었습니다.</div>
+    </li>
+    <li data-n="2">
+      <div class="step-head"><h3>측정 경로 정하기</h3><span class="when">11-02 ~ 11-03</span></div>
+      <ul class="tight">
+        <li>Kaggle TPU v5e-8: 무료지만 대기열이 7~14시간 이상이라 아직 배정되지 않았습니다.</li>
+        <li>TPU Research Cloud: 공개 사례로는 v4가 배정되어 PaLM 비교에 유리하지만, 승인 절차가 필요합니다.</li>
+        <li>Colab TPU v5e-1: 바로 쓸 수 있어 1칩 측정은 모두 여기서 했습니다.</li>
+      </ul>
+      <p>측정 스크립트 <code>measure_tpu.py</code>는 JAX 파일 하나로, GEMM·vector·collective·decode 레이어를 재고 profiler trace에서 장치 시간과 op별 시간을 읽습니다.</p>
+    </li>
+    <li data-n="3">
+      <div class="step-head"><h3>1차 측정에서 측정 착시 발견</h3><span class="when">11-03</span></div>
+      <p>큰 GEMM은 NPUsim과 잘 맞았지만(M ≥ 512 MAPE 9%), decode 형태 GEMM 일부가 HBM 대역폭의 3~4배 속도(2.7~3.3 TB/s)로 측정되었습니다.</p>
+      <div class="finding"><strong>원인</strong>: 같은 버퍼로 반복 호출하면 가중치가 칩 안에 남아 재사용됩니다. 실제 decode에서는 매 토큰 서로 다른 레이어 가중치를 읽으므로 일어나지 않는 일입니다.</div>
+      <div class="finding fix"><strong>조치</strong>: 호출마다 서로 다른 버퍼(합계 512 MB 이상)를 돌려 쓰도록 측정 방식을 바꿨습니다.</div>
+    </li>
+    <li data-n="4">
+      <div class="step-head"><h3>실효 HBM 대역폭 확인</h3><span class="when">11-03</span></div>
+      <p>버퍼를 돌려 쓰자, 칩 안에 들어가는 가중치는 먼저 통째로 복사한 뒤 계산하는 XLA 동작이 드러났습니다. 복사와 스트리밍은 형태와 관계없이 약 750 GB/s로 일정했고, 이후 순수 HBM 읽기 측정(732~757 GB/s, 공칭의 89~92%)으로 직접 확인했습니다.</p>
+      <div class="finding fix"><strong>결정</strong>: 설정의 HBM 대역폭은 공개 스펙 819 GB/s로 유지했습니다. 8% 차이는 결과에 맞춰 바꿀 숫자가 아니라 DRAM 모델이 만들어야 할 효과로 보았습니다.</div>
+    </li>
+    <li data-n="5">
+      <div class="step-head"><h3>MOSAIC Ramulator2와 함께 평가</h3><span class="when">11-03</span></div>
+      <p>v5e HBM2e를 64-bit pseudo-channel 32개(819.2 GB/s)로 설정하고, NPUsim의 DRAM 스트림을 Ramulator2로 시뮬레이션했습니다. 단독 측정에서 지속 대역폭은 675 GB/s(82%)였습니다.</p>
+      <ul class="tight">
+        <li>계산 병목 GEMM은 두 DRAM 모델의 결과가 같았습니다(DRAM 시간이 계산 뒤에 가려짐).</li>
+        <li>HBM 병목 GEMM은 analytic이 약 5% 짧게, Ramulator2가 약 5% 길게 예측해 실측을 사이에 둡니다.</li>
+        <li>NPUsim은 1 MiB 스트림마다 장치를 새로 만들어 1.5 µs만 시뮬레이션하므로, refresh(3.9 µs 주기)가 한 번도 일어나지 않는다는 것도 확인했습니다.</li>
+      </ul>
+      <div class="finding"><strong>바로잡은 것</strong>: strip 1→2개 사이 증가분으로 외삽했더니 8192³이 MXU 피크보다 빠르게 나왔습니다. 2→4개 기울기로 외삽하도록 고쳤습니다.</div>
+    </li>
+    <li data-n="6">
+      <div class="step-head"><h3>레이어 단위 검증</h3><span class="when">11-03</span></div>
+      <p>병렬 세션이 측정 구조를 보강해 세 차례 다시 쟀습니다. 레이어마다 가중치·KV 버퍼를 따로 두고, KV를 head 우선 레이아웃으로 바꿨습니다.</p>
+      <ul class="tight">
+        <li>decode 레이어 전체: NPUsim + Ramulator2 MAPE 3.5%</li>
+        <li>attention: KV 읽기 이론 시간의 1.10배(약 745 GB/s). 앞서 본 1.25~3.6배는 KV 레이아웃과 슬라이스 복사 때문이었습니다.</li>
+        <li>int8 가중치 GEMM: M = 512에서 bf16과 같은 시간이 걸려, 역양자화 후 bf16으로 계산한다는 가정과 맞습니다.</li>
+        <li>측정 사이 변동계수: 이어서 실행한 GEMM 0.8%</li>
+      </ul>
+    </li>
+    <li data-n="7">
+      <div class="step-head"><h3>작은 커널의 고정 시간 측정</h3><span class="when">11-04</span></div>
+      <p><code>--only smallk</code> 실험을 추가해, 커널을 단독으로 실행할 때와 한 프로그램 안에서 이어서 실행할 때의 고정 시간을 나눠 쟀습니다.</p>
+      <div class="tbl">
+        <table>
+          <thead><tr><th>실행 방식</th><th>TPU 실측</th><th>NPUsim 반영</th></tr></thead>
+          <tbody>
+            <tr><td>커널 하나를 단독 실행</td><td class="num">약 1.0 µs</td><td>아래 두 값의 합</td></tr>
+            <tr><td>프로그램당 한 번</td><td class="num">0.69 µs</td><td><code>program_setup_cycle = 1035</code> (새 항목)</td></tr>
+            <tr><td>프로그램 안에서 커널마다</td><td class="num">0.22 µs</td><td><code>layer_setup_cycle = 330</code></td></tr>
+            <tr><td>연쇄 실행 중 작은 GEMM</td><td class="num">가중치 ÷ 712 GB/s</td><td>레이어 사이 겹침 (새 기능)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="finding fix"><strong>함께 고친 매핑</strong>: 열 블록이 4개 미만이면 남는 MXU가 K를 나눠 계산하고, 일부만 찬 마지막 strip은 열 비율로 계산하도록 바꿨습니다. N = 128을 512로 시뮬레이션하던 버그도 이때 고쳤습니다.</div>
+    </li>
+    <li data-n="8">
+      <div class="step-head"><h3>레이어 사이 겹침 모델</h3><span class="when">11-04</span></div>
+      <p>TPU는 다음 커널의 가중치를 앞 커널이 끝나 가는 동안 미리 읽습니다. NPUsim은 레이어마다 파이프라인을 따로 채우고 비워, 연쇄 실행에서 GEMM마다 1~1.3 µs를 더 계산했습니다.</p>
+      <p>각 레이어의 prologue(첫 타일이 PE에 닿기까지)와 tail(DRAM 단계가 끝난 뒤)을 기록하고, 네트워크를 합산할 때 경계마다 min(tail<sub>i</sub>, prologue<sub>i+1</sub>)만큼 겹치게 했습니다(<code>interlayer_overlap = 1</code>). 다음 레이어의 계산은 앞 레이어가 끝난 뒤에 시작합니다.</p>
+      <div class="finding fix"><strong>결과</strong>: 연쇄 실행 홀수 GEMM MAPE가 33.6%에서 11.9%로, M = 512는 2.7%로 줄었습니다. NPUsim 단위 테스트와 타임라인 검증을 통과했습니다.</div>
+    </li>
+  </ol>
+</section>
+
+<section aria-labelledby="h-chart">
+  <h2 id="h-chart">작은 GEMM 오차의 변화</h2>
+  <p>같은 측정 데이터에 대한 NPUsim MAPE입니다. 원은 처음 비교했을 때, 채운 점은 지금 값입니다.</p>
+  <div class="chart" role="img" aria-label="작은 GEMM MAPE 변화. 단독 실행 analytic 45.0에서 16.1, Ramulator 46.7에서 12.2, 연쇄 실행 analytic 33.6에서 11.9, Ramulator 45.7에서 23.4.">
+    <svg viewBox="0 0 640 230" xmlns="http://www.w3.org/2000/svg">
+      <!-- scale: x = 260 + 7 * MAPE(%), 0..50 % -> 260..610 -->
+      <g class="grid"><line x1="260" y1="20" x2="260" y2="190"/><line x1="330" y1="20" x2="330" y2="190"/><line x1="400" y1="20" x2="400" y2="190"/><line x1="470" y1="20" x2="470" y2="190"/><line x1="540" y1="20" x2="540" y2="190"/><line x1="610" y1="20" x2="610" y2="190"/></g>
+      <g class="axis"><text x="260" y="210" text-anchor="middle">0%</text><text x="330" y="210" text-anchor="middle">10%</text><text x="400" y="210" text-anchor="middle">20%</text><text x="470" y="210" text-anchor="middle">30%</text><text x="540" y="210" text-anchor="middle">40%</text><text x="610" y="210" text-anchor="middle">50%</text></g>
+      <g font-size="12.5">
+        <text x="0" y="44">단독 실행 K 스윕 · analytic</text>
+        <text x="0" y="84">단독 실행 K 스윕 · Ramulator2</text>
+        <text x="0" y="124">연쇄 실행 홀수 GEMM · analytic</text>
+        <text x="0" y="164">연쇄 실행 홀수 GEMM · Ramulator2</text>
+      </g>
+      <line class="seg" x1="372.7" y1="40" x2="575.0" y2="40"/><circle class="before" cx="575.0" cy="40" r="6"/><circle class="after" cx="372.7" cy="40" r="6"/><text class="val" x="589.0" y="44">45.0</text><text class="val" x="372.7" y="28" text-anchor="middle">16.1</text>
+      <line class="seg" x1="345.4" y1="80" x2="586.9" y2="80"/><circle class="before" cx="586.9" cy="80" r="6"/><circle class="after" cx="345.4" cy="80" r="6"/><text class="val" x="600.9" y="84">46.7</text><text class="val" x="345.4" y="68" text-anchor="middle">12.2</text>
+      <line class="seg" x1="343.3" y1="120" x2="495.2" y2="120"/><circle class="before" cx="495.2" cy="120" r="6"/><circle class="after" cx="343.3" cy="120" r="6"/><text class="val" x="509.2" y="124">33.6</text><text class="val" x="343.3" y="108" text-anchor="middle">11.9</text>
+      <line class="seg" x1="423.8" y1="160" x2="579.9" y2="160"/><circle class="before" cx="579.9" cy="160" r="6"/><circle class="after" cx="423.8" cy="160" r="6"/><text class="val" x="593.9" y="164">45.7</text><text class="val" x="423.8" y="148" text-anchor="middle">23.4</text>
+    </svg>
+    <div class="legend"><span><i style="border:2px solid var(--bad);background:var(--bg)"></i>처음 비교</span><span><i style="background:var(--accent)"></i>현재</span></div>
+  </div>
+  <p class="muted">단독 실행은 N &lt; 512 매핑 수정, 커널당 0.22 µs, 프로그램당 0.69 µs가 차례로 반영되었습니다. 연쇄 실행은 레이어 사이 겹침이 반영되었습니다.</p>
+</section>
+
+<section aria-labelledby="h-principles">
+  <h2 id="h-principles">판단 기준</h2>
+  <div class="cols">
+    <div class="card"><h3>스펙 값은 그대로 둔다</h3><p>MXU 수, 클럭, HBM 대역폭은 공개 스펙을 유지했습니다. 실측 750 GB/s를 설정에 넣으면 원인을 모델링하지 않고 결과에 맞춘 것이 됩니다.</p></div>
+    <div class="card"><h3>근거가 독립적인 값만 넣는다</h3><p>설정에 넣은 실측값은 비교 대상과 다른 실험에서 얻었습니다. 예를 들어 0.69 µs와 0.22 µs는 연쇄 실행 측정에서 얻었고, K 스윕 오차에 맞춘 값이 아닙니다.</p></div>
+    <div class="card"><h3>변수 여럿을 숫자 하나에 맞추지 않는다</h3><p>refresh, 주소 매핑, 큐 깊이를 함께 돌려 92%에 맞추는 방식은 쓰지 않았습니다. 표준에 근거가 있는 refresh만 따로 시험했습니다.</p></div>
+    <div class="card"><h3>측정 조건을 먼저 의심한다</h3><p>오차가 클 때마다 먼저 측정이 실제 실행을 대표하는지 확인했습니다. 버퍼 재사용, 레이아웃 복사, 생략된 읽기가 모두 이렇게 걸러졌습니다.</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-pitfalls">
+  <h2 id="h-pitfalls">걸러 낸 착시와 버그</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>현상</th><th>원인</th><th>처리</th></tr></thead>
+      <tbody>
+        <tr><td>decode GEMM이 HBM의 3~4배 속도</td><td>같은 버퍼 반복 호출, 칩 안 재사용</td><td>버퍼 회전</td></tr>
+        <tr><td>단독 실행 대역폭 600 GB/s대</td><td>XLA가 가중치를 먼저 복사한 뒤 계산</td><td>비교 단계에서 복사 시간 분리</td></tr>
+        <tr><td>attention이 KV roofline의 3.6배</td><td>쌓아 둔 KV의 슬라이스 복사와 레이아웃 변환</td><td>레이어별 버퍼, head 우선 KV</td></tr>
+        <tr><td>HBM 읽기 4 GB를 1 µs에</td><td>루프 밖으로 끌어낸 읽기, 1차원 배열</td><td>측정 코드 수정 후 재측정</td></tr>
+        <tr><td>8192³이 MXU 피크보다 빠름</td><td>Ramulator에서 1→2 strip 외삽</td><td>2→4 strip 기울기로 외삽</td></tr>
+        <tr><td>N = 128 GEMM이 4배 느림</td><td>4 MXU 분량으로 올림해 시뮬레이션</td><td>필요한 MXU만 사용, K 분할</td></tr>
+        <tr><td>refresh 설정이 결과에 영향 없음</td><td>스트림마다 새 DRAM 장치, refresh 전에 끝남</td><td>연동 방식의 한계로 기록</td></tr>
+        <tr><td>프로그램 안 비교가 모두 실패</td><td>설정 파일을 읽기 전에 비움</td><td>읽은 뒤 쓰도록 수정, 전체 재실행</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="h-next">
+  <h2 id="h-next">남은 작업</h2>
+  <ul class="tight">
+    <li><strong>8칩 collective와 tp = 8 decode</strong>: PaLM 비교의 −41~−60%를 설명할 남은 후보입니다. Kaggle v5e-8 배정을 기다리고 있습니다.</li>
+    <li><strong><code>while</code> 루프 반복 비용</strong>: <code>--only loopk</code> 측정 스크립트를 만들었고, Colab 실행이 필요합니다.</li>
+    <li><strong>Ramulator2 연동의 스트림 시작 지연</strong>: 연쇄 실행에서 Ramulator2가 analytic보다 큰 오차(23.4%)를 보이는 원인입니다. 레이어 단위로 장치를 이어서 쓰는 연동이 필요합니다.</li>
+    <li><strong>256×256 MXU 세대</strong>: v6e나 Ironwood는 Kaggle에 없어, TRC나 유료 Cloud TPU가 필요합니다.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="h-where">
+  <h2 id="h-where">자료 위치</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>항목</th><th>위치</th></tr></thead>
+      <tbody>
+        <tr><td>측정 스크립트</td><td><code>validation/tpu_v5e/measure_tpu.py</code></td></tr>
+        <tr><td>NPUsim 비교</td><td><code>validation/tpu_v5e/compare_v5e.py</code>, <code>compare_stack.py</code></td></tr>
+        <tr><td>v5e 설정</td><td><code>configs/accelerators/tpu_v5e.cfg</code>, <code>tpu_v5e_int8w.cfg</code></td></tr>
+        <tr><td>HBM2e DRAM 설정</td><td><code>validation/tpu_v5e/hbm2e_v5e.yaml</code></td></tr>
+        <tr><td>측정 결과와 원본 zip</td><td><code>validation/tpu_v5e/results/</code></td></tr>
+        <tr><td>상세 기록</td><td><code>validation/tpu_v5e/README.md</code> (npusim <code>tpu-measure</code>), <code>REPORT.md</code> (npusim <code>mosaic</code>, 병렬 세션)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>npusim 저장소 <code>tpu-measure</code> 브랜치 기준, 2026-11-05 작성. 수치는 각 결과 폴더의 비교 로그에서 옮겼습니다.</footer>
+</div>
+</body>
+</html>
