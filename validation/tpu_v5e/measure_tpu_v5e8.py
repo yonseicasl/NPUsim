@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
-"""Cloud TPU measurements for NPUsim fidelity (validation/tpu_v5e/README.md). JAX only, no npusim needed:
-copy this one file to a Kaggle TPU notebook (TpuV5E8) or a TRC/Cloud TPU VM and run it.
+"""Multi-chip Cloud TPU measurements for NPUsim fidelity (validation/tpu_v5e/README.md), for a TPU v5e-8 (Kaggle
+TpuV5E8, a v5litepod-8 VM, or any slice of 2+ chips). JAX only, one self-contained file: paste it into a notebook
+cell or copy it to the VM. Its measurement, trace and output code is the same as measure_tpu_v5e1.py's
+(test_parse_trace.py checks that the shared functions stay identical); only the experiments differ.
 
-  gemm.csv         one chip: C = A @ B in bf16, square / decode / prefill / odd shapes
-  vector.csv       one chip: rmsnorm, softmax, SwiGLU, residual add
-  collectives.csv  2, 4, 8 chips: psum, all_gather, psum_scatter, all_to_all vs bytes per chip (1 KiB - 64 MiB)
-  decode.csv       one Llama-3-8B-shaped decode layer at tensor parallelism 1, 2, 4, 8 (as many chips as there
-                   are), time per named scope (qkv, attn, o_proj, ffn_*, norms, psum)
-  smallk.csv       (--only smallk, not in the default set) fixed per-kernel time: K sweeps at small M, N,
-                   the smallest elementwise kernel, chains of n matmuls in one program; fits in smallk_fit.csv
-  loopk.csv        (--only loopk, not in the default set) per-iteration cost of a while loop: n dependent
-                   matmuls as a fori_loop over stacked weights vs unrolled; fits in loopk_fit.csv
-  env.json         devices, versions
+  collectives.csv  2, 4, 8 chips: psum, all_gather, psum_scatter, all_to_all vs bytes per chip (1 KiB - 64 MiB),
+                   rotated input buffers
+  decode.csv       one Llama-3-8B-shaped decode layer at tensor parallelism 1, 2, 4, 8 (Megatron split, psum
+                   after o_proj and ffn_down), time per named scope (qkv, attn, ..., psum_attn, psum_ffn)
+  env.json         devices, versions, each chip's torus coordinates
 
-Device time comes from the profiler's perfetto trace (XLA module and op events on TPU:0); wall time
-(async-pipelined calls, block at the end) is recorded too and is the fallback when no trace is found.
+Device time comes from the profiler's perfetto trace (XLA module and op events on TPU:0); wall time is the
+fallback when no trace is found.
 
-Usage: python3 measure_tpu.py [--out DIR] [--quick] [--keep-traces] [--only gemm,vector,...]
+Usage: python3 measure_tpu_v5e8.py [--out DIR] [--quick] [--keep-traces] [--only collectives,decode]
+       (--only also takes the single-chip experiments: gemm, vector, smallk, loopk)
 """
 import argparse
 import csv
@@ -195,40 +193,12 @@ def vector():
     write("vector.csv", rows)
 
 
-def collectives():
-    devs = jax.devices()
-    if len(devs) < 2:
-        print("collectives: one device, skipped")
-        return
-    ops = {"psum": lambda x: jax.lax.psum(x, "x"),
-           "all_gather": lambda x: jax.lax.all_gather(x, "x", tiled=True),
-           "psum_scatter": lambda x: jax.lax.psum_scatter(x, "x", tiled=True),
-           "all_to_all": lambda x: jax.lax.all_to_all(x, "x", 0, 0, tiled=True)}
-    rows = []
-    # 2, 4, ... up to all chips (the first n devices): time vs chip count separates per-hop latency from bandwidth
-    counts = [c for c in (2, 4, 8, 16, 32) if c <= len(devs)]
-    for n in ([len(devs)] if ARGS.quick else counts):
-        mesh = Mesh(devs[:n], ("x",))
-        for lg in ((10, 20) if ARGS.quick else range(10, 27, 2)):    # 1 KiB .. 64 MiB per chip
-            elems = max(n, (2 ** lg // 2) // n * n)
-            sets = [(rnd(5 + i, (n * elems,), NamedSharding(mesh, P("x"))),) for i in range(nsets(2 * n * elems))]
-            for name, op in ops.items():
-                f = jax.jit(shard_map(op, mesh=mesh, in_specs=P("x"), out_specs=P("x")))
-                r = bench(f, sets, f"coll_{name}_{n}chips_{lg}")
-                rows.append(dict(op=name, chips=n, bytes_per_chip=elems * 2, sets=r["sets"],
-                                 wall_us=round(r["wall_us"], 2), device_us=r["device_us"] and round(r["device_us"], 2)))
-                print(f"collective {name:12s} {n} chips {elems * 2:>10d} B/chip  {fmt(r)}")
-            del sets
-    write("collectives.csv", rows)
-
-
-def decode():
+def decode(tps=(1,)):
+    """The decode layer at each tensor-parallel degree in tps (measure_tpu_v5e8.py passes 1, 2, 4, 8; Megatron
+    split: column-split qkv / gate-up, row-split o / down + psum)."""
     D, H, HKV, DH, F = 4096, 32, 8, 128, 14336            # Llama-3-8B layer
     devs = jax.devices()
-    # tensor parallel over 1, 2, 4, 8 chips (Megatron: column-split qkv / gate-up, row-split o / down + psum)
-    tps = [t for t in (1, 2, 4, 8) if t <= len(devs) and HKV % t == 0]
-    if ARGS.quick:
-        tps = sorted({1, tps[-1]})
+    tps = [t for t in tps if t <= len(devs) and HKV % t == 0]
     grid = [(1, 2048), (32, 2048)] if ARGS.quick else [(b, l) for b in (1, 8, 32, 128) for l in (512, 2048, 8192)]
     rows, ops_all = [], {}
     for tp in tps:
@@ -455,18 +425,20 @@ def loopk():
     write("loopk_fit.csv", fits)
 
 
-def main():
+def run(experiments, default_only, out_name, argv=None):
+    """Parse the common options, write env.json and run the selected experiments (name -> function)."""
     global ARGS
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="/kaggle/working/tpu_v5e" if os.path.isdir("/kaggle/working") else "tpu_v5e_out")
+    ap.add_argument("--out", default=f"/kaggle/working/{out_name}" if os.path.isdir("/kaggle/working")
+                    else f"{out_name}_out")
     ap.add_argument("--quick", action="store_true", help="a few shapes per experiment (smoke test)")
     ap.add_argument("--keep-traces", action="store_true")
-    ap.add_argument("--only", default="gemm,vector,collectives,decode")
+    ap.add_argument("--only", default=default_only, help="comma list of " + ",".join(experiments))
     ap.add_argument("--max-iters", type=int, default=200)
     ap.add_argument("--rotate-mb", type=float, default=512,
                     help="rotate distinct input buffers totalling this much (0: reuse one set, warm on-chip)")
     ap.add_argument("--device-match", default=r"TPU:0\b", help="regex for the trace process to read")
-    ARGS = ap.parse_args()
+    ARGS = ap.parse_args(argv)
     os.makedirs(ARGS.out, exist_ok=True)
     devs = jax.devices()
     env = dict(jax=jax.__version__, backend=jax.default_backend(), n_devices=len(devs),
@@ -476,10 +448,51 @@ def main():
     json.dump(env, open(os.path.join(ARGS.out, "env.json"), "w"), indent=1)
     print(json.dumps(env))
     for name in ARGS.only.split(","):
+        if name not in experiments:
+            raise SystemExit(f"unknown experiment {name!r}; choose from {', '.join(experiments)}")
         t = time.time()
-        globals()[name]()
+        experiments[name]()
         print(f"== {name}: {time.time() - t:.0f} s")
     print(f"results in {ARGS.out}")
+
+
+def collectives():
+    devs = jax.devices()
+    if len(devs) < 2:
+        print("collectives: one device, skipped")
+        return
+    ops = {"psum": lambda x: jax.lax.psum(x, "x"),
+           "all_gather": lambda x: jax.lax.all_gather(x, "x", tiled=True),
+           "psum_scatter": lambda x: jax.lax.psum_scatter(x, "x", tiled=True),
+           "all_to_all": lambda x: jax.lax.all_to_all(x, "x", 0, 0, tiled=True)}
+    rows = []
+    # 2, 4, ... up to all chips (the first n devices): time vs chip count separates per-hop latency from bandwidth
+    counts = [c for c in (2, 4, 8, 16, 32) if c <= len(devs)]
+    for n in ([len(devs)] if ARGS.quick else counts):
+        mesh = Mesh(devs[:n], ("x",))
+        for lg in ((10, 20) if ARGS.quick else range(10, 27, 2)):    # 1 KiB .. 64 MiB per chip
+            elems = max(n, (2 ** lg // 2) // n * n)
+            sets = [(rnd(5 + i, (n * elems,), NamedSharding(mesh, P("x"))),)
+                    for i in range(nsets(2 * n * elems))]
+            for name, op in ops.items():
+                f = jax.jit(shard_map(op, mesh=mesh, in_specs=P("x"), out_specs=P("x")))
+                r = bench(f, sets, f"coll_{name}_{n}chips_{lg}")
+                rows.append(dict(op=name, chips=n, bytes_per_chip=elems * 2, sets=r["sets"],
+                                 wall_us=round(r["wall_us"], 2), device_us=r["device_us"] and round(r["device_us"], 2)))
+                print(f"collective {name:12s} {n} chips {elems * 2:>10d} B/chip  {fmt(r)}")
+            del sets
+    write("collectives.csv", rows)
+
+
+def decode_tp():
+    # tp 1 is the same-session single-chip reference for the tensor-parallel layers
+    decode(tps=(1, len(jax.devices())) if ARGS.quick else (1, 2, 4, 8))
+
+
+def main(argv=None):
+    # the single-chip experiments are available too (--only gemm, smallk, loopk, ...), on chip 0
+    run({"collectives": collectives, "decode": decode_tp, "gemm": gemm, "vector": vector, "smallk": smallk,
+         "loopk": loopk}, "collectives,decode", "tpu_v5e8", argv)
 
 
 if __name__ == "__main__":

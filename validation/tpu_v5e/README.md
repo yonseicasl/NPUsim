@@ -7,40 +7,43 @@ to size what NPUsim does not model (attention, vector work, collectives).
 
 | file | runs on | does |
 |---|---|---|
-| `measure_tpu.py` | TPU (JAX only, one file) | GEMM sweep, vector ops, collectives, Llama-3-8B decode layer at tp=1 and tp=8 -> CSVs |
+| `measure_tpu_v5e1.py` | one TPU chip (JAX only, one file) | GEMM sweep, vector ops, Llama-3-8B decode layer, `smallk`, `loopk` -> CSVs; the shared measurement, trace and output code |
+| `measure_tpu_v5e8.py` | 2+ chips (JAX only, one self-contained file) | collectives over 2/4/8 chips, the decode layer at tp 1/2/4/8; also takes the single-chip experiments with `--only` |
 | `compare_v5e.py` | here (needs `models/model`) | NPUsim `tpu_v5e` on the measured GEMM shapes; decode GEMM vs non-GEMM share |
-| `test_parse_trace.py` | anywhere with JAX | checks the profiler-trace parser on a synthetic TPU trace |
-| `kernel-metadata.json` | Kaggle CLI | private script kernel on `TpuV5E8` |
+| `compare_stack.py` | here | decode layers and attention of a follow-up `results.json` vs NPUsim |
+| `test_parse_trace.py` | anywhere with JAX | checks the profiler-trace parser and `linfit` on synthetic data, and that the two scripts' shared functions are identical |
+
+The single-chip script was `measure_tpu.py` until 2026-11-06 (renamed when the multi-chip experiments moved
+out); the results below name it as it was at the time.
 
 `tpu_v5e.cfg` is `tpu_v4.cfg` with 4 MXUs (one TensorCore), 1500 MHz (197 TFLOPS / (4 x 128^2 x 2)) and
-HBM2e 819 GB/s. Nothing in it is fitted to TPU data yet.
+HBM2e 819 GB/s; the TPU-measured values in it are listed in its header.
 
 ## Measuring
 
-Kaggle (free, 20 TPU h/week, TPU v5e-8, no v6e; refs/tpu/README.md section 4). The account needs phone
-verification for TPUs and internet.
+One chip (Colab `v5e-1 TPU`, Kaggle, or a `v5litepod-1` VM): paste `measure_tpu_v5e1.py` into a
+`%%writefile /content/measure_tpu_v5e1.py` cell and run `%run /content/measure_tpu_v5e1.py --out <dir>`
+(default sections gemm, vector, decode; `--only smallk`, `--only loopk` for the fixed-cost experiments).
+Use `%run`, not `!python`: the notebook kernel holds the TPU once JAX is imported.
 
-1. Web: New Notebook -> Settings -> Accelerator `TPU v5e-8`, Internet on. Upload `measure_tpu.py` (Add
-   Input -> upload, or paste it into a cell) and run `!python measure_tpu.py` (quick check:
-   `--quick`). Results land in `/kaggle/working/tpu_v5e/`; download them from the Output tab.
-2. CLI: `pip install kaggle`, put the API token in `~/.kaggle/kaggle.json`, replace `KAGGLE_USERNAME` in
-   `kernel-metadata.json`, then
-   ```
-   kaggle kernels push -p validation/tpu_v5e
-   kaggle kernels status KAGGLE_USERNAME/npusim-tpu-v5e-measure
-   kaggle kernels output KAGGLE_USERNAME/npusim-tpu-v5e-measure -p validation/tpu_v5e/results/<date>
-   ```
-   `machine_shape` is what selects the v5e-8 per a 2026-10 report; check the run's `env.json`
-   (`device_kind`) in case the CLI ignored it.
+Eight chips (Kaggle `TPU v5e-8`, free 20 TPU h/week with queues of hours; refs/tpu/README.md section 4; or a
+`v5litepod-8` VM): `measure_tpu_v5e8.py` alone, which carries the same measurement code as the single-chip
+file (a copy, kept identical by `test_parse_trace.py`):
 
-TRC or a paid Cloud TPU VM (`v5litepod-1` for gemm/vector/decode tp=1, `v5litepod-8` for all):
-`python3 measure_tpu.py --out results/<date>` on the VM (installs `jax[tpu]` if missing).
+```
+%%writefile /kaggle/working/measure_tpu_v5e8.py      (then the file's contents)
+%run /kaggle/working/measure_tpu_v5e8.py              (collectives,decode -> /kaggle/working/tpu_v5e8/)
+%run /kaggle/working/measure_tpu_v5e8.py --only loopk # a single-chip experiment not measured yet
+```
 
-Fixed per-kernel time (not in the default run): `python3 measure_tpu.py --only smallk` (a few minutes on
-one chip) writes `smallk.csv` -- K sweeps at M 8/128, N 128/1024 (the K = 0 intercept is the fixed cost,
-`device_us` with the program launch, `ops_us` the kernels alone), `x + 1` from one vreg to 4 MB, and chains
-of 1-32 dependent matmuls in one program (slope = cost of one more kernel inside a program, intercept =
-the program's own) -- and the fits in `smallk_fit.csv`.
+On a VM: `python3 measure_tpu_v5e8.py --out results/<date>` (installs `jax[tpu]` if missing). Change the shared
+code in both files.
+
+Fixed per-kernel time: `measure_tpu_v5e1.py --only smallk` (a few minutes on one chip) writes `smallk.csv` --
+K sweeps at M 8/128, N 128/1024 (the K = 0 intercept is the fixed cost, `device_us` with the program launch,
+`ops_us` the kernels alone), `x + 1` from one vreg to 4 MB, and chains of 1-32 dependent matmuls in one
+program (slope = cost of one more kernel inside a program, intercept = the program's own) -- and the fits
+in `smallk_fit.csv`.
 
 A full run takes about 10-20 minutes. Device times come from the profiler (`jax.profiler.trace`,
 perfetto export, XLA module/op events on `TPU:0`); if the trace has no TPU process the CSVs keep wall
@@ -202,7 +205,7 @@ shapes: only their `npusim_us` is used, by `compare_stack.py`).
 
 ### 2026-11-04, Colab TPU v5e-1, fixed per-kernel time (`results/2026-11-04_colab_v5e1_smallk/`)
 
-`measure_tpu.py --only smallk`; `gemm_smallk.csv` is its K sweep for `compare_v5e.py`.
+`measure_tpu_v5e1.py --only smallk`; `gemm_smallk.csv` is its K sweep for `compare_v5e.py`.
 
 | | TPU | NPUsim analytic | NPUsim Ramulator2 |
 |---|---|---|---|
@@ -308,7 +311,7 @@ The smallk2 run (`results/2026-11-04_colab_v5e1_smallk2/`, raw `.zip` beside it)
 - `compare_v5e.py --in-program` read and rewrote the config copy in one expression, truncating it first: every
   in-program comparison in `c4a9b06` failed and kept the previous CSVs (same conditions: program setup 0).
   Fixed; all of them re-run.
-- `measure_tpu.py --only loopk` (not yet run on a TPU): n = 1, 4, 16 dependent matmuls as a `fori_loop` over
+- `measure_tpu_v5e1.py --only loopk` (not yet run on a TPU): n = 1, 4, 16 dependent matmuls as a `fori_loop` over
   stacked weights and unrolled, M x K = 8 x 128, 100 x 1000, 128 x 1024, 256 x 2048, 8 x 4096; the
   loop - unrolled slope is the per-iteration cost of a while loop (`loopk_fit.csv`).
 
@@ -354,6 +357,6 @@ The smallk2 run (`results/2026-11-04_colab_v5e1_smallk2/`, raw `.zip` beside it)
   6.11 us at 1 / 2 / 4 / 8 DRAM K splits; the split K serializes through the partial sums), and K <= 256 has no
   K to split. A finer DMA granularity inside a DRAM tile (the next stage starting on the first chunk) is a
   pipeline-model change, not a mapping one; not done.
-- **v5e-8 code**: `measure_tpu.py` collectives now sweep 2, 4, 8 chips (rotated buffers) and decode runs tensor
+- **v5e-8 code** (now `measure_tpu_v5e8.py`): collectives now sweep 2, 4, 8 chips (rotated buffers) and decode runs tensor
   parallel 1, 2, 4, 8; `env.json` records each chip's torus coordinates. For a Kaggle TpuV5E8 session:
-  `%run measure_tpu.py --only collectives,decode` (the single-chip sections are measured already).
+  `%run measure_tpu_v5e8.py` (collectives and decode; the single-chip sections are measured already).

@@ -271,12 +271,12 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--ru
 <span class="k">import</span> jax
 print(jax.default_backend(), jax.devices())     <span class="c"># tpu [TpuDevice(id=0, ...)]</span>
 
-<span class="c"># 2. 스크립트 파일 만들기: 첫 줄 아래에 measure_tpu.py 내용 전체를 붙여 넣음</span>
-%%writefile /content/measure_tpu.py
+<span class="c"># 2. 스크립트 파일 만들기: 첫 줄 아래에 measure_tpu_v5e1.py 내용 전체를 붙여 넣음</span>
+%%writefile /content/measure_tpu_v5e1.py
 
 <span class="c"># 3. 실행 (%run: 노트북 커널 안에서 실행. !python은 새 프로세스라 TPU를 잡지 못해 멈춤)</span>
-%run /content/measure_tpu.py --out /content/tpu_v5e_colab
-%run /content/measure_tpu.py --only smallk --out /content/tpu_v5e_smallk
+%run /content/measure_tpu_v5e1.py --out /content/tpu_v5e_colab
+%run /content/measure_tpu_v5e1.py --only smallk --out /content/tpu_v5e_smallk
 
 <span class="c"># 4. 결과 묶어 내려받기</span>
 !cd /content && zip -qr result.zip tpu_v5e_colab
@@ -342,7 +342,7 @@ results in /content/tpu_v5e_colab</pre>
         <li>TPU Research Cloud: 공개 사례로는 v4가 배정되어 PaLM 비교에 유리하지만, 승인 절차가 필요합니다.</li>
         <li>Colab TPU v5e-1: 바로 쓸 수 있어 1칩 측정은 모두 여기서 했습니다.</li>
       </ul>
-      <p>측정 스크립트 <code>measure_tpu.py</code>는 JAX 파일 하나로, GEMM·vector·collective·decode 레이어를 재고 profiler trace에서 장치 시간과 op별 시간을 읽습니다.</p>
+      <p>측정 스크립트(현재 1칩용 <code>measure_tpu_v5e1.py</code>와 8칩용 <code>measure_tpu_v5e8.py</code>)는 JAX만 쓰는 Python 파일로, GEMM·vector·collective·decode 레이어를 재고 profiler trace에서 장치 시간과 op별 시간을 읽습니다.</p>
     </li>
     <li data-n="3">
       <div class="step-head"><h3>1차 측정에서 측정 착시 발견</h3><span class="when">11-03</span></div>
@@ -479,7 +479,7 @@ results in /content/tpu_v5e_colab</pre>
     <table>
       <thead><tr><th>항목</th><th>위치</th></tr></thead>
       <tbody>
-        <tr><td>측정 스크립트</td><td><code>validation/tpu_v5e/measure_tpu.py</code></td></tr>
+        <tr><td>측정 스크립트</td><td><code>validation/tpu_v5e/measure_tpu_v5e1.py</code> (1칩), <code>measure_tpu_v5e8.py</code> (2칩 이상, 파일 하나로 완결)</td></tr>
         <tr><td>NPUsim 비교</td><td><code>validation/tpu_v5e/compare_v5e.py</code>, <code>compare_stack.py</code></td></tr>
         <tr><td>v5e 설정</td><td><code>configs/accelerators/tpu_v5e.cfg</code>, <code>tpu_v5e_int8w.cfg</code></td></tr>
         <tr><td>HBM2e DRAM 설정</td><td><code>validation/tpu_v5e/hbm2e_v5e.yaml</code></td></tr>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""NPUsim (configs/accelerators/tpu_v5e.cfg) vs Cloud TPU v5e measurements from measure_tpu.py.
+"""NPUsim (configs/accelerators/tpu_v5e.cfg) vs Cloud TPU v5e measurements from measure_tpu_v5e1.py.
 
   GEMM    every gemm.csv shape on NPUsim with validation/palm's mapping (output columns over the 4 MXUs
           in 128-column weight strips). Rows go in tiles of <= 512; one tile is simulated at 2 and 4
@@ -40,7 +40,7 @@ def run_sim(args):
     head, tail = (float(m.group(1)), float(m.group(2))) if m else (0.0, 0.0)
     return sec, head / palm.CLOCK_HZ, tail / palm.CLOCK_HZ
 PEAK, HBM = 4 * DIM * DIM * 2 * 1.5e9, 819e9
-D, HKV, DH = 4096, 8, 128                  # measure_tpu.py's Llama-3-8B decode layer
+D, HKV, DH = 4096, 8, 128                  # measure_tpu_v5e1.py's Llama-3-8B decode layer
 PROJ = {"qkv": (4096, 6144), "o_proj": (4096, 4096), "ffn_up": (4096, 28672), "ffn_down": (14336, 4096)}
 
 

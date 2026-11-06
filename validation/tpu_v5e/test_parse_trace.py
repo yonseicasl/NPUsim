@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""parse_trace on a synthetic TPU-shaped perfetto trace, and linfit (no TPU needed; needs jax importable)."""
+"""parse_trace on a synthetic TPU-shaped perfetto trace, linfit, and that measure_tpu_v5e8.py's shared code
+matches measure_tpu_v5e1.py's (no TPU needed; needs jax importable)."""
 import gzip, json, os, sys, tempfile, types
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import measure_tpu as m
+import measure_tpu_v5e1 as m
 
 m.ARGS = types.SimpleNamespace(device_match=r"TPU:0\b")
 M = lambda pid, tid, kind, name: {"ph": "M", "pid": pid, "tid": tid, "name": kind, "args": {"name": name}}
@@ -24,4 +25,12 @@ assert ops == {"qkv|fusion.1": 60.0, "psum_attn|all-reduce": 10.0, "-|copy.2": 4
 assert m.parse_trace(tempfile.mkdtemp()) is None
 a, b = m.linfit([1, 2, 3], [3, 5, 7])
 assert abs(a - 1) < 1e-9 and abs(b - 2) < 1e-9, (a, b)
+
+# measure_tpu_v5e8.py is self-contained: its measurement machinery must stay identical to measure_tpu_v5e1.py's
+import inspect
+import measure_tpu_v5e8 as m8
+for name in ("parse_trace", "bench", "write", "rnd", "nsets", "fmt", "rmsnorm", "linfit", "run",
+             "gemm", "vector", "decode", "smallk", "loopk"):
+    assert inspect.getsource(getattr(m, name)) == inspect.getsource(getattr(m8, name)), f"{name} differs"
+assert m.SCOPES == m8.SCOPES
 print("ok")
