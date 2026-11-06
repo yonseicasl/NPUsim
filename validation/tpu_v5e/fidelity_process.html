@@ -156,7 +156,7 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--ru
     <div class="fig"><b>3.5%</b><span>decode 레이어 전체 MAPE<br>(Llama-3-8B, NPUsim + Ramulator2)</span></div>
     <div class="fig"><b>3.5%</b><span>int8 가중치 decode GEMM MAPE<br>(M ≤ 128, Ramulator2)</span></div>
     <div class="fig"><b>4.9%</b><span>이어서 실행한 decode GEMM MAPE<br>(analytic, 세 번 측정 평균)</span></div>
-    <div class="fig"><b>2.7%</b><span>연쇄 실행 GEMM, M = 512 MAPE<br>(레이어 사이 겹침 반영)</span></div>
+    <div class="fig"><b>4.1%</b><span>연쇄 실행 홀수 형태 GEMM MAPE<br>(겹침 + 활성값 칩 안 유지, Ramulator2)</span></div>
   </div>
   <div class="tbl">
     <table>
@@ -166,8 +166,8 @@ footer { font-size: 0.85rem; color: var(--muted); border-top: 1px solid var(--ru
         <tr><td>decode 형태 GEMM (20개)</td><td>루프 안 스트리밍</td><td class="num">−4.3% / 4.9%</td><td class="num">+5.2% / 6.2%</td><td><span class="pill good">검증됨</span></td></tr>
         <tr><td>int8 가중치 GEMM, M ≤ 128 (16개)</td><td>루프 안 스트리밍</td><td class="num">−8.3% / 8.3%</td><td class="num">+1.9% / 3.5%</td><td><span class="pill good">검증됨</span></td></tr>
         <tr><td>계산 병목 GEMM (M ≥ 512)</td><td>단독 실행, 복사 제외</td><td class="num">+7.2% / 7.2%</td><td class="num">+9.0% / 9.0%</td><td><span class="pill good">검증됨</span></td></tr>
-        <tr><td>작은 GEMM, K 스윕 (32개)</td><td>단독 실행</td><td class="num">−8.8% / 16.1%</td><td class="num">−2.9% / 12.2%</td><td><span class="pill warn">개선 중</span></td></tr>
-        <tr><td>홀수 형태 GEMM (35개)</td><td>한 프로그램 안 연쇄</td><td class="num">+11.3% / 11.9%</td><td class="num">+23.2% / 23.4%</td><td><span class="pill warn">개선 중</span></td></tr>
+        <tr><td>작은 GEMM, K 스윕 (32개)</td><td>단독 실행 (XLA 직렬 복사 포함)</td><td class="num">−8.9% / 16.2%</td><td class="num">−1.9% / 12.2%</td><td><span class="pill warn">범위 밖 요인</span></td></tr>
+        <tr><td>홀수 형태 GEMM (35개)</td><td>한 프로그램 안 연쇄</td><td class="num">−5.5% / 6.4%</td><td class="num">+2.0% / 4.1%</td><td><span class="pill good">검증됨</span></td></tr>
         <tr><td>홀수 형태 GEMM (35개)</td><td><code>while</code> 루프 안</td><td class="num">−22.2% / 23.3%</td><td class="num">−15.2% / 17.0%</td><td><span class="pill bad">미해결</span></td></tr>
         <tr><td>PaLM decode (TPU v4, 다중 칩)</td><td>논문값 (Pope 외 2023)</td><td class="num">−41 ~ −60%</td><td class="num">−</td><td><span class="pill bad">측정 대기</span></td></tr>
       </tbody>
@@ -396,6 +396,14 @@ results in /content/tpu_v5e_colab</pre>
       <p>TPU는 다음 커널의 가중치를 앞 커널이 끝나 가는 동안 미리 읽습니다. NPUsim은 레이어마다 파이프라인을 따로 채우고 비워, 연쇄 실행에서 GEMM마다 1~1.3 µs를 더 계산했습니다.</p>
       <p>각 레이어의 prologue(첫 타일이 PE에 닿기까지)와 tail(DRAM 단계가 끝난 뒤)을 기록하고, 네트워크를 합산할 때 경계마다 min(tail<sub>i</sub>, prologue<sub>i+1</sub>)만큼 겹치게 했습니다(<code>interlayer_overlap = 1</code>). 다음 레이어의 계산은 앞 레이어가 끝난 뒤에 시작합니다.</p>
       <div class="finding fix"><strong>결과</strong>: 연쇄 실행 홀수 GEMM MAPE가 33.6%에서 11.9%로, M = 512는 2.7%로 줄었습니다. NPUsim 단위 테스트와 타임라인 검증을 통과했습니다.</div>
+    <li data-n="9">
+      <div class="step-head"><h3>활성값 칩 안 유지와 남은 오차 검토</h3><span class="when">11-05</span></div>
+      <p>연쇄 실행에서 TPU 커널은 가중치 바이트만큼만 시간이 걸렸습니다(100×1000: 2 MB를 2.81 µs, 712 GB/s). 앞 커널의 출력이 칩 안에 남아 다음 커널의 입력이 된다는 뜻입니다. NPUsim에 이미 있던 텐서 상주 기능을 일반 네트워크 경로에서도 쓰도록 <code>activation_residency</code>를 추가했습니다.</p>
+      <div class="finding fix"><strong>결과</strong>: 연쇄 실행 홀수 GEMM MAPE가 analytic 11.9% → 6.4%, Ramulator2 23.4% → 4.1%로 줄었습니다. 큰 decode GEMM과 같이 analytic은 약간 짧게, Ramulator2는 약간 길게 예측합니다.</div>
+      <ul class="tight">
+        <li>단독 실행의 남은 오차는 XLA의 직렬 복사입니다. 겹침을 없앤 설정으로 시험하면 복사되는 형태는 −25% → +11%로 맞지만, 스트리밍 형태는 −2% → +40%로 틀어집니다. 조건부로만 맞는 XLA 동작이라 NPUsim에 넣지 않았습니다.</li>
+        <li>N = 1024 작은 GEMM이 길게 나오는 이유는 strip마다 DRAM 타일이 하나뿐이라 단계들이 겹치지 못하기 때문입니다. K를 DRAM 단계로 나누는 매핑은 prologue를 오히려 늘려(0.76 → 6.11 µs) 해결책이 아니었습니다.</li>
+      </ul>
     </li>
   </ol>
 </section>
