@@ -4,9 +4,9 @@ copy this one file to a Kaggle TPU notebook (TpuV5E8) or a TRC/Cloud TPU VM and 
 
   gemm.csv         one chip: C = A @ B in bf16, square / decode / prefill / odd shapes
   vector.csv       one chip: rmsnorm, softmax, SwiGLU, residual add
-  collectives.csv  all chips: psum, all_gather, psum_scatter, all_to_all vs bytes per chip
-  decode.csv       one Llama-3-8B-shaped decode layer, on one chip and tensor-parallel over all chips,
-                   time per named scope (qkv, attn, o_proj, ffn_*, norms, psum)
+  collectives.csv  2, 4, 8 chips: psum, all_gather, psum_scatter, all_to_all vs bytes per chip (1 KiB - 64 MiB)
+  decode.csv       one Llama-3-8B-shaped decode layer at tensor parallelism 1, 2, 4, 8 (as many chips as there
+                   are), time per named scope (qkv, attn, o_proj, ffn_*, norms, psum)
   smallk.csv       (--only smallk, not in the default set) fixed per-kernel time: K sweeps at small M, N,
                    the smallest elementwise kernel, chains of n matmuls in one program; fits in smallk_fit.csv
   loopk.csv        (--only loopk, not in the default set) per-iteration cost of a while loop: n dependent
@@ -197,32 +197,38 @@ def vector():
 
 def collectives():
     devs = jax.devices()
-    n = len(devs)
-    if n < 2:
+    if len(devs) < 2:
         print("collectives: one device, skipped")
         return
-    mesh = Mesh(devs, ("x",))
     ops = {"psum": lambda x: jax.lax.psum(x, "x"),
            "all_gather": lambda x: jax.lax.all_gather(x, "x", tiled=True),
            "psum_scatter": lambda x: jax.lax.psum_scatter(x, "x", tiled=True),
            "all_to_all": lambda x: jax.lax.all_to_all(x, "x", 0, 0, tiled=True)}
     rows = []
-    for lg in ((10, 20) if ARGS.quick else range(10, 27, 2)):        # 1 KiB .. 64 MiB per chip
-        elems = max(n, (2 ** lg // 2) // n * n)
-        x = rnd(5, (n * elems,), NamedSharding(mesh, P("x")))
-        for name, op in ops.items():
-            f = jax.jit(shard_map(op, mesh=mesh, in_specs=P("x"), out_specs=P("x")))
-            r = bench(f, (x,), f"coll_{name}_{lg}")
-            rows.append(dict(op=name, chips=n, bytes_per_chip=elems * 2, wall_us=round(r["wall_us"], 2),
-                             device_us=r["device_us"] and round(r["device_us"], 2)))
-            print(f"collective {name:12s} {elems * 2:>10d} B/chip  {fmt(r)}")
+    # 2, 4, ... up to all chips (the first n devices): time vs chip count separates per-hop latency from bandwidth
+    counts = [c for c in (2, 4, 8, 16, 32) if c <= len(devs)]
+    for n in ([len(devs)] if ARGS.quick else counts):
+        mesh = Mesh(devs[:n], ("x",))
+        for lg in ((10, 20) if ARGS.quick else range(10, 27, 2)):    # 1 KiB .. 64 MiB per chip
+            elems = max(n, (2 ** lg // 2) // n * n)
+            sets = [(rnd(5 + i, (n * elems,), NamedSharding(mesh, P("x"))),) for i in range(nsets(2 * n * elems))]
+            for name, op in ops.items():
+                f = jax.jit(shard_map(op, mesh=mesh, in_specs=P("x"), out_specs=P("x")))
+                r = bench(f, sets, f"coll_{name}_{n}chips_{lg}")
+                rows.append(dict(op=name, chips=n, bytes_per_chip=elems * 2, sets=r["sets"],
+                                 wall_us=round(r["wall_us"], 2), device_us=r["device_us"] and round(r["device_us"], 2)))
+                print(f"collective {name:12s} {n} chips {elems * 2:>10d} B/chip  {fmt(r)}")
+            del sets
     write("collectives.csv", rows)
 
 
 def decode():
     D, H, HKV, DH, F = 4096, 32, 8, 128, 14336            # Llama-3-8B layer
     devs = jax.devices()
-    tps = [1] + ([len(devs)] if len(devs) > 1 and HKV % len(devs) == 0 else [])
+    # tensor parallel over 1, 2, 4, 8 chips (Megatron: column-split qkv / gate-up, row-split o / down + psum)
+    tps = [t for t in (1, 2, 4, 8) if t <= len(devs) and HKV % t == 0]
+    if ARGS.quick:
+        tps = sorted({1, tps[-1]})
     grid = [(1, 2048), (32, 2048)] if ARGS.quick else [(b, l) for b in (1, 8, 32, 128) for l in (512, 2048, 8192)]
     rows, ops_all = [], {}
     for tp in tps:
@@ -465,6 +471,7 @@ def main():
     devs = jax.devices()
     env = dict(jax=jax.__version__, backend=jax.default_backend(), n_devices=len(devs),
                device_kind=devs[0].device_kind, devices=[str(d) for d in devs],
+               coords=[list(getattr(d, "coords", []) or []) for d in devs],   # TPU chip position in the torus
                date=time.strftime("%Y-%m-%d %H:%M:%S %Z"))
     json.dump(env, open(os.path.join(ARGS.out, "env.json"), "w"), indent=1)
     print(json.dumps(env))

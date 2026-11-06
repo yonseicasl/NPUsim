@@ -54,7 +54,10 @@ def simulate(shapes, jobs):
     if IN_PROGRAM:                            # kernels inside a loop/chain do not pay the program's start
         p = os.path.join(cfgroot, "accelerators", f"{ACCEL}.cfg")
         text = open(p).read()                 # read before reopening for write (which truncates)
-        open(p, "w").write(re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", text))
+        text = re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", text)
+        if CHAIN:                             # mid-chain kernel: its input and output stay on chip
+            text = re.sub(r"(?m)^activation_residency\s*=.*$", "activation_residency = 2", text)
+        open(p, "w").write(text)
     plan, todo = {}, {}
     mxus = palm.MXUS
 

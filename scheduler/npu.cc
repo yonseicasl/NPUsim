@@ -87,6 +87,7 @@ npu_t::npu_t() :
  num_skipped_timing_layers(0),
     program_setup_cycle(0.0),
     interlayer_overlap(false),
+    activation_residency(0),
  multi_chip(NULL),
  dram(NULL),
  decomp(NULL),
@@ -200,6 +201,14 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             // Layers of one run overlap like kernels of one program: the next layer's off-chip prologue
             // under the previous layer's tail (stats_t::update_network_stats). Default 0: serial layers.
             section_config.get_setting("interlayer_overlap", &interlayer_overlap);
+            // Activations between layers stay in the GLB when they fit (an XLA program keeps a small
+            // intermediate in on-chip memory): 1 = between this run's layers, 2 = also this run's own input
+            // and output (the run stands for a kernel in the middle of a longer program). Default 0.
+            section_config.get_setting("activation_residency", &activation_residency);
+            if(activation_residency > 2) {
+                std::cerr << "Error: [accelerator] activation_residency must be 0, 1 or 2" << std::endl;
+                exit(1);
+            }
             if(program_setup_cycle < 0.0) {
                 std::cerr << "Error: [accelerator] program_setup_cycle must be >= 0" << std::endl;
                 exit(1);
@@ -1371,6 +1380,30 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                         std::to_string(residency.capacity) + " bytes";
                     layer_stats[stats_index]->apply_graph_residency(
                         input_in_glb, residency.retain_output, note);
+                } else if(activation_residency > 0) {
+                    // Network path: keep the activation between mapped layers on chip when it fits the GLB's
+                    // tensor residency capacity; the run's own input/output only with activation_residency 2.
+                    auto mapped_at = [&](unsigned i) {
+                        return network->layers[i]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
+                               network->layers[i]->layer_type == nebula::CONNECTED_LAYER;
+                    };
+                    bool has_prev = false, has_next = false;
+                    for(unsigned i = 0; i < index; ++i) has_prev = has_prev || mapped_at(i);
+                    for(unsigned i = index + 1; i < network->num_layers; ++i) has_next = has_next || mapped_at(i);
+                    const bool ends = activation_residency >= 2;
+                    const size_t capacity = global_buffers.empty() ? 0 : global_buffers[0]->tensor_residency_capacity();
+                    const size_t batch = static_cast<size_t>(network->batch_size);
+                    const size_t in_bytes = runtime_datatypes().storage_bytes(data_type_t::INPUT,
+                        static_cast<size_t>(network->layers[index]->input_size)*batch);
+                    const size_t out_bytes = runtime_datatypes().storage_bytes(data_type_t::OUTPUT,
+                        static_cast<size_t>(network->layers[index]->output_size)*batch);
+                    const bool in_glb = (has_prev || ends) && in_bytes <= capacity;
+                    const bool out_glb = (has_next || ends) && out_bytes <= capacity;
+                    const std::string note = std::string("activation_residency ") + std::to_string(activation_residency) +
+                        ": input " + (in_glb ? "GLB-resident" : "DRAM-backed") + ", output " +
+                        (out_glb ? "retained in GLB" : "materialized to DRAM") + " (capacity " +
+                        std::to_string(capacity) + " bytes)";
+                    layer_stats[stats_index]->apply_graph_residency(in_glb, out_glb, note);
                 }
                 const input_halo_reuse_t input_halo = scheduler->mapping_table->input_halo_reuse();
                 const bool halo_capacity_sufficient = !global_buffers.empty() &&

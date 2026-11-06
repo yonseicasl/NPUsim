@@ -289,6 +289,7 @@ protected:
     unsigned num_skipped_timing_layers;             // Layers excluded from accelerator timing.
     double program_setup_cycle;                     // [accelerator] once-per-run cost (cycles), see npu.cc.
     bool interlayer_overlap;                        // [accelerator] overlap layer prologues with tails.
+    unsigned activation_residency;                  // [accelerator] 0 off, 1 between layers, 2 also the run's ends.
     // Validate physical component counts before connecting the hierarchy.
     void validate_accelerator_components();
     // Validate mapping-selected active components before a layer starts.

@@ -311,3 +311,49 @@ The smallk2 run (`results/2026-11-04_colab_v5e1_smallk2/`, raw `.zip` beside it)
 - `measure_tpu.py --only loopk` (not yet run on a TPU): n = 1, 4, 16 dependent matmuls as a `fori_loop` over
   stacked weights and unrolled, M x K = 8 x 128, 100 x 1000, 128 x 1024, 256 x 2048, 8 x 4096; the
   loop - unrolled slope is the per-iteration cost of a while loop (`loopk_fit.csv`).
+
+### Small and odd GEMMs: activation residency, staging what-if, tile granularity (2026-11-05)
+
+- **Activation residency** (NPUsim `[accelerator] activation_residency`, default 0; 1 in `tpu_v5e*.cfg`): in the
+  network path, the activation between mapped layers stays in the GLB when it fits its tensor residency
+  capacity (`apply_graph_residency`, as the executable-IR path already did); 2 also keeps the run's own input and
+  output, for a kernel in the middle of a chain (`compare_v5e.py --chain` sets it). Evidence: a chained odd GEMM
+  costs its weight bytes only (100 x 1000: 2 MB in 2.81 us, 712 GB/s), so its input and output do not touch HBM.
+  Odd GEMMs chained in one program (35):
+
+  | | interlayer overlap only | + activation residency |
+  |---|---|---|
+  | analytic, all | +11.3 / 11.9% | -5.5 / 6.4% |
+  | analytic, M <= 256 | +14.2 / 14.2% | -6.7 / 7.3% |
+  | Ramulator2, all | +23.2 / 23.4% | +2.0 / 4.1% |
+  | M 512 (both) | 2.1-2.7% | 2.5-2.6% |
+
+  Chained kernels now bracket the TPU like the large decode GEMMs do (analytic ~5% short, Ramulator2 ~2% long).
+- **Isolated kernels, staging not overlapped** (what-if `configs/accelerators/tpu_v5e_serial.cfg`: `[multi_chip]
+  double_buffer = 0`, no outstanding-request override, so DRAM and on-chip stages add per tile). XLA copies an
+  on-chip-sized operand before an isolated kernel (smallk2 `copy_us`: 0.4 us + bytes / ~755 GB/s):
+
+  | (mean / MAPE, analytic) | overlapped (`tpu_v5e`) | not overlapped (`tpu_v5e_serial`) |
+  |---|---|---|
+  | smallk2 K sweep, copy >= 50% of the module (18) | -16.0 / 18.8% | +10.4 / 10.4% |
+  | smallk2 K sweep, copy < 50% (14) | +0.1 / 13.0% | +13.4 / 13.4% |
+  | smallk2 K sweep, all (Ramulator2) | -1.9 / 12.2% | +17.6 / 17.6% |
+  | rotated, copied decode shapes M 8-128 (10) | -25.0 / 25.0% | +11.3 / 11.9% |
+  | rotated, HBM-streaming, no copy (8) | -1.9 / 4.7% | +39.8 / 39.8% |
+  | rotated, compute-bound (15) | -9.3 / 11.6% | -6.2 / 17.3% |
+
+  Serial staging fits only where XLA stages (isolated program, operand on chip) and then overshoots by ~10%:
+  the TPU's VMEM-resident kernel still overlaps its on-chip stages, which this config serializes too. Not
+  applied; a conditional staging mode (isolated program and operand <= on-chip memory) would be XLA behavior
+  in NPUsim, left for a decision.
+- **Why small N = 1024 GEMMs read long in isolation** (K sweep K <= 256: +5..+26%). Not a per-strip fill: NPUsim
+  declares none (`Stripe-transition: not modeled`; fold fill = the 330 setup cycles). The cause is tile
+  granularity: one DRAM tile per strip (8 x 128 x 1024: two 128 KB tiles), so the five stages barely overlap
+  (busy DRAM 522 / NoP 274 / GLB 128 / PE array 256 / PE 346 cycles, critical path 1526, prologue 1180).
+  Moving part of K to the DRAM loop makes it worse, not finer (8 x 2048 x 1024: prologue 0.76 / 1.53 / 3.06 /
+  6.11 us at 1 / 2 / 4 / 8 DRAM K splits; the split K serializes through the partial sums), and K <= 256 has no
+  K to split. A finer DMA granularity inside a DRAM tile (the next stage starting on the first chunk) is a
+  pipeline-model change, not a mapping one; not done.
+- **v5e-8 code**: `measure_tpu.py` collectives now sweep 2, 4, 8 chips (rotated buffers) and decode runs tensor
+  parallel 1, 2, 4, 8; `env.json` records each chip's torus coordinates. For a Kaggle TpuV5E8 session:
+  `%run measure_tpu.py --only collectives,decode` (the single-chip sections are measured already).
