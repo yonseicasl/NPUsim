@@ -396,6 +396,7 @@ results in /content/tpu_v5e_colab</pre>
       <p>TPU는 다음 커널의 가중치를 앞 커널이 끝나 가는 동안 미리 읽습니다. NPUsim은 레이어마다 파이프라인을 따로 채우고 비워, 연쇄 실행에서 GEMM마다 1~1.3 µs를 더 계산했습니다.</p>
       <p>각 레이어의 prologue(첫 타일이 PE에 닿기까지)와 tail(DRAM 단계가 끝난 뒤)을 기록하고, 네트워크를 합산할 때 경계마다 min(tail<sub>i</sub>, prologue<sub>i+1</sub>)만큼 겹치게 했습니다(<code>interlayer_overlap = 1</code>). 다음 레이어의 계산은 앞 레이어가 끝난 뒤에 시작합니다.</p>
       <div class="finding fix"><strong>결과</strong>: 연쇄 실행 홀수 GEMM MAPE가 33.6%에서 11.9%로, M = 512는 2.7%로 줄었습니다. NPUsim 단위 테스트와 타임라인 검증을 통과했습니다.</div>
+    </li>
     <li data-n="9">
       <div class="step-head"><h3>활성값 칩 안 유지와 남은 오차 검토</h3><span class="when">11-05</span></div>
       <p>연쇄 실행에서 TPU 커널은 가중치 바이트만큼만 시간이 걸렸습니다(100×1000: 2 MB를 2.81 µs, 712 GB/s). 앞 커널의 출력이 칩 안에 남아 다음 커널의 입력이 된다는 뜻입니다. NPUsim에 이미 있던 텐서 상주 기능을 일반 네트워크 경로에서도 쓰도록 <code>activation_residency</code>를 추가했습니다.</p>
@@ -411,7 +412,7 @@ results in /content/tpu_v5e_colab</pre>
 <section aria-labelledby="h-chart">
   <h2 id="h-chart">작은 GEMM 오차의 변화</h2>
   <p>같은 측정 데이터에 대한 NPUsim MAPE입니다. 원은 처음 비교했을 때, 채운 점은 지금 값입니다.</p>
-  <div class="chart" role="img" aria-label="작은 GEMM MAPE 변화. 단독 실행 analytic 45.0에서 16.1, Ramulator 46.7에서 12.2, 연쇄 실행 analytic 33.6에서 11.9, Ramulator 45.7에서 23.4.">
+  <div class="chart" role="img" aria-label="작은 GEMM MAPE 변화. 단독 실행 analytic 45.0에서 16.2, Ramulator2 46.7에서 12.2, 연쇄 실행 analytic 33.6에서 6.4, Ramulator2 45.7에서 4.1.">
     <svg viewBox="0 0 640 230" xmlns="http://www.w3.org/2000/svg">
       <!-- scale: x = 260 + 7 * MAPE(%), 0..50 % -> 260..610 -->
       <g class="grid"><line x1="260" y1="20" x2="260" y2="190"/><line x1="330" y1="20" x2="330" y2="190"/><line x1="400" y1="20" x2="400" y2="190"/><line x1="470" y1="20" x2="470" y2="190"/><line x1="540" y1="20" x2="540" y2="190"/><line x1="610" y1="20" x2="610" y2="190"/></g>
@@ -422,14 +423,14 @@ results in /content/tpu_v5e_colab</pre>
         <text x="0" y="124">연쇄 실행 홀수 GEMM · analytic</text>
         <text x="0" y="164">연쇄 실행 홀수 GEMM · Ramulator2</text>
       </g>
-      <line class="seg" x1="372.7" y1="40" x2="575.0" y2="40"/><circle class="before" cx="575.0" cy="40" r="6"/><circle class="after" cx="372.7" cy="40" r="6"/><text class="val" x="589.0" y="44">45.0</text><text class="val" x="372.7" y="28" text-anchor="middle">16.1</text>
+      <line class="seg" x1="373.4" y1="40" x2="575.0" y2="40"/><circle class="before" cx="575.0" cy="40" r="6"/><circle class="after" cx="373.4" cy="40" r="6"/><text class="val" x="589.0" y="44">45.0</text><text class="val" x="373.4" y="28" text-anchor="middle">16.2</text>
       <line class="seg" x1="345.4" y1="80" x2="586.9" y2="80"/><circle class="before" cx="586.9" cy="80" r="6"/><circle class="after" cx="345.4" cy="80" r="6"/><text class="val" x="600.9" y="84">46.7</text><text class="val" x="345.4" y="68" text-anchor="middle">12.2</text>
-      <line class="seg" x1="343.3" y1="120" x2="495.2" y2="120"/><circle class="before" cx="495.2" cy="120" r="6"/><circle class="after" cx="343.3" cy="120" r="6"/><text class="val" x="509.2" y="124">33.6</text><text class="val" x="343.3" y="108" text-anchor="middle">11.9</text>
-      <line class="seg" x1="423.8" y1="160" x2="579.9" y2="160"/><circle class="before" cx="579.9" cy="160" r="6"/><circle class="after" cx="423.8" cy="160" r="6"/><text class="val" x="593.9" y="164">45.7</text><text class="val" x="423.8" y="148" text-anchor="middle">23.4</text>
+      <line class="seg" x1="304.8" y1="120" x2="495.2" y2="120"/><circle class="before" cx="495.2" cy="120" r="6"/><circle class="after" cx="304.8" cy="120" r="6"/><text class="val" x="509.2" y="124">33.6</text><text class="val" x="304.8" y="108" text-anchor="middle">6.4</text>
+      <line class="seg" x1="288.7" y1="160" x2="579.9" y2="160"/><circle class="before" cx="579.9" cy="160" r="6"/><circle class="after" cx="288.7" cy="160" r="6"/><text class="val" x="593.9" y="164">45.7</text><text class="val" x="288.7" y="148" text-anchor="middle">4.1</text>
     </svg>
     <div class="legend"><span><i style="border:2px solid var(--bad);background:var(--bg)"></i>처음 비교</span><span><i style="background:var(--accent)"></i>현재</span></div>
   </div>
-  <p class="muted">단독 실행은 N &lt; 512 매핑 수정, 커널당 0.22 µs, 프로그램당 0.69 µs가 차례로 반영되었습니다. 연쇄 실행은 레이어 사이 겹침이 반영되었습니다.</p>
+  <p class="muted">단독 실행은 N &lt; 512 매핑 수정, 커널당 0.22 µs, 프로그램당 0.69 µs가 차례로 반영되었습니다. 연쇄 실행은 레이어 사이 겹침과 활성값 칩 안 유지가 반영되었습니다.</p>
 </section>
 
 <section aria-labelledby="h-principles">
