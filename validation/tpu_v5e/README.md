@@ -450,3 +450,16 @@ is visible in the measurement itself -- on the TPU int8 weights stream 3-8% slow
 follow-up 2 and 3: int8 / bf16 byte rate 0.92-0.97; 8.5% / 7.6% at these two cases), a cost NPUsim does not model
 (int8 -> bf16 conversion is the candidate; not verified). Before the knob the per-strip fill covered part of it.
 Open item: model the int8 weight path with its own evidence; until then int8 GEMMs read ~7-9% short.
+
+**Unresolved: row tiling in `compare_v5e.py` (found by Codex, 2026-11-11).** For M > 512 the script simulates
+one <= 512-row tile as its own run and sums the tiles. A direct run of the whole GEMM (`check_tiling.py`) gives
+1024 x 128 x 1024: tiled 6.63 us vs whole 5.45 us, **+21.7%** (`results/2026-11-11_codex_audit/whole_gemm_small.log`).
+The earlier "1024 rows = 2 x 512 to 1.5%" was one point (1024 x 4096 x 512, before `timeline_dram_tiles`) and does
+not hold in general: each simulated tile pays its own pipeline fill and drain, so the error grows as the compute
+per tile shrinks. This is the comparison script's approximation, not the simulator's result -- the same kind of
+per-iteration fill the knob removed inside one run, reintroduced by splitting the run. Not fixed here (no overlap
+subtracted, nothing fitted); the cause at the row boundary (fill, input reuse) needs its own analysis, and the
+clean route is to simulate M > 512 GEMMs whole (DRAM-level batch factor), which costs simulation time and failed
+once at 4 row tiles. Affected: the 10 isolated GEMMs with M > 512 in `2026-11-03_colab_v5e1_rot` (9 of the 15
+compute-bound points; the script prints a warning listing them). Not affected (M <= 512): streamed decode GEMMs,
+int8 GEMMs, chained odd GEMMs, the K sweeps, the decode layers.

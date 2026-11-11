@@ -4,9 +4,14 @@
   GEMM    every gemm.csv shape on NPUsim with validation/palm's mapping (output columns over the 4 MXUs
           in 128-column weight strips). Rows go in tiles of <= 512; one tile is simulated at 2 and 4
           strips (1 or 2 when that is all) and scaled, since the time is linear in strips from the
-          second on and in row tiles (1024 rows = 2 x 512 to 1.5%). Per-run constants are charged once:
-          program_setup_cycle once per program (not at all with --in-program), layer_setup_cycle by the
-          first row tile only. Against the measured device time (wall time without a trace).
+          second on. Per-run constants are charged once: program_setup_cycle once per program (not at all
+          with --in-program), layer_setup_cycle by the first row tile only.
+          ROW TILES ARE AN APPROXIMATION, NOT VALIDATED IN GENERAL: for M > 512 each <= 512-row tile is
+          simulated as its own run and the tiles are summed, so every tile pays its own pipeline fill and
+          drain. Against a direct run of the whole GEMM this was +1.5% at 1024 x 4096 x 512 (one early
+          point) but +21.7% at 1024 x 128 x 1024 (results/2026-11-11_codex_audit/whole_gemm_small.log):
+          the error grows as the per-tile compute shrinks. Unresolved (row-boundary fill / reuse); such
+          rows are flagged in the log. check_tiling.py measures it for a given shape. Against the measured device time (wall time without a trace).
   decode  decode.csv per-scope times: the four projection GEMMs vs the rest (attention, norms, SwiGLU,
           psum) -- the time NPUsim's PaLM model leaves out -- and, at tp=1, NPUsim's projection GEMMs
           against the measured GEMM scopes.
@@ -166,6 +171,12 @@ def main():
     shapes = {(int(r["M"]), int(r["K"]), int(r["N"])) for r in gemm}
     shapes |= {(int(r["batch"]), *kn) for r in decode if r["tp"] == "1" for kn in PROJ.values()}
     sim, program_setup = simulate(sorted(shapes), a.jobs)
+    tiled = sorted(k for k in shapes if k[0] > MTILE)
+    if tiled:
+        print(f"WARNING: {len(tiled)} GEMM(s) with M > {MTILE} use the row-tiled estimate (one <= {MTILE}-row tile "
+              f"simulated, summed over tiles): each tile pays its own pipeline fill, up to +22% against a direct "
+              f"whole-GEMM run on a small K (check_tiling.py). Not validated for these shapes: "
+              + ", ".join("x".join(map(str, k)) for k in tiled), flush=True)
     if IN_PROGRAM:                            # kernels inside a loop/chain do not pay the program's start
         program_setup = 0.0
 
