@@ -460,7 +460,7 @@ per tile shrinks. This is the comparison script's approximation, not the simulat
 per-iteration fill the knob removed inside one run, reintroduced by splitting the run. Not fixed here (no overlap
 subtracted, nothing fitted); the cause at the row boundary (fill, input reuse) needs its own analysis, and the
 clean route is to simulate M > 512 GEMMs whole (DRAM-level batch factor), which costs simulation time and failed
-once at 4 row tiles. Affected: the 10 isolated GEMMs with M > 512 in `2026-11-03_colab_v5e1_rot` (9 of the 15
+once at 4 row tiles. Affected: the 10 isolated GEMMs with M > 512 in `2026-11-03_colab_v5e1_rot` (10 of the 15
 compute-bound points; the script prints a warning listing them). Not affected (M <= 512): streamed decode GEMMs,
 int8 GEMMs, chained odd GEMMs, the K sweeps, the decode layers.
 
@@ -475,3 +475,35 @@ int8 GEMMs, chained odd GEMMs, the K sweeps, the decode layers.
 
 The strip extrapolation (every M <= 512 set) agrees with the whole run within 0.5%, slightly low. Row tiling is
 off in both directions (-4.4% here, +21.7% at 1024 x 128 x 1024): unvalidated, as above.
+
+### Every set with `timeline_dram_tiles` on (2026-11-11 re-run; binary of commit `7044920`)
+
+Mean / MAPE, before (commit `cb08bea`) -> after. The decode layers are `compare_stack.py` on follow-up 3's
+measurements with follow-up 2's re-run GEMM CSVs and the KV read at 819 GB/s (run in a scratch directory;
+`results/2026-11-03_colab_v5e1_followup3/compare_*` are the pre-change copies and were not rewritten).
+
+| set | analytic `[dram]` | `hbm2e_v5e.yaml` | `hbm2e_tpu_v5e_refsb.yaml` |
+|---|---|---|---|
+| streamed decode GEMMs bf16 (20) | -4.1 / 4.7% -> -8.0 / 8.0% | +5.5 / 6.2% -> +1.5 / 4.6% | +2.5 / 3.2% -> -1.5 / 2.5% |
+| int8 streamed GEMMs (20) | -6.9 / 7.0% -> -11.1 / 11.1% | +1.3 / 3.2% -> -2.9 / 4.8% | -1.6 / 3.1% -> -5.8 / 6.0% |
+| chained odd GEMMs (35) | -5.5 / 6.4% -> -9.1 / 9.1% | +2.0 / 4.1% -> -1.7 / 3.8% | -0.5 / 3.1% -> -4.2 / 4.7% |
+| compute-bound isolated, kernel (15) | +7.2 / 7.2% -> -1.8 / 3.8% | +9.0 / 9.0% -> -0.0 / 4.4% | +8.2 / 8.2% -> -0.8 / 4.4% |
+| -- M <= 512 (5) | +5.3 / 5.3% -> +0.0 / 4.3% | +7.0 / 7.0% -> +1.6 / 5.7% | +6.4 / 6.4% -> +1.0 / 5.2% |
+| -- M > 512, row-tiled estimate (10) | +8.1 / 8.1% -> -2.8 / 3.6% | +10.1 / 10.1% -> -0.8 / 3.8% | +9.1 / 9.1% -> -1.8 / 4.1% |
+| decode layer, full (12) | -8.6 / 8.6% -> -10.7 / 10.7% | -0.7 / 3.5% -> -2.8 / 3.9% | -3.2 / 4.0% -> -5.3 / 5.3% |
+| decode layer, gemm_only (12) | -8.0 / 8.0% -> -11.2 / 11.2% | +3.6 / 3.6% -> +0.4 / 2.7% | -0.0 / 2.4% -> -3.3 / 3.8% |
+| **pooled (102)** | **-4.0 / 6.5% -> -8.4 / 8.7%** | **+3.3 / 5.0% -> -1.2 / 4.3%** | **+0.8 / 4.0% -> -3.6 / 4.6%** |
+
+- The change does what it was for: compute-bound GEMMs +8.2% -> -0.8% on refsb (the 5 points without row
+  tiling +6.4% -> +1.0%; the 10 row-tiled ones carry the unvalidated row estimate, see above).
+- It also takes ~4% off every other set, because their GEMMs have 2-56 strips too. So the pooled figure on
+  refsb does NOT improve: 4.0% -> 4.6% (4.6% on the 92 points without row tiling), and NPUsim is now short on
+  nearly everything (pooled mean -3.6%). The per-strip fill had been standing in for costs NPUsim does not
+  model; with it gone they show: int8 weights (-5.8%; the TPU streams int8 3-8% slower per byte, cause not
+  established), chained small GEMMs (-4.2%), the KV read at 819 GB/s in the decode layer (-5.3% full vs -3.3%
+  gemm_only).
+- Separate effect, not part of the table: with Codex's KV stream model (`kv_streams.py`, refsb probe) the
+  decode layer on refsb is -2.8 / 2.9% and the pooled 102 points -3.3 / 4.3% (before the core change, KV-only:
+  3.76%).
+- `hbm2e_v5e.yaml` (82% sustained, too slow a DRAM) now pools best at 4.3% (mean -1.2%): a slower DRAM
+  cancelling the same missing costs, not a better model.
