@@ -174,8 +174,9 @@ def main():
     tiled = sorted(k for k in shapes if k[0] > MTILE)
     if tiled:
         print(f"WARNING: {len(tiled)} GEMM(s) with M > {MTILE} use the row-tiled estimate (one <= {MTILE}-row tile "
-              f"simulated, summed over tiles): each tile pays its own pipeline fill, up to +22% against a direct "
-              f"whole-GEMM run on a small K (check_tiling.py). Not validated for these shapes: "
+              f"simulated, summed over tiles): each tile pays its own pipeline fill. Observed against a direct "
+              f"whole-GEMM run: +21.7% at 1024x128x1024, -4.4% at 1024x1024x1024 (check_tiling.py); there is no "
+              f"general error bound. Not validated for these shapes: "
               + ", ".join("x".join(map(str, k)) for k in tiled), flush=True)
     if IN_PROGRAM:                            # kernels inside a loop/chain do not pay the program's start
         program_setup = 0.0
