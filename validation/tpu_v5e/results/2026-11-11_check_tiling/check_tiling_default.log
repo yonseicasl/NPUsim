@@ -1,0 +1,6 @@
+NPUsim: 8 runs on 6 threads ...
+  512 x  2048 x  4096  tiled     44.84 us  whole     45.06 us  -0.47%
+  512 x  4096 x  4096  tiled     88.86 us  whole     89.06 us  -0.22%
+ 1024 x  1024 x  1024  tiled     13.54 us  whole     14.17 us  -4.44%
+  128 x  4096 x  4096  tiled     44.41 us  whole     44.42 us  -0.02%
+max |tiled - whole| 4.44%

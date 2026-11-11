@@ -463,3 +463,15 @@ clean route is to simulate M > 512 GEMMs whole (DRAM-level batch factor), which 
 once at 4 row tiles. Affected: the 10 isolated GEMMs with M > 512 in `2026-11-03_colab_v5e1_rot` (9 of the 15
 compute-bound points; the script prints a warning listing them). Not affected (M <= 512): streamed decode GEMMs,
 int8 GEMMs, chained odd GEMMs, the K sweeps, the decode layers.
+
+`check_tiling.py`, default shapes, on commit `7044920`'s binary (`results/2026-11-11_check_tiling/`):
+
+| shape | tiled estimate | whole GEMM | difference | what it tests |
+|---|---|---|---|---|
+| 512 x 2048 x 4096 | 44.84 us | 45.06 us | -0.47% | strip extrapolation (8 strips from 2 and 4) |
+| 512 x 4096 x 4096 | 88.86 us | 89.06 us | -0.22% | strip extrapolation |
+| 128 x 4096 x 4096 | 44.41 us | 44.42 us | -0.02% | strip extrapolation |
+| 1024 x 1024 x 1024 | 13.54 us | 14.17 us | -4.44% | two row tiles |
+
+The strip extrapolation (every M <= 512 set) agrees with the whole run within 0.5%, slightly low. Row tiling is
+off in both directions (-4.4% here, +21.7% at 1024 x 128 x 1024): unvalidated, as above.
