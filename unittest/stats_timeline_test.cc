@@ -198,6 +198,33 @@ void run_sfu_streaming_cases() {
     }
 }
 
+// [accelerator] timeline_dram_tiles: the stage totals of a layer whose DRAM-level loop ran `outer` times belong
+// on a tile clock of (GLB repetitions x outer) tiles. A DRAM stage of 100 cycles in front of a compute stage of
+// 200, both double-buffered, on 2 GLB repetitions:
+//   outer 1 -> 2 tiles of (50, 100): the first tile's DRAM fill (50) + 2 x 100             = 250
+//   outer 4 -> 8 tiles of (12.5, 25): the same totals, the fill is one eighth (12.5) + 200 = 212.5
+// The fill shrinks with the real tile count instead of growing with the DRAM iterations; the totals, and so
+// every busy axis, are unchanged.
+void run_outer_iterations() {
+    double latency[2] = {0.0, 0.0};
+    for(unsigned pass = 0; pass < 2; ++pass) {
+        stats_t stats;
+        stats.computation_cycle = 100.0;                      // x 2 repetitions = 200
+        stats.access_cycle_dram[data_type_t::WEIGHT] = 50.0;  // x 2 repetitions = 100
+        stats.timeline_physical_macs = 1.0;
+        for(unsigned b = 0; b < 4; ++b) stats.timeline_boundary_overlap[b] = true;
+        stats.timeline_outer_iterations = (pass == 0) ? 1 : 4;
+        std::vector<unsigned> datatype_repetitions(3, 1);
+        datatype_repetitions[data_type_t::WEIGHT] = 2;
+        stats.scale_serial_repetitions(2, datatype_repetitions);
+        expect_close(stats.busy_cycle_dram, 100.0, "outer iterations: DRAM busy total");
+        expect_close(stats.stage_axis_compute, 200.0, "outer iterations: compute schedule");
+        latency[pass] = stats.layer_latency;
+    }
+    expect_close(latency[0], 250.0, "outer iterations 1: fill of a 2-tile clock");
+    expect_close(latency[1], 212.5, "outer iterations 4: fill of an 8-tile clock");
+}
+
 } // namespace
 
 int main() {
@@ -205,6 +232,7 @@ int main() {
     run_case(memory_type_t::SHARED, 100.0, "shared GLB");
     run_order_independence();
     run_sfu_streaming_cases();
+    run_outer_iterations();
     if(failures != 0) {
         std::cerr << failures << " stats timeline check(s) FAILED" << std::endl;
         return 1;

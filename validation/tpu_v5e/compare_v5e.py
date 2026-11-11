@@ -4,7 +4,9 @@
   GEMM    every gemm.csv shape on NPUsim with validation/palm's mapping (output columns over the 4 MXUs
           in 128-column weight strips). Rows go in tiles of <= 512; one tile is simulated at 2 and 4
           strips (1 or 2 when that is all) and scaled, since the time is linear in strips from the
-          second on and in row tiles (1024 rows = 2 x 512 to 1.5%). Against the measured device time (wall time without a trace).
+          second on and in row tiles (1024 rows = 2 x 512 to 1.5%). Per-run constants are charged once:
+          program_setup_cycle once per program (not at all with --in-program), layer_setup_cycle by the
+          first row tile only. Against the measured device time (wall time without a trace).
   decode  decode.csv per-scope times: the four projection GEMMs vs the rest (attention, norms, SwiGLU,
           psum) -- the time NPUsim's PaLM model leaves out -- and, at tp=1, NPUsim's projection GEMMs
           against the measured GEMM scopes.
@@ -48,36 +50,60 @@ def num(r, k):
     return float(r[k]) if r.get(k) not in (None, "") else None
 
 
+def scale_time(sim, mt, first, inner, chain=False):
+    """Kernel seconds of a GEMM from its simulated pieces. sim: {run key: (seconds, prologue s, tail s)};
+    first / inner: (run keys, fit) of the first row tile (pays the layer setup) and of the other mt - 1 tiles
+    (no layer setup; None when mt == 1); fit None for one run, else ((s0, s1), strips): the two runs have s0 and
+    s1 strips and the time is linear in strips. chain: subtract the overlap with the previous kernel,
+    min(prologue, tail) of the first run."""
+    def tile(names, fit):
+        if fit is None:
+            return sim[names[0]][0]
+        (s0, s1), strips = fit
+        t0, t1 = sim[names[0]][0], sim[names[1]][0]
+        return t0 + (strips - s0) * (t1 - t0) / (s1 - s0)
+    hidden = min(sim[first[0][0]][1], sim[first[0][0]][2]) if chain else 0.0
+    return tile(*first) + ((mt - 1) * tile(*inner) if inner else 0.0) - hidden
+
+
 def simulate(shapes, jobs):
-    """{(M, K, N): seconds} on NPUsim."""
+    """({(M, K, N): kernel seconds}, program setup seconds) on NPUsim. A GEMM is simulated in pieces (row tiles x
+    column strips) and scaled, so the constants of a run are kept out of the pieces and charged once:
+    program_setup_cycle is zeroed in every simulated run and returned for the caller to add once per program;
+    layer_setup_cycle is charged by the first row tile only (the others run on an `_inner` config without it)."""
+    INNER = ACCEL + "_inner"
     tmp, cfgroot, rundir = palm.workdir((ACCEL,))
-    if IN_PROGRAM:                            # kernels inside a loop/chain do not pay the program's start
-        p = os.path.join(cfgroot, "accelerators", f"{ACCEL}.cfg")
-        text = open(p).read()                 # read before reopening for write (which truncates)
-        text = re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", text)
-        if CHAIN:                             # mid-chain kernel: its input and output stay on chip
-            text = re.sub(r"(?m)^activation_residency\s*=.*$", "activation_residency = 2", text)
-        open(p, "w").write(text)
+    p = os.path.join(cfgroot, "accelerators", f"{ACCEL}.cfg")
+    text = open(p).read()                     # read before reopening for write (which truncates)
+    m = re.search(r"(?m)^program_setup_cycle\s*=\s*([\d.]+)", text)
+    program_setup = float(m.group(1)) / palm.CLOCK_HZ if m else 0.0
+    text = re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", text)
+    if CHAIN:                                 # mid-chain kernel: its input and output stay on chip
+        text = re.sub(r"(?m)^activation_residency\s*=.*$", "activation_residency = 2", text)
+    open(p, "w").write(text)
+    open(os.path.join(cfgroot, "accelerators", f"{INNER}.cfg"), "w").write(
+        re.sub(r"(?m)^layer_setup_cycle\s*=.*$", "layer_setup_cycle = 0", text))
     plan, todo = {}, {}
     mxus = palm.MXUS
 
-    def add(mtile, K, ncols, chips, ksplit=1):
+    def add(mtile, K, ncols, chips, ksplit=1, accel=None):
         """Queue a GEMM of ncols output columns over `chips` MXUs, each MXU group also splitting the reduction
-        dimension K `ksplit` ways (partial sums); returns its run name."""
+        dimension K `ksplit` ways (partial sums); returns its run key."""
+        accel = accel or ACCEL
         name = f"v5e_{mtile}x{K}x{ncols}_{chips}x{ksplit}mxu"
-        if name not in todo:
+        if (accel, name) not in todo:
             palm.MXUS = chips                 # gemm_files reads it: CHIPS_Y = chips
-            palm.gemm_files(cfgroot, rundir, name, ACCEL, mtile, K, ncols)
+            palm.gemm_files(cfgroot, rundir, name, accel, mtile, K, ncols)
             palm.MXUS = mxus
             if ksplit > 1:                    # CHIPS_Y also takes a C (= K) factor; the GLB keeps the rest
-                p = os.path.join(cfgroot, "mappings", ACCEL, name, "ws.map")
+                p = os.path.join(cfgroot, "mappings", accel, name, "ws.map")
                 s = open(p).read()
                 s = s.replace(f"CHIPS_Y = {chips}, 1, 1, 1, 1,", f"CHIPS_Y = {chips}, 1, 1, 1, {ksplit},")
                 s = re.sub(r"GLB     = 1, 1, 1, 1, (\d+),",
                            lambda m: f"GLB     = 1, 1, 1, 1, {math.ceil(int(m.group(1)) / ksplit)},", s)
                 open(p, "w").write(s)
-            todo[name] = (cfgroot, rundir, name, ACCEL)
-        return name
+            todo[accel, name] = (cfgroot, rundir, name, accel)
+        return accel, name
 
     for M, K, N in shapes:
         mt = math.ceil(M / MTILE)
@@ -93,29 +119,22 @@ def simulate(shapes, jobs):
         # 1 or 2 rounds are simulated as is, between 1 and 2 interpolated, more extrapolated from 2 and 4. Not from
         # 1 and 2: with Ramulator the first strip's DRAM fill is exposed and partly hidden from the second strip on,
         # so the 1 -> 2 step is below the steady per-strip time (8192^3 extrapolated under the compute roofline).
-        if nb < mxus:
-            ks = max(1, min(mxus // nb, math.ceil(K / DIM)))
-            plan[M, K, N] = (mt, [add(mtile, K, nb * DIM, nb, ks)], None)
-        elif strips in (1, 2):
-            plan[M, K, N] = (mt, [add(mtile, K, int(strips) * mxus * DIM, mxus)], None)
-        else:
+        def pieces(accel):
+            if nb < mxus:
+                ks = max(1, min(mxus // nb, math.ceil(K / DIM)))
+                return [add(mtile, K, nb * DIM, nb, ks, accel)], None
+            if strips in (1, 2):
+                return [add(mtile, K, int(strips) * mxus * DIM, mxus, accel=accel)], None
             s = (1, 2) if strips < 2 else (2, 4)
-            plan[M, K, N] = (mt, [add(mtile, K, x * mxus * DIM, mxus) for x in s], (s, strips))
+            return [add(mtile, K, x * mxus * DIM, mxus, accel=accel) for x in s], (s, strips)
+        # the first row tile pays the layer setup; the remaining mt - 1 tiles of the same kernel do not
+        plan[M, K, N] = (mt, pieces(ACCEL), pieces(INNER) if mt > 1 else None)
     print(f"NPUsim: {len(todo)} runs on {jobs} threads ...", flush=True)
     with ThreadPoolExecutor(jobs) as ex:
         sim = dict(zip(todo, ex.map(run_sim, todo.values())))
     shutil.rmtree(tmp)
 
-    def scale(mt, names, fit):
-        # In a chain the kernel's prologue runs under the previous kernel's tail (NPUsim's interlayer_overlap):
-        # one boundary per kernel, min(prologue, tail) of its (first) simulated run.
-        hidden = min(sim[names[0]][1], sim[names[0]][2]) if CHAIN else 0.0
-        if fit is None:
-            return mt * sim[names[0]][0] - hidden
-        (s0, s1), strips = fit
-        t0, t1 = sim[names[0]][0], sim[names[1]][0]
-        return mt * (t0 + (strips - s0) * (t1 - t0) / (s1 - s0)) - hidden
-    return {k: scale(*v) for k, v in plan.items()}
+    return {k: scale_time(sim, *v, chain=CHAIN) for k, v in plan.items()}, program_setup
 
 
 def roofline(M, K, N):
@@ -146,10 +165,16 @@ def main():
     decode = list(csv.DictReader(open(dpath))) if os.path.exists(dpath) else []
     shapes = {(int(r["M"]), int(r["K"]), int(r["N"])) for r in gemm}
     shapes |= {(int(r["batch"]), *kn) for r in decode if r["tp"] == "1" for kn in PROJ.values()}
-    sim = simulate(sorted(shapes), a.jobs)
+    sim, program_setup = simulate(sorted(shapes), a.jobs)
+    if IN_PROGRAM:                            # kernels inside a loop/chain do not pay the program's start
+        program_setup = 0.0
 
     # measured = the XLA module; copy = its copy-start/done ops (an operand staged HBM -> on-chip memory before
     # the fusion, not overlapped with it); kernel = measured - copy.
+    # NPUsim = its kernel + the program setup once (a one-kernel program; 0 with --in-program), against both the
+    # measured module (err) and the measured kernel (err_k): a row without copies has the same prediction for
+    # both. err_k_noprog is a SENSITIVITY only (the program setup dropped from the prediction): how much of the
+    # 0.69 us chain intercept is staging and how much other device-side start-up has not been measured.
     out, errs = [], {}
     print(f"\n{'M':>5} {'K':>6} {'N':>6} | {'measured':>9} {'copy':>7} {'kernel':>8} {'NPUsim':>9} {'roofline':>9} us"
           f" | {'err':>7} {'err_k':>7}  src")
@@ -162,14 +187,16 @@ def main():
         if num(r, "copy_us") is not None:     # smallk: the module's copy-start/done time recorded directly
             copy = num(r, "copy_us")
         kern = meas - copy
-        s, roof = sim[M, K, N] * 1e6, roofline(M, K, N) * 1e6
-        err, errk = 100 * (s / meas - 1), 100 * (s / kern - 1)
+        sk, roof = sim[M, K, N] * 1e6, roofline(M, K, N) * 1e6
+        s = sk + program_setup * 1e6
+        err, errk, errk_noprog = 100 * (s / meas - 1), 100 * (s / kern - 1), 100 * (sk / kern - 1)
         grp = "decode (M<=128)" if M <= 128 else "other"
         errs.setdefault(grp, []).append(abs(err))
         errs.setdefault(grp + " kernel", []).append(abs(errk))
         out.append(dict(M=M, K=K, N=N, measured_us=meas, copy_us=round(copy, 2), kernel_us=round(kern, 2), src=src,
                         npusim_us=round(s, 2), roofline_us=round(roof, 2), err_pct=round(err, 1),
-                        err_kernel_pct=round(errk, 1)))
+                        err_kernel_pct=round(errk, 1), npusim_noprog_us=round(sk, 2),
+                        err_kernel_noprog_pct=round(errk_noprog, 1)))
         print(f"{M:5d} {K:6d} {N:6d} | {meas:9.2f} {copy:7.2f} {kern:8.2f} {s:9.2f} {roof:9.2f}    | {err:+6.1f}%"
               f" {errk:+6.1f}%  {src}")
     print("MAPE " + ", ".join(f"{k} {statistics.mean(v):.1f}% (n={len(v)})" for k, v in errs.items()))
@@ -197,7 +224,9 @@ def main():
         line = (f"{tp:2d} {B:4d} {L:5d} | {tot:8.1f} {g:8.1f} {un:7.1f} {att:7.1f} {kvroof:7.1f} {ps:7.1f}"
                 f" {tot - g - un - att - ps:6.1f} {100 * (1 - (g + un) / tot):6.1f}% |")
         if tp == 1:
-            sg = sum(sim[(B, *kn)] for kn in PROJ.values()) * 1e6
+            # one program per layer; the measured side is GEMM scopes + unattributed ops, so where the
+            # program's fixed time lands in the trace decides whether this constant belongs here
+            sg = (sum(sim[(B, *kn)] for kn in PROJ.values()) + program_setup) * 1e6
             line += f" {sg:11.1f} {100 * (sg / (g + un) - 1) if g else float('nan'):+6.1f}%"
         print(line)
     print("GEMM = qkv + o_proj + ffn_up + ffn_down scopes; unattr = ops outside any scope, mostly the weight copies\n"

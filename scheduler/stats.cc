@@ -279,6 +279,7 @@ void stats_t::init() {
     psum_store_access_cycle_pe_array = 0.0;
     psum_store_access_energy_pe_array = 0.0;
     temporal_repetition_tiles = 1;
+    timeline_outer_iterations = 1;
 
     /* SFU */
     sfu_present = false;
@@ -1663,8 +1664,18 @@ void stats_t::finalize_layer_timeline() {
     // (DRAM/multi-chip refetch fewer tiles than the on-chip stages consume, and used to
     // force the whole run back to a flat max()), (b) per-tile cost variation, and (c) the
     // stall attribution reported below.
-    const unsigned tiles = std::max(1U, temporal_repetition_tiles);
-    const unsigned offchip_tiles = std::min(tiles, std::max(1U, offchip_repetition_tiles));
+    // The DRAM-level loop is simulated iteration by iteration and its stage totals are summed, so every
+    // iteration contributes its own GLB-repetition tiles to the clock (timeline_outer_iterations, 1 unless
+    // [accelerator] timeline_dram_tiles): off-chip work and output commits repeat with it.
+    const unsigned outer = std::max(1U, timeline_outer_iterations);
+    const unsigned long long clock = static_cast<unsigned long long>(std::max(1U, temporal_repetition_tiles))*outer;
+    if(clock > 16000000ULL) {
+        std::cerr << "Error: layer timeline tile clock too long (" << clock << " tiles)" << std::endl;
+        exit(1);
+    }
+    const unsigned tiles = static_cast<unsigned>(clock);
+    const unsigned offchip_tiles = static_cast<unsigned>(std::min<unsigned long long>(
+        tiles, static_cast<unsigned long long>(std::max(1U, offchip_repetition_tiles))*outer));
     std::vector<std::vector<double>> stage_tile_costs(5, std::vector<double>(tiles, 0.0));
     for(unsigned stage = 0; stage < 5; ++stage) {
         // Stages 0 and 1 are off-chip: they serve only `offchip_tiles` of the shared tile
@@ -1729,7 +1740,8 @@ void stats_t::finalize_layer_timeline() {
     if(sfu_pending && sfu_pending_invocation.busy_cycle > 0.0) {
         const double producer_latency = final_latency;
         if(sfu_queue_depth >= 2) {
-            const unsigned sfu_tiles = std::min(tiles, std::max(1u, output_repetition_tiles));
+            const unsigned sfu_tiles = static_cast<unsigned>(std::min<unsigned long long>(
+                tiles, static_cast<unsigned long long>(std::max(1u, output_repetition_tiles))*outer));
             std::vector<double> sfu_tile_costs(tiles, 0.0);
             const double per_output_tile =
                 sfu_pending_invocation.busy_cycle/static_cast<double>(sfu_tiles);

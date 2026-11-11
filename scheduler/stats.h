@@ -212,6 +212,10 @@ public:
     // is what lets a rate-mismatched stage take part in the timeline at all -- the previous
     // closed form had to fall back to a flat max() whenever a run touched stage 0 or 1.
     unsigned offchip_repetition_tiles;
+    // The simulated DRAM-level loop ([accelerator] timeline_dram_tiles = 1, else 1): the stage totals are
+    // summed over its iterations, so the tile clock above (one DRAM iteration's GLB repetitions) is multiplied
+    // by it. Without it a timeline tile spans every DRAM iteration and the pipeline fill grows with them.
+    unsigned timeline_outer_iterations;
     // E20-3: dense input-window reuse at the off-chip boundary. The logical tile requests remain
     // visible, but their overlapping payload is coalesced to the exact union footprint when the
     // GLB can retain the required sliding working set.

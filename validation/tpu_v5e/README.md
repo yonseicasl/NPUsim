@@ -407,3 +407,38 @@ behind reads of other banks; MOSAIC `npusim-ddr3`, Ramulator2 `378827a`) on this
   `hbm2e_v5e.yaml`'s 3.5% was its +3.6% GEMMs cancelling that. Putting the KV stream on the DRAM model is the
   fix (the attention consumer on branch `mosaic` does it).
 - Compute-bound GEMMs do not depend on the DRAM model (+7..9%): item 2, now the largest term.
+
+### Item 2: the layer timeline's tile clock and the DRAM-level loop (2026-11-11, simulator change)
+
+Cause of the compute-bound +7..9%, found in NPUsim's own stage report (no TPU number involved). A 512 x 2048
+tile at 1 / 2 / 4 weight strips (512 columns each, one DRAM iteration per strip), cycles:
+
+| strips | compute schedule | roofline | critical path | prologue |
+|---|---|---|---|---|
+| 1 | 8522 | 8192 | 10581 | 1862 |
+| 2 | 16714 | 16384 | 20067 | 3353 |
+| 4 | 33098 | 32768 | 39432 | 6334 |
+
+The compute schedule is the roofline plus the 330 setup cycles; the excess is the prologue, which is exactly
+(DRAM + NoP + GLB + PE-array stage totals) / 16. The layer timeline's tile clock was the GLB repetition count
+alone (16 = K / 128 folds), while the DRAM-level loop is simulated iteration by iteration and its stage totals are
+summed -- so with D strips one timeline tile spanned D strips and the pipeline fill was charged D times.
+
+`[accelerator] timeline_dram_tiles` (default 0: the previous clock, results unchanged; 1 in `tpu_v5e.cfg`,
+`tpu_v5e_int8w.cfg`, `tpu_v5e_serial.cfg`): tile clock = GLB repetitions x the DRAM mapping row's iterations
+(temporal factors only; chips are other rows); the off-chip and output-commit tiles scale with it; stage totals
+are untouched. Same tile with the knob on: 10581 / 18390 / 34682 (prologue 1862 / 1676 / 1584). Unit check
+`run_outer_iterations` in `unittest/stats_timeline_test.cc` (a 100-cycle DRAM stage before a 200-cycle compute
+stage: 250 -> 212.5 cycles, derived before running); `run_validation.sh` (617 configs) and
+`run_stats_timeline_validation.sh` pass with the knob off.
+
+`compare_v5e.py` with it: constants of a run are charged once -- `program_setup_cycle` once per program (zeroed
+in every simulated piece, added once unless `--in-program`), `layer_setup_cycle` by the first row tile only (the
+other row tiles run on `<accel>_inner` with it 0); before, a 2048-row GEMM paid both four times. `err_kernel`
+keeps the program setup in the prediction (a row without copies has one prediction for module and kernel);
+`npusim_noprog_us` / `err_kernel_noprog_pct` are a sensitivity only. `scale_time()` is checked by
+`test_compare_scale.py` on mocked times; `check_tiling.py` compares the tiled estimate with a direct run of the
+whole GEMM.
+
+The TPU comparison numbers of every set with this change are a separate entry below once the re-runs finish;
+`compare_*serial*` and `compare_*norefresh*` (what-ifs) predate it and were not re-run.

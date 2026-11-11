@@ -88,6 +88,7 @@ npu_t::npu_t() :
     program_setup_cycle(0.0),
     interlayer_overlap(false),
     activation_residency(0),
+    timeline_dram_tiles(false),
  multi_chip(NULL),
  dram(NULL),
  decomp(NULL),
@@ -205,6 +206,10 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             // intermediate in on-chip memory): 1 = between this run's layers, 2 = also this run's own input
             // and output (the run stands for a kernel in the middle of a longer program). Default 0.
             section_config.get_setting("activation_residency", &activation_residency);
+            // The layer timeline's tile clock counts the DRAM-level loop too (GLB repetitions x DRAM
+            // iterations) instead of one DRAM iteration's GLB repetitions: with several DRAM tiles (e.g.
+            // weight strips) the pipeline fills once, not once per DRAM tile. Default 0 (previous clock).
+            section_config.get_setting("timeline_dram_tiles", &timeline_dram_tiles);
             if(activation_residency > 2) {
                 std::cerr << "Error: [accelerator] activation_residency must be 0, 1 or 2" << std::endl;
                 exit(1);
@@ -1411,6 +1416,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 apply_fused_sfu_activation(index, stats_index);
                 apply_kv_cache_read(stats_index);
                 apply_weight_decompression(stats_index);
+                layer_stats[stats_index]->timeline_outer_iterations = timeline_dram_tiles
+                    ? std::max(1u, scheduler->mapping_table->calculate_active_component(component_type_t::DRAM))
+                    : 1;
                 layer_stats[stats_index]->scale_serial_repetitions(
                     global_buffer_repetitions, scheduler->mapping_table->datatype_repetitions(),
                     input_halo, halo_capacity_sufficient);
