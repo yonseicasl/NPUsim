@@ -442,3 +442,11 @@ whole GEMM.
 
 The TPU comparison numbers of every set with this change are a separate entry below once the re-runs finish;
 `compare_*serial*` and `compare_*norefresh*` (what-ifs) predate it and were not re-run.
+
+int8 weights with the knob (Codex's representative regression, `results/2026-11-11_codex_audit/core_representative/`,
+refsb, M 1 / 8, K = N = 4096): bf16 +2.9 / +3.9% -> -0.5 / +0.5%, int8 -5.8 / -4.0% -> -8.9 / -7.2%. The knob stays on
+in `tpu_v5e_int8w.cfg`: it corrects the timeline, which does not depend on the weight format, and the int8 deficit
+is visible in the measurement itself -- on the TPU int8 weights stream 3-8% slower per byte than bf16 (same shapes,
+follow-up 2 and 3: int8 / bf16 byte rate 0.92-0.97; 8.5% / 7.6% at these two cases), a cost NPUsim does not model
+(int8 -> bf16 conversion is the candidate; not verified). Before the knob the per-strip fill covered part of it.
+Open item: model the int8 weight path with its own evidence; until then int8 GEMMs read ~7-9% short.
