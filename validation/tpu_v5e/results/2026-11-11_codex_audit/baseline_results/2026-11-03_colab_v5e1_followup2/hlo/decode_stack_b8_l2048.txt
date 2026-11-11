@@ -1,0 +1,771 @@
+HloModule jit_run, is_scheduled=true, entry_computation_layout={(bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[14336,4096]{1,0:T(8,128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)})->bf16[8,4096]{1,0:T(8,128)(2,1)}}, allow_spmd_sharding_propagation_to_parameters={false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false}, allow_spmd_sharding_propagation_to_output={true}, frontend_attributes={arg_layout_modes="default;default;default;default;default;default;default;default;default;default;default;default;default;default;default;default;default",arg_memory_spaces="0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0",out_layout_modes="default",out_memory_spaces="0"}
+
+FileNames
+1 "<frozen runpy>"
+2 "/usr/local/lib/python3.13/dist-packages/colab_kernel_launcher.py"
+3 "/usr/local/lib/python3.13/dist-packages/traitlets/config/application.py"
+4 "/usr/local/lib/python3.13/dist-packages/ipykernel/kernelapp.py"
+5 "/usr/local/lib/python3.13/dist-packages/tornado/platform/asyncio.py"
+6 "/usr/local/lib/python3.13/dist-packages/ipykernel/kernelbase.py"
+7 "/usr/local/lib/python3.13/dist-packages/ipykernel/ipkernel.py"
+8 "/usr/local/lib/python3.13/dist-packages/ipykernel/zmqshell.py"
+9 "/usr/local/lib/python3.13/dist-packages/IPython/core/interactiveshell.py"
+10 "/usr/local/lib/python3.13/dist-packages/IPython/core/async_helpers.py"
+11 "/tmp/ipykernel_8100/4246906736.py"
+12 "/tmp/ipykernel_8100/3401864804.py"
+
+FunctionNames
+1 "_run_module_as_main"
+2 "_run_code"
+3 "<module>"
+4 "Application.launch_instance"
+5 "IPKernelApp.start"
+6 "BaseAsyncIOLoop.start"
+7 "Kernel.dispatch_queue"
+8 "Kernel.process_one"
+9 "Kernel.dispatch_shell"
+10 "Kernel.execute_request"
+11 "IPythonKernel.do_execute"
+12 "ZMQInteractiveShell.run_cell"
+13 "InteractiveShell.run_cell"
+14 "InteractiveShell._run_cell"
+15 "_pseudo_sync_runner"
+16 "InteractiveShell.run_cell_async"
+17 "InteractiveShell.run_ast_nodes"
+18 "InteractiveShell.run_code"
+19 "guarded"
+20 "decode_stack"
+21 "per_iter"
+22 "decode_stack.<locals>.run"
+23 "decode_stack.<locals>.run.<locals>.body"
+24 "decode_stack.<locals>.layer"
+25 "decode_stack.<locals>.<lambda>"
+
+FileLocations
+1 {file_name_id=1 function_name_id=1 line=203 end_line=204 column=11 end_column=42}
+2 {file_name_id=1 function_name_id=2 line=88 end_line=88 column=4 end_column=27}
+3 {file_name_id=2 function_name_id=3 line=37 end_line=37 column=2 end_column=34}
+4 {file_name_id=3 function_name_id=4 line=992 end_line=992 column=8 end_column=19}
+5 {file_name_id=4 function_name_id=5 line=712 end_line=712 column=16 end_column=36}
+6 {file_name_id=5 function_name_id=6 line=203 end_line=203 column=8 end_column=39}
+7 {file_name_id=6 function_name_id=7 line=510 end_line=510 column=16 end_column=40}
+8 {file_name_id=6 function_name_id=8 line=499 end_line=499 column=8 end_column=29}
+9 {file_name_id=6 function_name_id=9 line=406 end_line=406 column=20 end_column=32}
+10 {file_name_id=6 function_name_id=10 line=730 end_line=730 column=28 end_column=47}
+11 {file_name_id=7 function_name_id=11 line=383 end_line=388 column=26 end_column=21}
+12 {file_name_id=8 function_name_id=12 line=528 end_line=528 column=15 end_column=48}
+13 {file_name_id=9 function_name_id=13 line=2975 end_line=2977 column=21 end_column=13}
+14 {file_name_id=9 function_name_id=14 line=3030 end_line=3030 column=19 end_column=31}
+15 {file_name_id=10 function_name_id=15 line=78 end_line=78 column=8 end_column=23}
+16 {file_name_id=9 function_name_id=16 line=3257 end_line=3258 column=29 end_column=85}
+17 {file_name_id=9 function_name_id=17 line=3473 end_line=3473 column=24 end_column=70}
+18 {file_name_id=9 function_name_id=18 line=3553 end_line=3553 column=20 end_column=69}
+19 {file_name_id=11 function_name_id=3 line=46 end_line=46 column=8 end_column=113}
+20 {file_name_id=12 function_name_id=19 line=78 end_line=78 column=14 end_column=18}
+21 {file_name_id=11 function_name_id=20 line=36 end_line=36 column=8 end_column=53}
+22 {file_name_id=12 function_name_id=21 line=38 end_line=38 column=30 end_column=43}
+23 {file_name_id=11 function_name_id=22 line=33 end_line=33 column=15 end_column=43}
+24 {file_name_id=11 function_name_id=23 line=31 end_line=31 column=21 end_column=33}
+25 {file_name_id=11 function_name_id=24 line=12 end_line=12 column=32 end_column=47}
+26 {file_name_id=11 function_name_id=25 line=9 end_line=9 column=38 end_column=93}
+27 {file_name_id=11 function_name_id=24 line=19 end_line=19 column=17 end_column=58}
+28 {file_name_id=11 function_name_id=24 line=22 end_line=22 column=32 end_column=47}
+29 {file_name_id=11 function_name_id=25 line=9 end_line=9 column=24 end_column=101}
+30 {file_name_id=11 function_name_id=25 line=9 end_line=9 column=47 end_column=68}
+31 {file_name_id=11 function_name_id=25 line=9 end_line=9 column=28 end_column=101}
+32 {file_name_id=11 function_name_id=24 line=13 end_line=13 column=20 end_column=79}
+33 {file_name_id=11 function_name_id=25 line=9 end_line=9 column=23 end_column=118}
+34 {file_name_id=11 function_name_id=24 line=13 end_line=13 column=30 end_column=43}
+35 {file_name_id=11 function_name_id=24 line=17 end_line=17 column=17 end_column=48}
+36 {file_name_id=11 function_name_id=24 line=18 end_line=18 column=16 end_column=57}
+37 {file_name_id=11 function_name_id=24 line=19 end_line=19 column=32 end_column=53}
+38 {file_name_id=11 function_name_id=24 line=20 end_line=20 column=16 end_column=57}
+39 {file_name_id=11 function_name_id=24 line=21 end_line=21 column=16 end_column=27}
+40 {file_name_id=11 function_name_id=24 line=21 end_line=21 column=12 end_column=27}
+41 {file_name_id=11 function_name_id=24 line=23 end_line=23 column=13 end_column=25}
+42 {file_name_id=11 function_name_id=24 line=24 end_line=24 column=64 end_column=73}
+43 {file_name_id=11 function_name_id=24 line=24 end_line=24 column=52 end_column=74}
+44 {file_name_id=11 function_name_id=24 line=24 end_line=24 column=77 end_column=86}
+45 {file_name_id=11 function_name_id=24 line=25 end_line=25 column=20 end_column=31}
+46 {file_name_id=11 function_name_id=24 line=25 end_line=25 column=16 end_column=31}
+
+StackFrames
+1 {file_location_id=1 parent_frame_id=1}
+2 {file_location_id=2 parent_frame_id=2}
+3 {file_location_id=3 parent_frame_id=3}
+4 {file_location_id=4 parent_frame_id=4}
+5 {file_location_id=5 parent_frame_id=5}
+6 {file_location_id=6 parent_frame_id=6}
+7 {file_location_id=7 parent_frame_id=7}
+8 {file_location_id=8 parent_frame_id=8}
+9 {file_location_id=9 parent_frame_id=9}
+10 {file_location_id=10 parent_frame_id=10}
+11 {file_location_id=11 parent_frame_id=11}
+12 {file_location_id=12 parent_frame_id=12}
+13 {file_location_id=13 parent_frame_id=13}
+14 {file_location_id=14 parent_frame_id=14}
+15 {file_location_id=15 parent_frame_id=15}
+16 {file_location_id=16 parent_frame_id=16}
+17 {file_location_id=17 parent_frame_id=17}
+18 {file_location_id=18 parent_frame_id=18}
+19 {file_location_id=19 parent_frame_id=19}
+20 {file_location_id=20 parent_frame_id=20}
+21 {file_location_id=21 parent_frame_id=21}
+22 {file_location_id=22 parent_frame_id=22}
+23 {file_location_id=23 parent_frame_id=23}
+24 {file_location_id=23 parent_frame_id=24}
+25 {file_location_id=23 parent_frame_id=25}
+26 {file_location_id=24 parent_frame_id=26}
+27 {file_location_id=25 parent_frame_id=27}
+28 {file_location_id=26 parent_frame_id=28}
+29 {file_location_id=27 parent_frame_id=27}
+30 {file_location_id=28 parent_frame_id=27}
+31 {file_location_id=26 parent_frame_id=31}
+32 {file_location_id=29 parent_frame_id=28}
+33 {file_location_id=30 parent_frame_id=28}
+34 {file_location_id=31 parent_frame_id=28}
+35 {file_location_id=32 parent_frame_id=27}
+36 {file_location_id=33 parent_frame_id=28}
+37 {file_location_id=34 parent_frame_id=27}
+38 {file_location_id=35 parent_frame_id=27}
+39 {file_location_id=36 parent_frame_id=27}
+40 {file_location_id=37 parent_frame_id=27}
+41 {file_location_id=38 parent_frame_id=27}
+42 {file_location_id=39 parent_frame_id=27}
+43 {file_location_id=40 parent_frame_id=27}
+44 {file_location_id=29 parent_frame_id=31}
+45 {file_location_id=30 parent_frame_id=31}
+46 {file_location_id=31 parent_frame_id=31}
+47 {file_location_id=33 parent_frame_id=31}
+48 {file_location_id=41 parent_frame_id=27}
+49 {file_location_id=42 parent_frame_id=27}
+50 {file_location_id=43 parent_frame_id=27}
+51 {file_location_id=44 parent_frame_id=27}
+52 {file_location_id=45 parent_frame_id=27}
+53 {file_location_id=46 parent_frame_id=27}
+
+
+%region_1.1 (reduce_sum.3: f32[], reduce_sum.4: f32[]) -> f32[] {
+  %reduce_sum.4 = f32[]{:T(128)} parameter(1), metadata={op_name="reduce_sum"}
+  %reduce_sum.3 = f32[]{:T(128)} parameter(0), metadata={op_name="reduce_sum"}
+  ROOT %reduce_sum.5 = f32[]{:T(128)} add(%reduce_sum.3, %reduce_sum.4), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=28}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.42.clone.1 (param_0.254: bf16[8,4096]) -> f32[8] {
+  %param_0.254 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert_element_type.150 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.254), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=32}
+  %integer_pow.36 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.150, %convert_element_type.150), metadata={op_name="jit(run)/while/body/eval_jaxpr/integer_pow" stack_frame_id=33}
+  %constant.146 = f32[]{:T(128)} constant(0)
+  ROOT %reduce_sum.60 = f32[8]{0:T(128)S(1)} reduce(%integer_pow.36, %constant.146), dimensions={1}, to_apply=%region_1.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=28}
+}
+
+%fused_computation.75.clone.1 (param_0.255: f32[8]) -> f32[8] {
+  %param_0.255 = f32[8]{0:T(128)S(1)} parameter(0)
+  %constant.148 = f32[]{:T(128)} constant(0.000244140625)
+  %broadcast.94 = f32[8]{0:T(128)} broadcast(%constant.148), dimensions={}
+  %multiply.44 = f32[8]{0:T(128)} multiply(%param_0.255, %broadcast.94), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=28}
+  %constant.147 = f32[]{:T(128)} constant(1e-06)
+  %broadcast.93 = f32[8]{0:T(128)} broadcast(%constant.147), dimensions={}
+  %add.90 = f32[8]{0:T(128)} add(%multiply.44, %broadcast.93), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=28}
+  ROOT %rsqrt.32 = f32[8]{0:T(128)S(1)} rsqrt(%add.90), metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=34}
+}
+
+%fused_computation.57.clone.clone.1 (param_0.257: bf16[8,4096], param_1.233: f32[8], param_2.120: bf16[4096]) -> bf16[8,4096] {
+  %param_0.257 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert_element_type.152 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.257), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=32}
+  %param_1.233 = f32[8]{0:T(128)S(1)} parameter(1)
+  %mul.231 = f32[8,4096]{1,0:T(8,128)} broadcast(%param_1.233), dimensions={0}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=32}
+  %mul.230 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.152, %mul.231), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=32}
+  %convert_element_type.151 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.230), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=36}
+  %convert.24 = f32[8,4096]{1,0:T(8,128)} convert(%convert_element_type.151)
+  %param_2.120 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(2)
+  %mul.232 = bf16[8,4096]{1,0:T(8,128)(2,1)} broadcast(%param_2.120), dimensions={1}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=36}
+  %convert.25 = f32[8,4096]{1,0:T(8,128)} convert(%mul.232)
+  %mul.229 = f32[8,4096]{1,0:T(8,128)} multiply(%convert.24, %convert.25), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=36}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  ROOT %convert.26 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.229)
+}
+
+%fused_computation.3.clone.1 (param_0.256: bf16[4096,6144]) -> bf16[4096,4096] {
+  %param_0.256 = bf16[4096,6144]{1,0:T(8,128)(2,1)} parameter(0)
+  ROOT %slice.60 = bf16[4096,4096]{1,0:T(8,128)(2,1)} slice(%param_0.256), slice={[0:4096], [0:4096]}, metadata={op_name="jit(run)/while/body/eval_jaxpr/split" stack_frame_id=35}
+}
+
+%fused_computation.2.clone.1 (param_0.258: bf16[4096,6144], param_1.234: bf16[8,4096], param_2.121: f32[8], param_3.36: bf16[4096]) -> bf16[8,4096] {
+  %param_1.234 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(1)
+  %param_2.121 = f32[8]{0:T(128)S(1)} parameter(2)
+  %param_3.36 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(3)
+  %fusion.108 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.234, %param_2.121, %param_3.36), kind=kLoop, calls=%fused_computation.57.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=36}
+  %param_0.258 = bf16[4096,6144]{1,0:T(8,128)(2,1)} parameter(0)
+  %fusion.107 = bf16[4096,4096]{1,0:T(8,128)(2,1)} fusion(%param_0.258), kind=kLoop, calls=%fused_computation.3.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/split" stack_frame_id=35}
+  ROOT %convolution.27 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} convolution(%fusion.108, %fusion.107), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=37}
+}
+
+%fused_computation.61.clone.clone.clone.1 (param_0.259: bf16[8,8,4,128]) -> bf16[8,8,4,128] {
+  %param_0.259 = bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %copy.12 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)} copy(%param_0.259), metadata={op_name="jit(run)/while/body/eval_jaxpr/reshape" stack_frame_id=38}
+}
+
+%bitcast_fusion.10.clone.1 (bitcast_input.24: bf16[8,8,2048,128]) -> bf16[8,8,2048,128] {
+  %bitcast_input.24 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.28 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} bitcast(%bitcast_input.24)
+}
+
+%region_2.2.clone (reduce_max.0: bf16[], reduce_max.1: bf16[]) -> bf16[] {
+  %reduce_max.1 = bf16[]{:T(256)} parameter(1), metadata={op_name="reduce_max"}
+  %reduce_max.0 = bf16[]{:T(256)} parameter(0), metadata={op_name="reduce_max"}
+  ROOT %reduce_max.2 = bf16[]{:T(256)} maximum(%reduce_max.0, %reduce_max.1), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.78.clone.1 (param_0.260: bf16[8,8,2048,128], param_1.235: bf16[8,8,4,128]) -> (bf16[8,8,4], bf16[8,8,4,2048]) {
+  %param_1.235 = bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} parameter(1)
+  %fusion.47.clone.3 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)} fusion(%param_1.235), kind=kLoop, calls=%fused_computation.61.clone.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reshape" stack_frame_id=38}
+  %param_0.260 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} parameter(0)
+  %fusion.109 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} fusion(%param_0.260), kind=kLoop, calls=%bitcast_fusion.10.clone.1
+  %convolution-base-dilated.7.clone.3 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} convolution(%fusion.47.clone.3, %fusion.109), window={size=8x8 stride=7x7 lhs_dilate=8x8}, dim_labels=01bf_01oi->01bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgd,bkld->bkgl/dot_general" stack_frame_id=39}
+  %convert.44 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%convolution-base-dilated.7.clone.3)
+  %constant.109.clone.3 = bf16[]{:T(256)} constant(0.08838)
+  %broadcast.60.clone.3 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} broadcast(%constant.109.clone.3), dimensions={}
+  %convert.45 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%broadcast.60.clone.3)
+  %multiply.35.clone.3 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} multiply(%convert.44, %convert.45), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=39}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","8","4","2048"],"element_type":"BF16","is_dynamic_dimension":[false,false,false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["3","2","1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["4","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %convert.46 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} convert(%multiply.35.clone.3)
+  %constant.32..sunk.9 = bf16[]{:T(256)} constant(-inf), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  %reduce.14 = bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)} reduce(%convert.46, %constant.32..sunk.9), dimensions={3}, to_apply=%region_2.2.clone, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  ROOT %tuple.29 = (bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)}) tuple(%reduce.14, %convert.46)
+}
+
+%region_3.3 (reduce_sum.10: f32[], reduce_sum.11: f32[]) -> f32[] {
+  %reduce_sum.11 = f32[]{:T(128)} parameter(1), metadata={op_name="reduce_sum"}
+  %reduce_sum.10 = f32[]{:T(128)} parameter(0), metadata={op_name="reduce_sum"}
+  ROOT %reduce_sum.12 = f32[]{:T(128)} add(%reduce_sum.10, %reduce_sum.11), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.9.clone.1 (param_0.261: bf16[8,8,4,2048], param_1.236: f32[8,8,4]) -> f32[8,8,4] {
+  %param_0.261 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} parameter(0)
+  %convert_element_type.153 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%param_0.261), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=40}
+  %param_1.236 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(1)
+  %sub.57 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} broadcast(%param_1.236), dimensions={0,1,2}, metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %sub.56 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} subtract(%convert_element_type.153, %sub.57), metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %exp.53 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} exponential(%sub.56), metadata={op_name="jit(run)/while/body/eval_jaxpr/exp" stack_frame_id=29}
+  %constant.149 = f32[]{:T(128)} constant(0)
+  ROOT %reduce_sum.61 = f32[8,8,4]{2,1,0:T(8,128)S(1)} reduce(%exp.53, %constant.149), dimensions={3}, to_apply=%region_3.3, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=29}
+}
+
+%fused_computation.7.clone.clone.1 (param_0.262: bf16[8,8,4,2048], param_1.237: f32[8,8,4], param_2.122: f32[8,8,4]) -> bf16[8,8,4,2048] {
+  %param_0.262 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} parameter(0)
+  %convert_element_type.155 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%param_0.262), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=40}
+  %param_2.122 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(2)
+  %sub.59 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} broadcast(%param_2.122), dimensions={0,1,2}, metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %sub.58 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} subtract(%convert_element_type.155, %sub.59), metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %exp.54 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} exponential(%sub.58), metadata={op_name="jit(run)/while/body/eval_jaxpr/exp" stack_frame_id=29}
+  %param_1.237 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(1)
+  %div.74 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} broadcast(%param_1.237), dimensions={0,1,2}, metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=29}
+  %div.73 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} divide(%exp.54, %div.74), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=29}
+  ROOT %convert_element_type.154 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} convert(%div.73), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=29}
+}
+
+%bitcast_fusion.2.clone.1 (bitcast_input.25: bf16[8,8,2048,128]) -> bf16[8,8,2048,128] {
+  %bitcast_input.25 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.29 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} bitcast(%bitcast_input.25)
+}
+
+%fused_computation.10.clone.1 (param_0.263: bf16[8,8,2048,128], param_1.238: bf16[8,8,4,2048], param_2.123: f32[8,8,4], param_3.37: f32[8,8,4]) -> bf16[8,8,4,128] {
+  %param_1.238 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} parameter(1)
+  %param_2.123 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(2)
+  %param_3.37 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(3)
+  %divide_convert_fusion.6 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} fusion(%param_1.238, %param_2.123, %param_3.37), kind=kLoop, calls=%fused_computation.7.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=29}
+  %param_0.263 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} parameter(0)
+  %fusion.110 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} fusion(%param_0.263), kind=kLoop, calls=%bitcast_fusion.2.clone.1
+  ROOT %convolution-base-dilated.10 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} convolution(%divide_convert_fusion.6, %fusion.110), window={size=8x8 stride=7x7 lhs_dilate=8x8}, dim_labels=01bf_01io->01bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgl,bkld->bkgd/dot_general" stack_frame_id=41}
+}
+
+%bitcast_fusion.clone.1 (bitcast_input.27: bf16[8,4096]) -> bf16[8,4096] {
+  %bitcast_input.27 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.31 = bf16[8,4096]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.27)
+}
+
+%bitcast_fusion.4.clone.1 (bitcast_input.26: bf16[4096,4096]) -> bf16[4096,4096] {
+  %bitcast_input.26 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.30 = bf16[4096,4096]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.26)
+}
+
+%region_4.4 (reduce_sum.17: f32[], reduce_sum.18: f32[]) -> f32[] {
+  %reduce_sum.18 = f32[]{:T(128)} parameter(1), metadata={op_name="reduce_sum"}
+  %reduce_sum.17 = f32[]{:T(128)} parameter(0), metadata={op_name="reduce_sum"}
+  ROOT %reduce_sum.19 = f32[]{:T(128)} add(%reduce_sum.17, %reduce_sum.18), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.44.clone.1 (param_0.264: bf16[8,4096], param_1.239: bf16[8,4096], param_2.124: bf16[4096,4096]) -> (f32[8], bf16[8,4096]) {
+  %param_0.264 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert.47 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.264)
+  %param_1.239 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} parameter(1)
+  %fusion.111 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.239), kind=kLoop, calls=%bitcast_fusion.clone.1
+  %param_2.124 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} parameter(2)
+  %fusion.112 = bf16[4096,4096]{1,0:T(8,128)(2,1)} fusion(%param_2.124), kind=kLoop, calls=%bitcast_fusion.4.clone.1
+  %convolution.17.clone.3 = bf16[8,4096]{1,0:T(8,128)(2,1)} convolution(%fusion.111, %fusion.112), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=42}
+  %convert.48 = f32[8,4096]{1,0:T(8,128)} convert(%convolution.17.clone.3)
+  %add.69.clone.3 = f32[8,4096]{1,0:T(8,128)} add(%convert.47, %convert.48), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=43}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %convert_element_type.156 = f32[8,4096]{1,0:T(8,128)} convert(%add.69.clone.3), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=44}
+  %integer_pow.37 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.156, %convert_element_type.156), metadata={op_name="jit(run)/while/body/eval_jaxpr/integer_pow" stack_frame_id=45}
+  %constant.150 = f32[]{:T(128)} constant(0)
+  %reduce_sum.62 = f32[8]{0:T(128)S(1)} reduce(%integer_pow.37, %constant.150), dimensions={1}, to_apply=%region_4.4, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}
+  %convert.49 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%add.69.clone.3)
+  ROOT %tuple.30 = (f32[8]{0:T(128)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) tuple(%reduce_sum.62, %convert.49)
+}
+
+%fused_computation.74.clone.1 (param_0.265: f32[8]) -> f32[8] {
+  %param_0.265 = f32[8]{0:T(128)S(1)} parameter(0)
+  %constant.152 = f32[]{:T(128)} constant(0.000244140625)
+  %broadcast.96 = f32[8]{0:T(128)} broadcast(%constant.152), dimensions={}
+  %multiply.45 = f32[8]{0:T(128)} multiply(%param_0.265, %broadcast.96), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=31}
+  %constant.151 = f32[]{:T(128)} constant(1e-06)
+  %broadcast.95 = f32[8]{0:T(128)} broadcast(%constant.151), dimensions={}
+  %add.91 = f32[8]{0:T(128)} add(%multiply.45, %broadcast.95), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=31}
+  ROOT %rsqrt.33 = f32[8]{0:T(128)} rsqrt(%add.91), metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=46}
+}
+
+%fused_computation.55.clone.clone.1 (param_0.266: bf16[8,4096], param_1.240: f32[8], param_2.125: bf16[4096]) -> bf16[8,4096] {
+  %param_0.266 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert_element_type.158 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.266), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=44}
+  %param_1.240 = f32[8]{0:T(128)} parameter(1)
+  %mul.235 = f32[8,4096]{1,0:T(8,128)} broadcast(%param_1.240), dimensions={0}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=44}
+  %mul.234 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.158, %mul.235), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=44}
+  %convert_element_type.157 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.234), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=47}
+  %convert.27 = f32[8,4096]{1,0:T(8,128)} convert(%convert_element_type.157)
+  %param_2.125 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(2)
+  %mul.236 = bf16[8,4096]{1,0:T(8,128)(2,1)} broadcast(%param_2.125), dimensions={1}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=47}
+  %convert.28 = f32[8,4096]{1,0:T(8,128)} convert(%mul.236)
+  %mul.233 = f32[8,4096]{1,0:T(8,128)} multiply(%convert.27, %convert.28), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=47}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  ROOT %convert.29 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.233)
+}
+
+%bitcast_fusion.8.clone.1 (bitcast_input.28: bf16[4096,28672]) -> bf16[4096,28672] {
+  %bitcast_input.28 = bf16[4096,28672]{1,0:T(8,128)(2,1)} parameter(0)
+  ROOT %bitcast.32 = bf16[4096,28672]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.28)
+}
+
+%fused_computation.56.clone.1 (param_0.267: bf16[4096,28672], param_1.241: bf16[8,4096], param_2.126: f32[8], param_3.38: bf16[4096]) -> bf16[8,28672] {
+  %param_1.241 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(1)
+  %param_2.126 = f32[8]{0:T(128)} parameter(2)
+  %param_3.38 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(3)
+  %fusion.113 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.241, %param_2.126, %param_3.38), kind=kLoop, calls=%fused_computation.55.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=47}
+  %param_0.267 = bf16[4096,28672]{1,0:T(8,128)(2,1)} parameter(0)
+  %fusion.114 = bf16[4096,28672]{1,0:T(8,128)(2,1)} fusion(%param_0.267), kind=kLoop, calls=%bitcast_fusion.8.clone.1
+  ROOT %convolution.28 = bf16[8,28672]{1,0:T(8,128)(2,1)} convolution(%fusion.113, %fusion.114), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=48}
+}
+
+%fused_computation.20.clone.clone.clone.clone.clone.clone.1 (param_0.268: bf16[8,28672]) -> bf16[8,14336] {
+  %param_0.268 = bf16[8,28672]{1,0:T(8,128)(2,1)} parameter(0)
+  %slice.62 = bf16[8,14336]{1,0:T(8,128)(2,1)} slice(%param_0.268), slice={[0:8], [0:14336]}, metadata={op_name="jit(run)/while/body/eval_jaxpr/slice" stack_frame_id=49}
+  %convert.30 = f32[8,14336]{1,0:T(8,128)} convert(%slice.62)
+  %constant.153 = bf16[]{:T(256)} constant(1), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)" stack_frame_id=50}
+  %broadcast.97 = bf16[8,14336]{1,0:T(8,128)(2,1)} broadcast(%constant.153), dimensions={}, metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)" stack_frame_id=50}
+  %convert.31 = f32[8,14336]{1,0:T(8,128)} convert(%broadcast.97)
+  %neg.27 = f32[8,14336]{1,0:T(8,128)} negate(%convert.30), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/neg" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %exp.55 = f32[8,14336]{1,0:T(8,128)} exponential(%neg.27), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/exp" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %add.92 = f32[8,14336]{1,0:T(8,128)} add(%exp.55, %convert.31), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/add" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %div.75 = f32[8,14336]{1,0:T(8,128)} divide(%convert.31, %add.92), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/div" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %mul.238 = f32[8,14336]{1,0:T(8,128)} multiply(%convert.30, %div.75), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/mul" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice.61 = bf16[8,14336]{1,0:T(8,128)(2,1)} slice(%param_0.268), slice={[0:8], [14336:28672]}, metadata={op_name="jit(run)/while/body/eval_jaxpr/slice" stack_frame_id=51}
+  %convert.32 = f32[8,14336]{1,0:T(8,128)} convert(%slice.61)
+  %mul.237 = f32[8,14336]{1,0:T(8,128)} multiply(%mul.238, %convert.32), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  ROOT %convert.33 = bf16[8,14336]{1,0:T(8,128)(2,1)} convert(%mul.237)
+}
+
+%bitcast_fusion.5.clone.1 (bitcast_input.29: bf16[14336,4096]) -> bf16[14336,4096] {
+  %bitcast_input.29 = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.33 = bf16[14336,4096]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.29)
+}
+
+%region_5.6 (reduce_sum.24: f32[], reduce_sum.25: f32[]) -> f32[] {
+  %reduce_sum.25 = f32[]{:T(128)} parameter(1), metadata={op_name="reduce_sum"}
+  %reduce_sum.24 = f32[]{:T(128)} parameter(0), metadata={op_name="reduce_sum"}
+  ROOT %reduce_sum.26 = f32[]{:T(128)} add(%reduce_sum.24, %reduce_sum.25), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=28}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.46.clone.1 (param_0.269: bf16[8,4096], param_1.242: bf16[14336,4096], param_2.127: bf16[8,28672]) -> (f32[8], bf16[8,4096]) {
+  %param_0.269 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert.50 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.269)
+  %param_2.127 = bf16[8,28672]{1,0:T(8,128)(2,1)} parameter(2)
+  %slice_multiply_fusion.5.clone.3 = bf16[8,14336]{1,0:T(8,128)(2,1)} fusion(%param_2.127), kind=kLoop, calls=%fused_computation.20.clone.clone.clone.clone.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=50}
+  %param_1.242 = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} parameter(1)
+  %fusion.115 = bf16[14336,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.242), kind=kLoop, calls=%bitcast_fusion.5.clone.1
+  %convolution.19.clone.3 = bf16[8,4096]{1,0:T(8,128)(2,1)} convolution(%slice_multiply_fusion.5.clone.3, %fusion.115), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=52}
+  %convert.51 = f32[8,4096]{1,0:T(8,128)} convert(%convolution.19.clone.3)
+  %add.70.clone.3 = f32[8,4096]{1,0:T(8,128)} add(%convert.50, %convert.51), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=53}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %convert_element_type.159 = f32[8,4096]{1,0:T(8,128)} convert(%add.70.clone.3), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=32}
+  %integer_pow.38 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.159, %convert_element_type.159), metadata={op_name="jit(run)/while/body/eval_jaxpr/integer_pow" stack_frame_id=33}
+  %constant.154 = f32[]{:T(128)} constant(0)
+  %reduce_sum.63 = f32[8]{0:T(128)} reduce(%integer_pow.38, %constant.154), dimensions={1}, to_apply=%region_5.6, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=28}
+  %convert.52 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%add.70.clone.3)
+  ROOT %tuple.31 = (f32[8]{0:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) tuple(%reduce_sum.63, %convert.52)
+}
+
+%fused_computation.73.clone.1 (param_0.270: f32[8]) -> f32[8] {
+  %param_0.270 = f32[8]{0:T(128)} parameter(0)
+  %constant.156 = f32[]{:T(128)} constant(0.000244140625)
+  %broadcast.99 = f32[8]{0:T(128)} broadcast(%constant.156), dimensions={}
+  %multiply.46 = f32[8]{0:T(128)} multiply(%param_0.270, %broadcast.99), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=28}
+  %constant.155 = f32[]{:T(128)} constant(1e-06)
+  %broadcast.98 = f32[8]{0:T(128)} broadcast(%constant.155), dimensions={}
+  %add.93 = f32[8]{0:T(128)} add(%multiply.46, %broadcast.98), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=28}
+  ROOT %rsqrt.34 = f32[8]{0:T(128)S(1)} rsqrt(%add.93), metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=34}
+}
+
+%fused_computation.54.clone.clone.1 (param_0.272: bf16[8,4096], param_1.243: f32[8], param_2.128: bf16[4096]) -> bf16[8,4096] {
+  %param_0.272 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert_element_type.161 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.272), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=32}
+  %param_1.243 = f32[8]{0:T(128)S(1)} parameter(1)
+  %mul.241 = f32[8,4096]{1,0:T(8,128)} broadcast(%param_1.243), dimensions={0}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=32}
+  %mul.240 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.161, %mul.241), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=32}
+  %convert_element_type.160 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.240), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=36}
+  %convert.34 = f32[8,4096]{1,0:T(8,128)} convert(%convert_element_type.160)
+  %param_2.128 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(2)
+  %mul.242 = bf16[8,4096]{1,0:T(8,128)(2,1)} broadcast(%param_2.128), dimensions={1}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=36}
+  %convert.35 = f32[8,4096]{1,0:T(8,128)} convert(%mul.242)
+  %mul.239 = f32[8,4096]{1,0:T(8,128)} multiply(%convert.34, %convert.35), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=36}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  ROOT %convert.36 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.239)
+}
+
+%fused_computation.1.clone.1 (param_0.271: bf16[4096,6144]) -> bf16[4096,4096] {
+  %param_0.271 = bf16[4096,6144]{1,0:T(8,128)(2,1)} parameter(0)
+  ROOT %slice.63 = bf16[4096,4096]{1,0:T(8,128)(2,1)} slice(%param_0.271), slice={[0:4096], [0:4096]}, metadata={op_name="jit(run)/while/body/eval_jaxpr/split" stack_frame_id=35}
+}
+
+%fused_computation.clone.1 (param_0.273: bf16[4096,6144], param_1.244: bf16[8,4096], param_2.129: f32[8], param_3.39: bf16[4096]) -> bf16[8,4096] {
+  %param_1.244 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(1)
+  %param_2.129 = f32[8]{0:T(128)S(1)} parameter(2)
+  %param_3.39 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(3)
+  %fusion.117 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.244, %param_2.129, %param_3.39), kind=kLoop, calls=%fused_computation.54.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=36}
+  %param_0.273 = bf16[4096,6144]{1,0:T(8,128)(2,1)} parameter(0)
+  %fusion.116 = bf16[4096,4096]{1,0:T(8,128)(2,1)} fusion(%param_0.273), kind=kLoop, calls=%fused_computation.1.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/split" stack_frame_id=35}
+  ROOT %convolution.29 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} convolution(%fusion.117, %fusion.116), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=37}
+}
+
+%fused_computation.60.clone.clone.clone.1 (param_0.274: bf16[8,8,4,128]) -> bf16[8,8,4,128] {
+  %param_0.274 = bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %copy.13 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)} copy(%param_0.274), metadata={op_name="jit(run)/while/body/eval_jaxpr/reshape" stack_frame_id=38}
+}
+
+%bitcast_fusion.11.clone.1 (bitcast_input.30: bf16[8,8,2048,128]) -> bf16[8,8,2048,128] {
+  %bitcast_input.30 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} parameter(0)
+  ROOT %bitcast.34 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} bitcast(%bitcast_input.30)
+}
+
+%region_6.7.clone (reduce_max.6: bf16[], reduce_max.7: bf16[]) -> bf16[] {
+  %reduce_max.7 = bf16[]{:T(256)} parameter(1), metadata={op_name="reduce_max"}
+  %reduce_max.6 = bf16[]{:T(256)} parameter(0), metadata={op_name="reduce_max"}
+  ROOT %reduce_max.8 = bf16[]{:T(256)} maximum(%reduce_max.6, %reduce_max.7), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.79.clone.1 (param_0.275: bf16[8,8,2048,128], param_1.245: bf16[8,8,4,128]) -> (bf16[8,8,4], bf16[8,8,4,2048]) {
+  %param_1.245 = bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} parameter(1)
+  %fusion.46.clone.3 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)} fusion(%param_1.245), kind=kLoop, calls=%fused_computation.60.clone.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reshape" stack_frame_id=38}
+  %param_0.275 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} parameter(0)
+  %fusion.118 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} fusion(%param_0.275), kind=kLoop, calls=%bitcast_fusion.11.clone.1
+  %convolution-base-dilated.6.clone.3 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} convolution(%fusion.46.clone.3, %fusion.118), window={size=8x8 stride=7x7 lhs_dilate=8x8}, dim_labels=01bf_01oi->01bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgd,bkld->bkgl/dot_general" stack_frame_id=39}
+  %convert.53 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%convolution-base-dilated.6.clone.3)
+  %constant.108.clone.3 = bf16[]{:T(256)} constant(0.08838)
+  %broadcast.59.clone.3 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} broadcast(%constant.108.clone.3), dimensions={}
+  %convert.54 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%broadcast.59.clone.3)
+  %multiply.34.clone.3 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} multiply(%convert.53, %convert.54), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=39}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","8","4","2048"],"element_type":"BF16","is_dynamic_dimension":[false,false,false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["3","2","1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["4","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %convert.55 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} convert(%multiply.34.clone.3)
+  %constant.32..sunk.10 = bf16[]{:T(256)} constant(-inf), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  %reduce.15 = bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)} reduce(%convert.55, %constant.32..sunk.10), dimensions={3}, to_apply=%region_6.7.clone, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  ROOT %tuple.32 = (bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)}) tuple(%reduce.15, %convert.55)
+}
+
+%region_7.8 (reduce_sum.31: f32[], reduce_sum.32: f32[]) -> f32[] {
+  %reduce_sum.32 = f32[]{:T(128)} parameter(1), metadata={op_name="reduce_sum"}
+  %reduce_sum.31 = f32[]{:T(128)} parameter(0), metadata={op_name="reduce_sum"}
+  ROOT %reduce_sum.33 = f32[]{:T(128)} add(%reduce_sum.31, %reduce_sum.32), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.6.clone.1 (param_0.276: bf16[8,8,4,2048], param_1.246: f32[8,8,4]) -> f32[8,8,4] {
+  %param_0.276 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} parameter(0)
+  %convert_element_type.162 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%param_0.276), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=40}
+  %param_1.246 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(1)
+  %sub.61 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} broadcast(%param_1.246), dimensions={0,1,2}, metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %sub.60 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} subtract(%convert_element_type.162, %sub.61), metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %exp.56 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} exponential(%sub.60), metadata={op_name="jit(run)/while/body/eval_jaxpr/exp" stack_frame_id=29}
+  %constant.157 = f32[]{:T(128)} constant(0)
+  ROOT %reduce_sum.64 = f32[8,8,4]{2,1,0:T(8,128)S(1)} reduce(%exp.56, %constant.157), dimensions={3}, to_apply=%region_7.8, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=29}
+}
+
+%fused_computation.4.clone.clone.1 (param_0.277: bf16[8,8,4,2048], param_1.247: f32[8,8,4], param_2.130: f32[8,8,4]) -> bf16[8,8,4,2048] {
+  %param_0.277 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} parameter(0)
+  %convert_element_type.164 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} convert(%param_0.277), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=40}
+  %param_2.130 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(2)
+  %sub.63 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} broadcast(%param_2.130), dimensions={0,1,2}, metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %sub.62 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} subtract(%convert_element_type.164, %sub.63), metadata={op_name="jit(run)/while/body/eval_jaxpr/sub" stack_frame_id=29}
+  %exp.57 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} exponential(%sub.62), metadata={op_name="jit(run)/while/body/eval_jaxpr/exp" stack_frame_id=29}
+  %param_1.247 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(1)
+  %div.77 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} broadcast(%param_1.247), dimensions={0,1,2}, metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=29}
+  %div.76 = f32[8,8,4,2048]{3,2,1,0:T(4,128)} divide(%exp.57, %div.77), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=29}
+  ROOT %convert_element_type.163 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} convert(%div.76), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=29}
+}
+
+%bitcast_fusion.3.clone.1 (bitcast_input.31: bf16[8,8,2048,128]) -> bf16[8,8,2048,128] {
+  %bitcast_input.31 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.35 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} bitcast(%bitcast_input.31)
+}
+
+%fused_computation.11.clone.1 (param_0.278: bf16[8,8,2048,128], param_1.248: bf16[8,8,4,2048], param_2.131: f32[8,8,4], param_3.40: f32[8,8,4]) -> bf16[8,8,4,128] {
+  %param_1.248 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} parameter(1)
+  %param_2.131 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(2)
+  %param_3.40 = f32[8,8,4]{2,1,0:T(8,128)S(1)} parameter(3)
+  %divide_convert_fusion.7 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)} fusion(%param_1.248, %param_2.131, %param_3.40), kind=kLoop, calls=%fused_computation.4.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=29}
+  %param_0.278 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} parameter(0)
+  %fusion.119 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} fusion(%param_0.278), kind=kLoop, calls=%bitcast_fusion.3.clone.1
+  ROOT %convolution-base-dilated.11 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} convolution(%divide_convert_fusion.7, %fusion.119), window={size=8x8 stride=7x7 lhs_dilate=8x8}, dim_labels=01bf_01io->01bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgl,bkld->bkgd/dot_general" stack_frame_id=41}
+}
+
+%bitcast_fusion.1.clone.1 (bitcast_input.33: bf16[8,4096]) -> bf16[8,4096] {
+  %bitcast_input.33 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.37 = bf16[8,4096]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.33)
+}
+
+%bitcast_fusion.6.clone.1 (bitcast_input.32: bf16[4096,4096]) -> bf16[4096,4096] {
+  %bitcast_input.32 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.36 = bf16[4096,4096]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.32)
+}
+
+%region_8.9 (reduce_sum.38: f32[], reduce_sum.39: f32[]) -> f32[] {
+  %reduce_sum.39 = f32[]{:T(128)} parameter(1), metadata={op_name="reduce_sum"}
+  %reduce_sum.38 = f32[]{:T(128)} parameter(0), metadata={op_name="reduce_sum"}
+  ROOT %reduce_sum.40 = f32[]{:T(128)} add(%reduce_sum.38, %reduce_sum.39), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+%fused_computation.48.clone.1 (param_0.279: bf16[8,4096], param_1.249: bf16[8,4096], param_2.132: bf16[4096,4096]) -> (f32[8], bf16[8,4096]) {
+  %param_0.279 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} parameter(0)
+  %convert.56 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.279)
+  %param_1.249 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} parameter(1)
+  %fusion.120 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.249), kind=kLoop, calls=%bitcast_fusion.1.clone.1
+  %param_2.132 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} parameter(2)
+  %fusion.121 = bf16[4096,4096]{1,0:T(8,128)(2,1)} fusion(%param_2.132), kind=kLoop, calls=%bitcast_fusion.6.clone.1
+  %convolution.16.clone.3 = bf16[8,4096]{1,0:T(8,128)(2,1)} convolution(%fusion.120, %fusion.121), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=42}
+  %convert.57 = f32[8,4096]{1,0:T(8,128)} convert(%convolution.16.clone.3)
+  %add.68.clone.3 = f32[8,4096]{1,0:T(8,128)} add(%convert.56, %convert.57), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=43}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %convert_element_type.165 = f32[8,4096]{1,0:T(8,128)} convert(%add.68.clone.3), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=44}
+  %integer_pow.39 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.165, %convert_element_type.165), metadata={op_name="jit(run)/while/body/eval_jaxpr/integer_pow" stack_frame_id=45}
+  %constant.158 = f32[]{:T(128)} constant(0)
+  %reduce_sum.65 = f32[8]{0:T(128)S(1)} reduce(%integer_pow.39, %constant.158), dimensions={1}, to_apply=%region_8.9, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}
+  %convert.58 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%add.68.clone.3)
+  ROOT %tuple.33 = (f32[8]{0:T(128)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) tuple(%reduce_sum.65, %convert.58)
+}
+
+%fused_computation.72.clone.1 (param_0.280: f32[8]) -> f32[8] {
+  %param_0.280 = f32[8]{0:T(128)S(1)} parameter(0)
+  %constant.160 = f32[]{:T(128)} constant(0.000244140625)
+  %broadcast.101 = f32[8]{0:T(128)} broadcast(%constant.160), dimensions={}
+  %multiply.47 = f32[8]{0:T(128)} multiply(%param_0.280, %broadcast.101), metadata={op_name="jit(run)/while/body/eval_jaxpr/div" stack_frame_id=31}
+  %constant.159 = f32[]{:T(128)} constant(1e-06)
+  %broadcast.100 = f32[8]{0:T(128)} broadcast(%constant.159), dimensions={}
+  %add.94 = f32[8]{0:T(128)} add(%multiply.47, %broadcast.100), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=31}
+  ROOT %rsqrt.35 = f32[8]{0:T(128)} rsqrt(%add.94), metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=46}
+}
+
+%fused_computation.52.clone.clone.1 (param_0.281: bf16[8,4096], param_1.250: f32[8], param_2.133: bf16[4096]) -> bf16[8,4096] {
+  %param_0.281 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert_element_type.167 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.281), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=44}
+  %param_1.250 = f32[8]{0:T(128)} parameter(1)
+  %mul.245 = f32[8,4096]{1,0:T(8,128)} broadcast(%param_1.250), dimensions={0}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=44}
+  %mul.244 = f32[8,4096]{1,0:T(8,128)} multiply(%convert_element_type.167, %mul.245), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=44}
+  %convert_element_type.166 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.244), metadata={op_name="jit(run)/while/body/eval_jaxpr/convert_element_type" stack_frame_id=47}
+  %convert.37 = f32[8,4096]{1,0:T(8,128)} convert(%convert_element_type.166)
+  %param_2.133 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(2)
+  %mul.246 = bf16[8,4096]{1,0:T(8,128)(2,1)} broadcast(%param_2.133), dimensions={1}, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=47}
+  %convert.38 = f32[8,4096]{1,0:T(8,128)} convert(%mul.246)
+  %mul.243 = f32[8,4096]{1,0:T(8,128)} multiply(%convert.37, %convert.38), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=47}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  ROOT %convert.39 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%mul.243)
+}
+
+%bitcast_fusion.7.clone.1 (bitcast_input.34: bf16[4096,28672]) -> bf16[4096,28672] {
+  %bitcast_input.34 = bf16[4096,28672]{1,0:T(8,128)(2,1)} parameter(0)
+  ROOT %bitcast.38 = bf16[4096,28672]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.34)
+}
+
+%fused_computation.53.clone.1 (param_0.282: bf16[4096,28672], param_1.251: bf16[8,4096], param_2.134: f32[8], param_3.41: bf16[4096]) -> bf16[8,28672] {
+  %param_1.251 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(1)
+  %param_2.134 = f32[8]{0:T(128)} parameter(2)
+  %param_3.41 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(3)
+  %fusion.122 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.251, %param_2.134, %param_3.41), kind=kLoop, calls=%fused_computation.52.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=47}
+  %param_0.282 = bf16[4096,28672]{1,0:T(8,128)(2,1)} parameter(0)
+  %fusion.123 = bf16[4096,28672]{1,0:T(8,128)(2,1)} fusion(%param_0.282), kind=kLoop, calls=%bitcast_fusion.7.clone.1
+  ROOT %convolution.30 = bf16[8,28672]{1,0:T(8,128)(2,1)} convolution(%fusion.122, %fusion.123), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=48}
+}
+
+%fused_computation.18.clone.clone.clone.clone.1 (param_0.283: bf16[8,28672]) -> bf16[8,14336] {
+  %param_0.283 = bf16[8,28672]{1,0:T(8,128)(2,1)} parameter(0)
+  %slice.65 = bf16[8,14336]{1,0:T(8,128)(2,1)} slice(%param_0.283), slice={[0:8], [0:14336]}, metadata={op_name="jit(run)/while/body/eval_jaxpr/slice" stack_frame_id=49}
+  %convert.40 = f32[8,14336]{1,0:T(8,128)} convert(%slice.65)
+  %constant.161 = bf16[]{:T(256)} constant(1), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)" stack_frame_id=50}
+  %broadcast.102 = bf16[8,14336]{1,0:T(8,128)(2,1)} broadcast(%constant.161), dimensions={}, metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)" stack_frame_id=50}
+  %convert.41 = f32[8,14336]{1,0:T(8,128)} convert(%broadcast.102)
+  %neg.28 = f32[8,14336]{1,0:T(8,128)} negate(%convert.40), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/neg" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %exp.58 = f32[8,14336]{1,0:T(8,128)} exponential(%neg.28), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/exp" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %add.95 = f32[8,14336]{1,0:T(8,128)} add(%exp.58, %convert.41), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/add" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %div.78 = f32[8,14336]{1,0:T(8,128)} divide(%convert.41, %add.95), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/div" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %mul.248 = f32[8,14336]{1,0:T(8,128)} multiply(%convert.40, %div.78), metadata={op_name="jit(run)/while/body/eval_jaxpr/jit(silu)/mul" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice.64 = bf16[8,14336]{1,0:T(8,128)(2,1)} slice(%param_0.283), slice={[0:8], [14336:28672]}, metadata={op_name="jit(run)/while/body/eval_jaxpr/slice" stack_frame_id=51}
+  %convert.42 = f32[8,14336]{1,0:T(8,128)} convert(%slice.64)
+  %mul.247 = f32[8,14336]{1,0:T(8,128)} multiply(%mul.248, %convert.42), metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=50}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","14336"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  ROOT %convert.43 = bf16[8,14336]{1,0:T(8,128)(2,1)} convert(%mul.247)
+}
+
+%bitcast_fusion.9.clone.1 (bitcast_input.35: bf16[14336,4096]) -> bf16[14336,4096] {
+  %bitcast_input.35 = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} parameter(0)
+  ROOT %bitcast.39 = bf16[14336,4096]{1,0:T(8,128)(2,1)} bitcast(%bitcast_input.35)
+}
+
+%fused_computation.67.clone.1 (param_0.284: bf16[8,4096], param_1.252: bf16[14336,4096], param_2.135: bf16[8,28672]) -> bf16[8,4096] {
+  %param_0.284 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0)
+  %convert.59 = f32[8,4096]{1,0:T(8,128)} convert(%param_0.284)
+  %param_2.135 = bf16[8,28672]{1,0:T(8,128)(2,1)} parameter(2)
+  %slice_multiply_fusion.9 = bf16[8,14336]{1,0:T(8,128)(2,1)} fusion(%param_2.135), kind=kLoop, calls=%fused_computation.18.clone.clone.clone.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/mul" stack_frame_id=50}
+  %param_1.252 = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} parameter(1)
+  %fusion.124 = bf16[14336,4096]{1,0:T(8,128)(2,1)} fusion(%param_1.252), kind=kLoop, calls=%bitcast_fusion.9.clone.1
+  %convolution.31 = bf16[8,4096]{1,0:T(8,128)(2,1)} convolution(%slice_multiply_fusion.9, %fusion.124), dim_labels=bf_io->bf, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=52}
+  %convert.60 = f32[8,4096]{1,0:T(8,128)} convert(%convolution.31)
+  %add.96 = f32[8,4096]{1,0:T(8,128)} add(%convert.59, %convert.60), metadata={op_name="jit(run)/while/body/eval_jaxpr/add" stack_frame_id=53}, backend_config={"flag_configs":[],"float_type_correction_info":{"original_shape":{"dimensions":["8","4096"],"element_type":"BF16","is_dynamic_dimension":[false,false],"layout":{"dim_level_types":[],"dim_ordered":[],"dim_unique":[],"dynamic_shape_metadata_prefix_bytes":"0","element_size_in_bits":"0","index_primitive_type":"PRIMITIVE_TYPE_INVALID","memory_space":"0","minor_to_major":["1","0"],"pointer_primitive_type":"PRIMITIVE_TYPE_INVALID","split_configs":[],"tail_padding_alignment_in_elements":"1","tiles":[{"dimensions":["8","128"]},{"dimensions":["2","1"]}]},"tuple_shapes":[]},"original_type":"BF16"},"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  ROOT %convert.61 = bf16[8,4096]{1,0:T(8,128)(2,1)} convert(%add.96)
+}
+
+%wide.wide.region_0.10.sunk.clone.clone.sunk (wide.wide.arg_tuple.0: (s32[], bf16[8,4096], bf16[4096], bf16[4096,6144], bf16[8,8,2048,128], /*index=5*/bf16[8,8,2048,128], bf16[4096,4096], bf16[4096], bf16[4096,28672], bf16[14336,4096], /*index=10*/bf16[4096], bf16[4096,6144], bf16[8,8,2048,128], bf16[8,8,2048,128], bf16[4096,4096], /*index=15*/bf16[4096], bf16[4096,28672], bf16[14336,4096], s32[])) -> (s32[], bf16[8,4096], bf16[4096], bf16[4096,6144], bf16[8,8,2048,128], /*index=5*/bf16[8,8,2048,128], bf16[4096,4096], bf16[4096], bf16[4096,28672], bf16[14336,4096], /*index=10*/bf16[4096], bf16[4096,6144], bf16[8,8,2048,128], bf16[8,8,2048,128], bf16[4096,4096], /*index=15*/bf16[4096], bf16[4096,28672], bf16[14336,4096], s32[]) {
+  %constant.126..sunk = s32[]{:T(128)} constant(1)
+  %wide.wide.arg_tuple.0 = (s32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, s32[]{:T(128)}) parameter(0)
+  %get-tuple-element.424 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=4
+  %copy-start = (bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(%get-tuple-element.424), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %get-tuple-element.401 = s32[]{:T(128)} get-tuple-element(%wide.wide.arg_tuple.0), index=0
+  %add.97 = s32[]{:T(128)} add(%get-tuple-element.401, %constant.126..sunk), metadata={op_name="jit(run)/while/body/add" stack_frame_id=25}, backend_config={"aliasing_operands":{"lists":[{"indices":["0","2"]}]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %get-tuple-element.438 = s32[]{:T(128)} get-tuple-element(%wide.wide.arg_tuple.0), index=18
+  %get-tuple-element.402 = bf16[8,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=1
+  %get-tuple-element.422 = bf16[4096]{0:T(1024)(128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=2
+  %get-tuple-element.423 = bf16[4096,6144]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=3
+  %get-tuple-element.425 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=5
+  %get-tuple-element.426 = bf16[4096,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=6
+  %get-tuple-element.427 = bf16[4096]{0:T(1024)(128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=7
+  %get-tuple-element.428 = bf16[4096,28672]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=8
+  %get-tuple-element.429 = bf16[14336,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=9
+  %get-tuple-element.430 = bf16[4096]{0:T(1024)(128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=10
+  %get-tuple-element.431 = bf16[4096,6144]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=11
+  %get-tuple-element.432 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=12
+  %get-tuple-element.433 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=13
+  %get-tuple-element.434 = bf16[4096,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=14
+  %get-tuple-element.435 = bf16[4096]{0:T(1024)(128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=15
+  %get-tuple-element.436 = bf16[4096,28672]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=16
+  %get-tuple-element.437 = bf16[14336,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%wide.wide.arg_tuple.0), index=17
+  %fusion.125 = f32[8]{0:T(128)S(1)} fusion(%get-tuple-element.402), kind=kLoop, calls=%fused_computation.42.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=28}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"69632"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"2247","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1","1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["1","32"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %add_rsqrt_fusion.8 = f32[8]{0:T(128)S(1)} fusion(%fusion.125), kind=kLoop, calls=%fused_computation.75.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=34}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"1826","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %copy-start.1 = (bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(%get-tuple-element.425), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.126 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} fusion(%get-tuple-element.423, %get-tuple-element.402, %add_rsqrt_fusion.8, %get-tuple-element.422), kind=kOutput, calls=%fused_computation.2.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=37}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"8544256"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"101243","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","4"],"is_mask":false,"iteration_bounds":["1","1","8"],"kernel_window_bounds":["64","32"],"ml_estimated_microseconds":0,"output_window_bounds":["1","32"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %copy-done = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} copy-done(%copy-start), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %copy-start.2 = (bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(%get-tuple-element.426), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %bitcast.42 = bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} bitcast(%fusion.126)
+  %fusion.127 = (bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)}) fusion(%copy-done, %bitcast.42), kind=kOutput, calls=%fused_computation.78.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgd,bkld->bkgl/dot_general" stack_frame_id=39}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"32768"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"22186","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["3","4","1","1"],"is_mask":false,"iteration_bounds":["3","2","1","1","1","1","1"],"kernel_window_bounds":["3","4","256","1"],"ml_estimated_microseconds":0,"output_window_bounds":["3","4","1","16"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %get-tuple-element.372 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} get-tuple-element(%fusion.127), index=1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  %get-tuple-element.373 = bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)} get-tuple-element(%fusion.127), index=0, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  %convert.22 = f32[8,8,4]{2,1,0:T(8,128)S(1)} convert(%get-tuple-element.373), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"1853","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1","1","1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["8","1","1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %fusion.128 = f32[8,8,4]{2,1,0:T(8,128)S(1)} fusion(%get-tuple-element.372, %convert.22), kind=kLoop, calls=%fused_computation.9.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"36864"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"14525","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1","1","1","1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["8","8","1","16"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %copy-done.1 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} copy-done(%copy-start.1), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.129 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} fusion(%copy-done.1, %get-tuple-element.372, %fusion.128, %convert.22), kind=kOutput, calls=%fused_computation.10.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgl,bkld->bkgd/dot_general" stack_frame_id=41}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"11149","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["2","8","1","16"],"is_mask":false,"iteration_bounds":["4","1","1","1","1","1","1"],"kernel_window_bounds":["2","8","256","1"],"ml_estimated_microseconds":0,"output_window_bounds":["2","8","1","1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %reshape.32 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} reshape(%fusion.129), metadata={op_name="jit(run)/while/body/eval_jaxpr/reshape" stack_frame_id=41}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"integer_config":{"integer":"32768"},"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"131072"}]}
+  %copy-done.2 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} copy-done(%copy-start.2), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.429), slice={[0:3584], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.130 = (f32[8]{0:T(128)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) fusion(%get-tuple-element.402, %reshape.32, %copy-done.2), kind=kOutput, calls=%fused_computation.44.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=42}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"73728"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"11149","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","32"],"is_mask":false,"iteration_bounds":["4","1","1"],"kernel_window_bounds":["512","8"],"ml_estimated_microseconds":0,"output_window_bounds":["1","8"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %get-tuple-element.374 = bf16[8,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion.130), index=1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}
+  %get-tuple-element.375 = f32[8]{0:T(128)S(1)} get-tuple-element(%fusion.130), index=0, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}
+  %add_rsqrt_fusion.9 = f32[8]{0:T(128)} fusion(%get-tuple-element.375), kind=kLoop, calls=%fused_computation.74.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=46}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"1024"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"1827","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %slice-start.1 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.429), slice={[3584:7168], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.2 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.429), slice={[7168:10752], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.3 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.429), slice={[10752:14336], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.131 = bf16[8,28672]{1,0:T(8,128)(2,1)} fusion(%get-tuple-element.428, %get-tuple-element.374, %add_rsqrt_fusion.9, %get-tuple-element.427), kind=kOutput, calls=%fused_computation.56.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=48}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"10580992"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"648004","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","32"],"is_mask":false,"iteration_bounds":["45","1","1"],"kernel_window_bounds":["512","5"],"ml_estimated_microseconds":0,"output_window_bounds":["1","5"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %slice-done = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.1 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.1), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.2 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.2), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.3 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.3), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %custom-call = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} custom-call(%slice-done, %slice-done.1, %slice-done.2, %slice-done.3), custom_call_target="ConcatBitcast", backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.132 = (f32[8]{0:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) fusion(%get-tuple-element.374, %custom-call, %fusion.131), kind=kOutput, calls=%fused_computation.46.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=52}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"385024"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"35057","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","14"],"is_mask":false,"iteration_bounds":["1","1","8"],"kernel_window_bounds":["224","32"],"ml_estimated_microseconds":0,"output_window_bounds":["1","32"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %get-tuple-element.376 = bf16[8,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion.132), index=1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=28}
+  %get-tuple-element.377 = f32[8]{0:T(128)} get-tuple-element(%fusion.132), index=0, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=28}
+  %add_rsqrt_fusion.10 = f32[8]{0:T(128)S(1)} fusion(%get-tuple-element.377), kind=kLoop, calls=%fused_computation.73.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=34}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"1024"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"1826","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %slice-start.8 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.433), slice={[0:2], [0:8], [0:2048], [0:128]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.9 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.433), slice={[2:4], [0:8], [0:2048], [0:128]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.12 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.434), slice={[0:1024], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.13 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.434), slice={[1024:2048], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.133 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} fusion(%get-tuple-element.431, %get-tuple-element.376, %add_rsqrt_fusion.10, %get-tuple-element.430), kind=kOutput, calls=%fused_computation.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=37}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"8544256"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"101243","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","4"],"is_mask":false,"iteration_bounds":["1","1","8"],"kernel_window_bounds":["64","32"],"ml_estimated_microseconds":0,"output_window_bounds":["1","32"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %slice-start.10 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.433), slice={[4:6], [0:8], [0:2048], [0:128]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.11 = ((bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}), bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.433), slice={[6:8], [0:8], [0:2048], [0:128]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.14 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.434), slice={[2048:3072], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %copy-start.3 = (bf16[8,4096]{1,0:T(8,128)(2,1)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, u32[]{:S(2)}) copy-start(%get-tuple-element.376), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %bitcast.43 = bf16[8,8,4,128]{3,0,2,1:T(8,128)(2,1)S(1)} bitcast(%fusion.133)
+  %fusion.134 = (bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)}, bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)}) fusion(%get-tuple-element.432, %bitcast.43), kind=kOutput, calls=%fused_computation.79.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgd,bkld->bkgl/dot_general" stack_frame_id=39}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"6324224"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"130564","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["2","3","1","1"],"is_mask":false,"iteration_bounds":["4","3","1","1","1","1","1"],"kernel_window_bounds":["2","3","256","1"],"ml_estimated_microseconds":0,"output_window_bounds":["2","3","1","16"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %get-tuple-element.378 = bf16[8,8,4,2048]{3,2,1,0:T(4,128)(2,1)S(1)} get-tuple-element(%fusion.134), index=1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  %get-tuple-element.379 = bf16[8,8,4]{2,1,0:T(8,128)(2,1)S(1)} get-tuple-element(%fusion.134), index=0, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}
+  %convert.23 = f32[8,8,4]{2,1,0:T(8,128)S(1)} convert(%get-tuple-element.379), metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_max" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"1853","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1","1","1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["8","1","1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %fusion.135 = f32[8,8,4]{2,1,0:T(8,128)S(1)} fusion(%get-tuple-element.378, %convert.23), kind=kLoop, calls=%fused_computation.6.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=29}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"36864"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"14525","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1","1","1","1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["8","8","1","16"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %slice-done.8 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.8), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.9 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.9), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.10 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.10), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.11 = bf16[2,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.11), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %custom-call.2 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)S(1)} custom-call(%slice-done.8, %slice-done.9, %slice-done.10, %slice-done.11), custom_call_target="ConcatBitcast", backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.15 = ((bf16[4096,4096]{1,0:T(8,128)(2,1)}), bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.434), slice={[3072:4096], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.136 = bf16[8,8,4,128]{3,2,1,0:T(4,128)(2,1)S(1)} fusion(%custom-call.2, %get-tuple-element.378, %fusion.135, %convert.23), kind=kOutput, calls=%fused_computation.11.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/bkgl,bkld->bkgd/dot_general" stack_frame_id=41}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"0"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"11149","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["2","8","1","16"],"is_mask":false,"iteration_bounds":["4","1","1","1","1","1","1"],"kernel_window_bounds":["2","8","256","1"],"ml_estimated_microseconds":0,"output_window_bounds":["2","8","1","1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %reshape.33 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} reshape(%fusion.136), metadata={op_name="jit(run)/while/body/eval_jaxpr/reshape" stack_frame_id=41}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"integer_config":{"integer":"32768"},"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"131072"}]}
+  %slice-done.12 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.12), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.13 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.13), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.14 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.14), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %copy-done.3 = bf16[8,4096]{1,0:T(8,128)(2,1)S(1)} copy-done(%copy-start.3), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.15 = bf16[1024,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.15), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %custom-call.3 = bf16[4096,4096]{1,0:T(8,128)(2,1)S(1)} custom-call(%slice-done.12, %slice-done.13, %slice-done.14, %slice-done.15), custom_call_target="ConcatBitcast", backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.4 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.437), slice={[0:3584], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.137 = (f32[8]{0:T(128)S(1)}, bf16[8,4096]{1,0:T(8,128)(2,1)}) fusion(%copy-done.3, %reshape.33, %custom-call.3), kind=kOutput, calls=%fused_computation.48.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=42}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"40960"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"11115","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","32"],"is_mask":false,"iteration_bounds":["4","1","1"],"kernel_window_bounds":["512","8"],"ml_estimated_microseconds":0,"output_window_bounds":["1","8"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %get-tuple-element.380 = bf16[8,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%fusion.137), index=1, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}
+  %get-tuple-element.381 = f32[8]{0:T(128)S(1)} get-tuple-element(%fusion.137), index=0, metadata={op_name="jit(run)/while/body/eval_jaxpr/reduce_sum" stack_frame_id=31}
+  %add_rsqrt_fusion.11 = f32[8]{0:T(128)} fusion(%get-tuple-element.381), kind=kLoop, calls=%fused_computation.72.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/rsqrt" stack_frame_id=46}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"1024"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"1827","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["1"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %slice-start.5 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.437), slice={[3584:7168], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.6 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.437), slice={[7168:10752], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-start.7 = ((bf16[14336,4096]{1,0:T(8,128)(2,1)}), bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)}, s32[]{:S(2)}) slice-start(%get-tuple-element.437), slice={[10752:14336], [0:4096]}, backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.138 = bf16[8,28672]{1,0:T(8,128)(2,1)} fusion(%get-tuple-element.436, %get-tuple-element.380, %add_rsqrt_fusion.11, %get-tuple-element.435), kind=kOutput, calls=%fused_computation.53.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=48}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"10580992"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"648004","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","32"],"is_mask":false,"iteration_bounds":["45","1","1"],"kernel_window_bounds":["512","5"],"ml_estimated_microseconds":0,"output_window_bounds":["1","5"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %slice-done.4 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.4), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.5 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.5), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.6 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.6), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %slice-done.7 = bf16[3584,4096]{1,0:T(8,128)(2,1)S(1)} slice-done(%slice-start.7), backend_config={"dma_priority":1,"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %custom-call.1 = bf16[14336,4096]{1,0:T(8,128)(2,1)S(1)} custom-call(%slice-done.4, %slice-done.5, %slice-done.6, %slice-done.7), custom_call_target="ConcatBitcast", backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %fusion.139 = bf16[8,4096]{1,0:T(8,128)(2,1)} fusion(%get-tuple-element.380, %custom-call.1, %fusion.138), kind=kOutput, calls=%fused_computation.67.clone.1, metadata={op_name="jit(run)/while/body/eval_jaxpr/dot_general" stack_frame_id=52}, backend_config={"aliasing_operands":{"lists":[]},"convolution_algorithm_config":{"emitter":"EmitAllBatchInSublanes"},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"376832"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_CLASSIC","estimated_bundle_count":"0","estimated_cycles":"35033","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":["1","14"],"is_mask":false,"iteration_bounds":["1","1","8"],"kernel_window_bounds":["224","32"],"ml_estimated_microseconds":0,"output_window_bounds":["1","32"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  ROOT %tuple.37 = (s32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, s32[]{:T(128)}) tuple(%add.97, %fusion.139, %get-tuple-element.422, %get-tuple-element.423, %get-tuple-element.424, /*index=5*/%get-tuple-element.425, %get-tuple-element.426, %get-tuple-element.427, %get-tuple-element.428, %get-tuple-element.429, /*index=10*/%get-tuple-element.430, %get-tuple-element.431, %get-tuple-element.432, %get-tuple-element.433, %get-tuple-element.434, /*index=15*/%get-tuple-element.435, %get-tuple-element.436, %get-tuple-element.437, %get-tuple-element.438)
+}
+
+%wide.wide.region_9.11.clone.clone (wide.wide.arg_tuple.5: (s32[], bf16[8,4096], bf16[4096], bf16[4096,6144], bf16[8,8,2048,128], /*index=5*/bf16[8,8,2048,128], bf16[4096,4096], bf16[4096], bf16[4096,28672], bf16[14336,4096], /*index=10*/bf16[4096], bf16[4096,6144], bf16[8,8,2048,128], bf16[8,8,2048,128], bf16[4096,4096], /*index=15*/bf16[4096], bf16[4096,28672], bf16[14336,4096], s32[])) -> pred[] {
+  %constant.128 = s32[]{:T(128)} constant(2)
+  %wide.wide.arg_tuple.5 = (s32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, s32[]{:T(128)}) parameter(0)
+  %get-tuple-element.271 = s32[]{:T(128)} get-tuple-element(%wide.wide.arg_tuple.5), index=0
+  ROOT %lt.4 = pred[]{:T(512)} compare(%get-tuple-element.271, %constant.128), direction=LT, metadata={op_name="jit(run)/while/cond/lt" stack_frame_id=25}, backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+}
+
+ENTRY %main.12 (x.1: bf16[8,4096], p_0___g1__.1: bf16[4096], p_0___g2__.1: bf16[4096], p_0___k__.1: bf16[8,8,2048,128], p_0___v__.1: bf16[8,8,2048,128], p_0___wd__.1: bf16[14336,4096], p_0___wgu__.1: bf16[4096,28672], p_0___wo__.1: bf16[4096,4096], p_0___wqkv__.1: bf16[4096,6144], p_1___g1__.1: bf16[4096], p_1___g2__.1: bf16[4096], p_1___k__.1: bf16[8,8,2048,128], p_1___v__.1: bf16[8,8,2048,128], p_1___wd__.1: bf16[14336,4096], p_1___wgu__.1: bf16[4096,28672], p_1___wo__.1: bf16[4096,4096], p_1___wqkv__.1: bf16[4096,6144]) -> bf16[8,4096] {
+  %constant.19 = s32[]{:T(128)} constant(0)
+  %constant.126 = s32[]{:T(128)} constant(1)
+  %p_1___wqkv__.1 = bf16[4096,6144]{1,0:T(8,128)(2,1)} parameter(16), sharding={mesh[], [{}, {}]}, metadata={op_name="p[1][\'wqkv\']"}
+  %p_1___wo__.1 = bf16[4096,4096]{1,0:T(8,128)(2,1)} parameter(15), sharding={mesh[], [{}, {}]}, metadata={op_name="p[1][\'wo\']"}
+  %p_1___wgu__.1 = bf16[4096,28672]{1,0:T(8,128)(2,1)} parameter(14), sharding={mesh[], [{}, {}]}, metadata={op_name="p[1][\'wgu\']"}
+  %p_1___wd__.1 = bf16[14336,4096]{1,0:T(8,128)(2,1)} parameter(13), sharding={mesh[], [{}, {}]}, metadata={op_name="p[1][\'wd\']"}
+  %p_1___v__.1 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} parameter(12), sharding={mesh[], [{}, {}, {}, {}]}, metadata={op_name="p[1][\'v\']"}
+  %p_1___k__.1 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} parameter(11), sharding={mesh[], [{}, {}, {}, {}]}, metadata={op_name="p[1][\'k\']"}
+  %p_1___g2__.1 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(10), sharding={mesh[], [{}]}, metadata={op_name="p[1][\'g2\']"}
+  %p_1___g1__.1 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(9), sharding={mesh[], [{}]}, metadata={op_name="p[1][\'g1\']"}
+  %p_0___wqkv__.1 = bf16[4096,6144]{1,0:T(8,128)(2,1)} parameter(8), sharding={mesh[], [{}, {}]}, metadata={op_name="p[0][\'wqkv\']"}
+  %p_0___wo__.1 = bf16[4096,4096]{1,0:T(8,128)(2,1)} parameter(7), sharding={mesh[], [{}, {}]}, metadata={op_name="p[0][\'wo\']"}
+  %p_0___wgu__.1 = bf16[4096,28672]{1,0:T(8,128)(2,1)} parameter(6), sharding={mesh[], [{}, {}]}, metadata={op_name="p[0][\'wgu\']"}
+  %p_0___wd__.1 = bf16[14336,4096]{1,0:T(8,128)(2,1)} parameter(5), sharding={mesh[], [{}, {}]}, metadata={op_name="p[0][\'wd\']"}
+  %p_0___v__.1 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} parameter(4), sharding={mesh[], [{}, {}, {}, {}]}, metadata={op_name="p[0][\'v\']"}
+  %p_0___k__.1 = bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)} parameter(3), sharding={mesh[], [{}, {}, {}, {}]}, metadata={op_name="p[0][\'k\']"}
+  %p_0___g2__.1 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(2), sharding={mesh[], [{}]}, metadata={op_name="p[0][\'g2\']"}
+  %p_0___g1__.1 = bf16[4096]{0:T(1024)(128)(2,1)} parameter(1), sharding={mesh[], [{}]}, metadata={op_name="p[0][\'g1\']"}
+  %x.1 = bf16[8,4096]{1,0:T(8,128)(2,1)} parameter(0), sharding={mesh[], [{}, {}]}, metadata={op_name="x"}
+  %copy.22 = bf16[8,4096]{1,0:T(8,128)(2,1)} copy(%x.1), backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"retry_config":{"retry_count":"0"},"scoped_memory_configs":[],"used_scoped_memory_configs":[{"memory_space":"1","offset":"0","size":"131072"}],"window_config":{"buffering_level":"2","cost_model_type":"COST_MODEL_TYPE_INVALID","estimated_bundle_count":"0","estimated_cycles":"2373","estimated_scoped_vmem_bytes":"0","estimated_vmem_bytes":"0","input_window_bounds":[],"is_mask":false,"iteration_bounds":["1","1"],"kernel_window_bounds":[],"ml_estimated_microseconds":0,"output_window_bounds":["1","32"],"pad_input_on_minor_dim":"0","pad_output_on_minor_dim":"0"}}
+  %copy.23 = s32[]{:T(128)} copy(%constant.19), backend_config={"aliasing_operands":{"lists":[]},"flag_configs":[],"scoped_memory_configs":[],"used_scoped_memory_configs":[]}
+  %tuple.35 = (s32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, s32[]{:T(128)}) tuple(%copy.23, %copy.22, %p_0___g1__.1, %p_0___wqkv__.1, %p_0___k__.1, /*index=5*/%p_0___v__.1, %p_0___wo__.1, %p_0___g2__.1, %p_0___wgu__.1, %p_0___wd__.1, /*index=10*/%p_1___g1__.1, %p_1___wqkv__.1, %p_1___k__.1, %p_1___v__.1, %p_1___wo__.1, /*index=15*/%p_1___g2__.1, %p_1___wgu__.1, %p_1___wd__.1, %constant.126)
+  %while.3 = (s32[]{:T(128)}, bf16[8,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, /*index=5*/bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, /*index=10*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,6144]{1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[8,8,2048,128]{3,2,1,0:T(8,128)(2,1)}, bf16[4096,4096]{1,0:T(8,128)(2,1)}, /*index=15*/bf16[4096]{0:T(1024)(128)(2,1)}, bf16[4096,28672]{1,0:T(8,128)(2,1)}, bf16[14336,4096]{1,0:T(8,128)(2,1)}, s32[]{:T(128)}) while(%tuple.35), condition=%wide.wide.region_9.11.clone.clone, body=%wide.wide.region_0.10.sunk.clone.clone.sunk, metadata={op_name="jit(run)/while" stack_frame_id=24}
+  ROOT %while.7 = bf16[8,4096]{1,0:T(8,128)(2,1)} get-tuple-element(%while.3), index=1, metadata={op_name="jit(run)/while" stack_frame_id=24}
+}
+

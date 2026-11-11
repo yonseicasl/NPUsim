@@ -1,0 +1,2 @@
+yaml=/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml channels=16 tx=32B tCK=0.625ns
+reqs=2097152 ticks=142803 time=89.3us sustained=751.90 GB/s (read_bytes=67108864 write_bytes=0)

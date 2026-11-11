@@ -1,0 +1,49 @@
+{
+  "metrics": {
+    "streamed_bf16": {
+      "n": 20,
+      "mean_pct": -4.112736176051747,
+      "mape_pct": 4.653008500746167,
+      "max_abs_pct": 7.58231194424418
+    },
+    "streamed_int8": {
+      "n": 20,
+      "mean_pct": -6.875468587723864,
+      "mape_pct": 7.009491414442754,
+      "max_abs_pct": 14.228793121526696
+    },
+    "chained_odd": {
+      "n": 35,
+      "mean_pct": -5.4921282761335775,
+      "mape_pct": 6.3730621863450665,
+      "max_abs_pct": 14.238410596026496
+    },
+    "compute_isolated_kernel": {
+      "n": 15,
+      "mean_pct": 7.184488144556023,
+      "mape_pct": 7.184488144556023,
+      "max_abs_pct": 17.87001638448935
+    },
+    "decode_full": {
+      "n": 12,
+      "mean_pct": -8.629267461956307,
+      "mape_pct": 8.629267461956307,
+      "max_abs_pct": 11.725089288960266
+    },
+    "pooled": {
+      "n": 102,
+      "mean_pct": -3.997769336424733,
+      "mape_pct": 6.545350064094821,
+      "max_abs_pct": 17.87001638448935
+    }
+  },
+  "inputs": {
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-03_colab_v5e1_followup2/compare_gemm.csv": "980d9f84b39bb561a66c08e0adafa7a1d00e32a343e35c2b8fe41adff8e84ea2",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-03_colab_v5e1_followup2/compare_gemm_int8_tpu_v5e_int8w.csv": "864b67458c8a5c4ab934108555c754e46619db5ca69b45c69d26c3b23e9afdbc",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-03_colab_v5e1_followup3/compare_gemm.csv": "980d9f84b39bb561a66c08e0adafa7a1d00e32a343e35c2b8fe41adff8e84ea2",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-03_colab_v5e1_followup3/results.json": "a2ae7b2578aa564e0691896ef9a852b5f30e0eb82b50860fd14a3ef451e13588",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-03_colab_v5e1_rot/compare_gemm.csv": "f4fae17058993dbbb8b06376b404316fc0d9704772e835b8f8edd02969ab334f",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-04_colab_v5e1_smallk2/compare_gemm_oddchain_chain.csv": "bc99ea7b4bc3d6850407f15c04c5aedaf55ca71d8a3c54d033a499d2aa904c0c"
+  },
+  "caveat": "Fixed retrospective cohort, not held-out. gemm_only diagnostic excluded to avoid double counting full decode."
+}
