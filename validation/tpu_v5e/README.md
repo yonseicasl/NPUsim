@@ -360,3 +360,25 @@ The smallk2 run (`results/2026-11-04_colab_v5e1_smallk2/`, raw `.zip` beside it)
 - **v5e-8 code** (now `measure_tpu_v5e8.py`): collectives now sweep 2, 4, 8 chips (rotated buffers) and decode runs tensor
   parallel 1, 2, 4, 8; `env.json` records each chip's torus coordinates. For a Kaggle TpuV5E8 session:
   `%run measure_tpu_v5e8.py` (collectives and decode; the single-chip sections are measured already).
+
+## Fidelity improvement plan (2026-11-11)
+
+Pooled MAPE over the validated sets (102 points: decode layers, streamed decode GEMMs, int8 GEMMs, chained
+odd GEMMs, compute-bound GEMMs): analytic 6.5%, Ramulator2 `hbm2e_v5e.yaml` 5.0%. With the out-of-scope sets
+(isolated small GEMMs, GEMMs in a `while` loop; 169 points): 11.8% / 8.9%. What is left, by size:
+
+| # | error source | where it shows | fix | needs |
+|---|---|---|---|---|
+| 1 | sustained HBM rate: TPU 92% of 819 GB/s, analytic 100%, Ramulator2 (`hbm2e_v5e.yaml`, fresh device per 1 MiB stream) ~87% | decode layers, streamed and int8 GEMMs, attention: analytic -5..-8%, Ramulator2 ~+5% | a DRAM model that sustains the measured rate for the right reason | no new measurement |
+| 2 | compute-bound GEMMs read +7..9% (2048^3 +15%); the TPU reaches 95-97% of peak | large M | find the term in NPUsim's stage breakdown (row-tile fill, padding) | no new measurement |
+| 3 | coarse DRAM tiles: stages cannot overlap inside a tile | isolated small N = 1024 GEMMs +5..+26% | pipeline model: the next stage starts on a tile's first chunk | no new measurement |
+| 4 | per-iteration cost of a `while` loop | GEMMs in a loop -22% | model from `loopk` | `measure_tpu_v5e1.py --only loopk` |
+| 5 | inter-chip collectives | PaLM multi-chip -41..-60% | ICI latency/bandwidth model | `measure_tpu_v5e8.py` on a v5e-8 |
+
+Item 1, DRAM side, exists on branch `mosaic` (parallel session; MOSAIC `npusim-ddr3`, Ramulator2 `378827a`):
+`configs/architecture/dram/hbm2e_tpu_v5e.yaml` (Ramulator 2.1 native HBM2, public specs: 698 GB/s with
+all-bank refresh, 748 without) and `hbm2e_tpu_v5e_refsb.yaml` (`rw_beside_bank_refresh` + `IdleBankRefresh`:
+per-bank refresh hidden behind reads of other banks, 751 GB/s = 91.7%, inside the measured 732-757); decode
+GEMM MAPE 5.4% analytic -> 3.2% there. This branch does not re-implement it: item 1 here is to run this
+branch's comparison sets on that config (below). The two branches have diverged (25 / 23 commits) and both
+edit `tpu_v5e.cfg` and this README; merging is left to the owner.
