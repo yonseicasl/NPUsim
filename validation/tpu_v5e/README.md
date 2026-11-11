@@ -382,3 +382,28 @@ per-bank refresh hidden behind reads of other banks, 751 GB/s = 91.7%, inside th
 GEMM MAPE 5.4% analytic -> 3.2% there. This branch does not re-implement it: item 1 here is to run this
 branch's comparison sets on that config (below). The two branches have diverged (25 / 23 commits) and both
 edit `tpu_v5e.cfg` and this README; merging is left to the owner.
+
+### Item 1: the validated sets on `hbm2e_tpu_v5e_refsb` (2026-11-11)
+
+`compare_v5e.py --dram <MOSAIC>/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml` (per-bank refresh hidden
+behind reads of other banks; MOSAIC `npusim-ddr3`, Ramulator2 `378827a`) on this branch's sets; outputs
+`compare_*hbm2e_tpu_v5e_refsb*`. One 8 x 4096 x 2048 GEMM streams at 775 GB/s analytic, 690 on `hbm2e_v5e.yaml`,
+706 on `hbm2e_tpu_v5e.yaml` (all-bank refresh), 715 on refsb. Mean / MAPE:
+
+| set | analytic `[dram]` | `hbm2e_v5e.yaml` | `hbm2e_tpu_v5e_refsb.yaml` |
+|---|---|---|---|
+| decode layer, full (12) | -8.6 / 8.6% | -0.7 / 3.5% | -3.2 / 4.0% |
+| decode layer, gemm_only (12) | -8.0 / 8.0% | +3.6 / 3.6% | -0.0 / 2.4% |
+| streamed decode GEMMs bf16 (20) | -4.1 / 4.7% | +5.5 / 6.2% | +2.5 / 3.2% |
+| int8 streamed GEMMs (20) | -6.9 / 7.0% | +1.3 / 3.2% | -1.6 / 3.1% |
+| chained odd GEMMs (35) | -5.5 / 6.4% | +2.0 / 4.1% | -0.5 / 3.1% |
+| compute-bound isolated GEMMs, kernel (15) | +7.2 / 7.2% | +9.0 / 9.0% | +8.2 / 8.2% |
+| **pooled (102)** | **-4.0 / 6.5%** | **+3.3 / 5.0%** | **+0.8 / 4.0%** |
+
+- The HBM-bound sets move to 3.1-3.2% with a mean within 2.5% of zero; without the compute-bound set the
+  pooled MAPE of the other 87 points is 3.3%.
+- The full decode layer is -3.2% while its GEMMs are -0.0%: `compare_stack.py` adds the KV read at the
+  specified 819 GB/s (NPUsim keeps KV streams analytical on MOSAIC DRAM too), ~8% short of the measured rate.
+  `hbm2e_v5e.yaml`'s 3.5% was its +3.6% GEMMs cancelling that. Putting the KV stream on the DRAM model is the
+  fix (the attention consumer on branch `mosaic` does it).
+- Compute-bound GEMMs do not depend on the DRAM model (+7..9%): item 2, now the largest term.
