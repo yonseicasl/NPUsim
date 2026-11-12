@@ -123,3 +123,39 @@ physical HBM traffic under compiler tiling and fusion.
 
 Claude owns core/frontend changes and their validation; Codex owns this audit.
 The experiment artifacts alone do not establish a completed core accuracy gain.
+
+## Completed collaboration follow-up
+
+Local commits on washington's `tpu-measure` branch:
+
+- `5f59cef`: independent audit and preserved evidence.
+- `45122a3`: timing provenance, reproducible decomposition, balance experiment,
+  and correction of the earlier claim that int8 has a lower per-byte stream rate.
+- `29df8f0`: full balance run requires TPU; causal readings explicitly qualified.
+- `314db94`: complete op/trace retention; aggregate fusion time explicitly named
+  `fused_ops_sum_per_iter_us`, not mislabelled as GEMM-only time.
+
+The comparator now preserves ambiguous input as `unknown`, marks inferred
+provenance, and supports explicit `--timing`. A mixed missing-device-time crash
+found during review was fixed and added to tests. Independent comparison,
+trace-parser and KV tests passed (KV: five cases). A temporary CLI integration
+check verified explicit overrides, ambiguous defaults and unchanged numeric
+predictions. Claude also completed a CPU quick smoke run of the new experiment;
+this is not TPU validation.
+
+The prepared command on an available single-chip TPU runtime is:
+
+```sh
+python3 measure_tpu_v5e1.py --only balance --keep-traces --out balance_run
+```
+
+This uses the original dependent streaming loop for both dtypes, across
+M=32,64,128,192,256,384,512 and K=N=4096,8192. It saves loop slope, module time,
+aggregate fused-op time, all op records, traces and HLO. Isolated controls are
+labelled separately. Full execution refuses a CPU backend.
+
+No core latency/configuration change was justified by current evidence. The
+original int8 loop MAPE remains 5.970%; this phase improved validation provenance
+and prepared the experiment needed to choose a structural model correction.
+Nothing was pushed in this collaboration phase. Hardware confirmation remains
+pending TPU availability; no background monitoring of allocation is configured.
