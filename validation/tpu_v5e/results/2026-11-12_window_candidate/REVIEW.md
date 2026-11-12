@@ -72,7 +72,8 @@ int8 192x8192 +5.4, int8 128x8192 -5.3: the balanced regime is improved, not sol
 
 From the saved reports, in cycles (1500 = 1 us), identical in all three: **B - A = 3840, C - B = 590**.
 
-- C - B is exactly one `window_switch_cycle`: when memory-bound only the last window's cost is exposed.
+- C - B is exactly one `window_switch_cycle`: when memory-bound only the last window's cost is exposed. It is
+  not zero: it adds 0.85, 0.22 and 0.22 points to the signed error of these three cases.
 - B - A is one window of the **"PE array" stage** -- the on-chip weight load into the MXUs, which this config
   models at 128 weights / cycle / MXU: 4096 cycles per bf16 window here, independent of M -- minus the two fine
   tiles (256 cycles) that A already exposed. Per window the reports give DRAM 8475, link 4096, GLB 2048,
@@ -95,14 +96,63 @@ its input every iteration. The 12 are mostly compute-bound, where DRAM is hidden
 affected: bf16 256 x 8192 is DRAM-bound in NPUsim on refsb (C - B = 0.39 us only, error -6.3%) while the same
 case on the analytic DRAM exposes the window cost (-6.7% from -14.0%). Their good average (C 3.0%) does not
 validate either residency assumption. Buffers were not enlarged to make them fit.
-Evidence needed before any change: the per-op HBM bytes of the loop's fused op (the kept traces through XProf:
-does it read M x K, write anything?), and the memory space of the HLO operands of the convolution.
+What the fused op actually touches is in the next section.
+
+## Byte accounting of the fused op (added 2026-11-12, from the kept traces; no simulation)
+
+`trace_bytes.py` reads each program's XProf `xplane.pb`; output
+`results/2026-11-12_colab_v5e1_balance/trace_bytes.csv` (302 op records of 86 programs).
+
+**Kind of evidence: static compiler accounting, not measured traffic.** `bytes_accessed` and
+`memory_access_breakdown` are stats of the op's event *metadata* (one record per HLO op, shared by its 1600
+executions), written by the compiler's cost analysis. The traces contain no per-DMA events (the other device
+lines are empty) and no hardware byte counters. Memory spaces are raw ids: 1 = operands with the default layout
+(no `S(n)` tag in the HLO), 3 = the destination of a copy tagged `S(1)`; XProf names them HBM and VMEM, which the
+artifacts cannot confirm.
+
+- **Loop (all 28 cases):** the one fused op per iteration reads `weight bytes + M x K x 2` from space 1 and
+  writes 4 bytes; it touches no space 3. Operands in the HLO: the weight stack and the `M x K` bf16 input, both
+  default layout; two `S(6)` scalars; result `f32[]`. So per iteration the compiler accounts **weights + the
+  input activation read, and no M x N output anywhere** -- the input add and the output reduction are inside
+  the op.
+- **One-op program (control):** the staged operand is the weights when they are <= 67 MB (copy reads space 1,
+  writes space 3; the fusion then reads the weights from space 3, the input from space 1 and writes the
+  `M x N` output to space 1); with 134 MB of bf16 weights the *input* is staged instead and the weights are read
+  from space 1. A different schedule and different traffic from the loop, as assumed.
+
+Against that, NPUsim's two outcomes for these runs:
+
+| | weights | input read (M K 2 B) | output write (M N 2 B) |
+|---|---|---|---|
+| compiler accounting of the loop | yes | yes | no |
+| 16 cases, residency granted | yes | **no** | no |
+| 12 cases, capacity fallback | yes | yes | **yes** |
+
+The missing input read is 0.8% (M 32) to 6.25% (M 256) of the bf16 weight bytes at K 4096 and twice that for
+int8; the extra output write is the same amount for the 12 fallback cases (up to 12.5% of the int8 weights).
+
+**Smallest correction this supports (proposed, not implemented):** a residency setting that drops only the
+run's *output* materialization -- consumed on chip as it is produced, so without the whole-tensor capacity
+condition, which is what a fused reduction does -- while the input is read from DRAM. One mode, default
+unchanged, unit-tested on the DRAM traffic it produces; then re-run the 28 cases (A / B / C unchanged
+otherwise). Expected direction, from the byte fractions only: slightly more DRAM time for the 16 (the three
+regressions move further up by <= 1%), less for the 12; bf16 256 x 8192 on refsb becomes compute-bound and
+exposes the window cost. It is not expected to remove the balanced-regime residual.
+
+**Still missing, and not obtainable from these artifacts:** when inside the fused op the DMA ends (no per-DMA
+or per-window events), hence no same-program attribution of the on-chip weight-load tail; and measured (not
+compiler-accounted) HBM bytes.
 
 ## What can and cannot be said
 
 - In NPUsim itself, on a new measurement, the window schedule plus one fixed per-window cost removes most of the
   balanced-regime and compute-bound deficit for both dtypes with one value: refsb 8.9% -> 2.9%, 25 of 28 closer.
-- It makes three memory-bound bf16 cases worse by 1.5-6 points through a pre-existing stage, not through w.
+- It makes three memory-bound bf16 cases worse: their absolute error rises by 1.83, 1.64 and 1.49 percentage
+  points (signed shifts +6.35, +1.64, +1.63). Primarily the whole-window dependency (B - A = 3840 cycles), with
+  an additional exposed final-window cost (C - B = 590 cycles: +0.85, +0.22, +0.22 points of the signed shift).
+- Overfitting is NOT ruled out. A value fixed before this measurement transferring to it supports that one
+  scalar; but it is the same hardware and compiler, the window counts are measured inputs, and the schedule was
+  designed after seeing these data. That is not validation in an independent environment.
 - Not established: the physical mechanism of the per-window cost; exact window geometry; the residency of the
   loop's activations; transfer to isolated / staged programs or to shapes without an HLO. 28 cases from one
   session and one compiler version are not 28 independent environments.
@@ -110,11 +160,11 @@ does it read M x K, write anything?), and the memory space of the HLO operands o
 ## Proposed follow-up (nothing changed yet)
 
 1. Keep the knobs opt-in; no config promotion on these numbers.
-2. Byte accounting of the loop's fused op from the kept traces (XProf per-op HBM read / write), to settle the
-   activation traffic for all 28 cases; then one consistent residency treatment, tested, and the 12 fallback
-   cases re-run.
-3. For the on-chip weight-load tail: same-program attribution (the trace's op timeline of one loop iteration,
-   DMA end vs fusion end) before touching the stage.
+2. Done: byte accounting from the kept traces (section above). Next: the output-only residency mode, tested,
+   and the 28 cases re-run on it.
+3. For the on-chip weight-load tail: the kept traces cannot attribute it (one event per fused op). It needs a
+   measurement that separates DMA end from op end -- e.g. the same loop with the weights already resident, or
+   Pallas kernels with explicit DMAs as in `tpu_v5e1_hbm_probe.py` -- before touching the stage.
 4. Geometry: represent full and edge windows (unequal shares) only if 2-3 show the equal-share approximation
    matters; the 14 partial-window cases are 3.7% against 2.1%.
 5. Only after 2-4: the older bf16 / int8 stream sets (follow-up 2, with HLO windows where an HLO exists), and a
