@@ -129,9 +129,14 @@ double temporal_pipeline_run_cycles(unsigned tiles, const std::vector<double> &s
 // `stall` (optional, one entry per stage) receives the time each stage spent blocked
 // specifically by that back-pressure term, so a report can say WHERE the pipeline stalled
 // rather than only how long it took.
+// `last_stage_first_start` (optional) receives when the last stage starts its first tile (the
+// pipeline's prologue), `first_stage_finish` when the first stage finishes its last tile; the
+// network rollup overlaps a layer's prologue with the previous layer's tail after its first stage.
 double pipeline_timeline_cycles(const std::vector<std::vector<double>> &stage_tile_costs,
                                 const std::vector<unsigned> &boundary_depths,
-                                std::vector<double> *stall = 0);
+                                std::vector<double> *stall = 0,
+                                double *last_stage_first_start = 0,
+                                double *first_stage_finish = 0);
 
 // CE4/P1-D: combine a per-datatype cost vector for ONE entity (buffer instance / port).
 // `serialized_types` selects the rule: a shared port serializes the three datatype

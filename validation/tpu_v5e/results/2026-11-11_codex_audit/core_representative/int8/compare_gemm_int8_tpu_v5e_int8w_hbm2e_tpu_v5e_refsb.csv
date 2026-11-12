@@ -1,0 +1,3 @@
+M,K,N,measured_us,copy_us,kernel_us,src,npusim_us,roofline_us,err_pct,err_kernel_pct,npusim_noprog_us,err_kernel_noprog_pct
+1,4096,4096,24.95,0,24.95,device,22.74,20.51,-8.9,-8.9,22.74,-8.9
+8,4096,4096,24.66,0,24.66,device,22.89,20.65,-7.2,-7.2,22.89,-7.2

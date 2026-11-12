@@ -1,0 +1,6 @@
+NPUsim: 4 runs on 2 threads ...
+
+    M      K      N |  measured    copy   kernel    NPUsim  roofline us |     err   err_k  src
+    1   4096   4096 |     24.95    0.00    24.95     22.74     20.51    |   -8.9%   -8.9%  device
+    8   4096   4096 |     24.66    0.00    24.66     22.89     20.65    |   -7.2%   -7.2%  device
+MAPE decode (M<=128) 8.0% (n=2), decode (M<=128) kernel 8.0% (n=2)

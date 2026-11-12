@@ -1,0 +1,124 @@
+{
+  "baseline_commit": "cb08bea",
+  "core_commit": "7044920",
+  "timeline_dram_tiles": 1,
+  "scope": "7 representative cases, NOT pooled 102-point revalidation",
+  "cases": [
+    {
+      "group": "bf16",
+      "shape": [
+        1,
+        4096,
+        4096
+      ],
+      "measured_us": 45.65,
+      "old_us": 46.95,
+      "new_us": 45.44,
+      "old_err_pct": 2.8477546549835697,
+      "new_err_pct": -0.46002190580504143
+    },
+    {
+      "group": "bf16",
+      "shape": [
+        8,
+        4096,
+        4096
+      ],
+      "measured_us": 45.38,
+      "old_us": 47.13,
+      "new_us": 45.59,
+      "old_err_pct": 3.8563243719700324,
+      "new_err_pct": 0.46275892463640833
+    },
+    {
+      "group": "int8",
+      "shape": [
+        1,
+        4096,
+        4096
+      ],
+      "measured_us": 24.95,
+      "old_us": 23.5,
+      "new_us": 22.74,
+      "old_err_pct": -5.811623246492981,
+      "new_err_pct": -8.857715430861724
+    },
+    {
+      "group": "int8",
+      "shape": [
+        8,
+        4096,
+        4096
+      ],
+      "measured_us": 24.66,
+      "old_us": 23.68,
+      "new_us": 22.89,
+      "old_err_pct": -3.9740470397404692,
+      "new_err_pct": -7.177615571776153
+    },
+    {
+      "group": "chain",
+      "shape": [
+        100,
+        1000,
+        1000
+      ],
+      "measured_us": 2.807,
+      "old_us": 2.83,
+      "new_us": 2.83,
+      "old_err_pct": 0.8193801211257679,
+      "new_err_pct": 0.8193801211257679
+    },
+    {
+      "group": "chain",
+      "shape": [
+        100,
+        1100,
+        1100
+      ],
+      "measured_us": 3.495,
+      "old_us": 3.65,
+      "new_us": 3.57,
+      "old_err_pct": 4.4349070100142995,
+      "new_err_pct": 2.145922746781115
+    },
+    {
+      "group": "chain",
+      "shape": [
+        128,
+        1024,
+        1024
+      ],
+      "measured_us": 2.907,
+      "old_us": 2.83,
+      "new_us": 2.83,
+      "old_err_pct": -2.6487788097695253,
+      "new_err_pct": -2.6487788097695253
+    }
+  ],
+  "metrics": {
+    "bf16": {
+      "n": 2,
+      "old_mape_pct": 3.352039513476801,
+      "new_mape_pct": 0.4613904152207249
+    },
+    "int8": {
+      "n": 2,
+      "old_mape_pct": 4.892835143116725,
+      "new_mape_pct": 8.017665501318938
+    },
+    "chain": {
+      "n": 3,
+      "old_mape_pct": 2.6343553136365307,
+      "new_mape_pct": 1.8713605592254694
+    }
+  },
+  "inputs": {
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-11_codex_audit/baseline_results/2026-11-03_colab_v5e1_followup2/compare_gemm_hbm2e_tpu_v5e_refsb.csv": "ada988254f840eeb2e19caa6a32378930785557dc3c4a2b9afd24fdea3912f95",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-11_codex_audit/core_representative/bf16/compare_gemm_hbm2e_tpu_v5e_refsb.csv": "81438cb13ba2aa3a22dbde19fb75a83309e09aa37a44c4d0b8890ee2a2a23015",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-11_codex_audit/baseline_results/2026-11-03_colab_v5e1_followup2/compare_gemm_int8_tpu_v5e_int8w_hbm2e_tpu_v5e_refsb.csv": "5f12589942cf787e910ea38dcb2ea52da48ba762e82999e32788a89d5163f899",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-11_codex_audit/core_representative/int8/compare_gemm_int8_tpu_v5e_int8w_hbm2e_tpu_v5e_refsb.csv": "6523a852efd574ac3e4056b402913853a6aae61aeea716df8e9398f1039e7f6d",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-11_codex_audit/baseline_results/2026-11-04_colab_v5e1_smallk2/compare_gemm_oddchain_hbm2e_tpu_v5e_refsb_chain.csv": "0e5999b340e1b17959b72116e950addd41f1649cec57230de385e41bc1f70d3a",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-11_codex_audit/core_representative/chain/compare_gemm_oddchain_hbm2e_tpu_v5e_refsb_chain.csv": "ba162352876257e6393018fdb26472515dcb2e299af701ecad80dc6b83261659"
+  }
+}

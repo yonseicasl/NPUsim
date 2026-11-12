@@ -1,0 +1,62 @@
+# TPU v5e HBM2e, refresh disabled: hbm2e_v5e.yaml with RefreshManager NoRefresh. An upper bound for per-bank
+# refresh on sequential streams (Ramulator2's HBM2_R20 has no per-bank refresh manager). dram_bw_probe: 726.9 GB/s
+# (88.7%) vs 674.8 GB/s (82.4%) with all-bank refresh.
+# v5e: HBM2e 16 GiB at 819 GB/s = 2 stacks x 8 channels x 128 bit x 3.2 Gbps. Each 64-bit pseudo channel
+# is one Ramulator2 channel (pseudochannel 1), as in MOSAIC's calibrated HBM3 configs: 32 channels x
+# 16 B per tCK (64 bit DDR) x 1.6 GHz = 25.6 GB/s each, 819.2 GB/s in total. 4 Gb per pseudo channel
+# (16 GiB / 32): the HBM2_4Gb preset's rows (16384 at 2 pseudo channels) doubled for pseudochannel 1.
+# Timings in ns from the HBM2_2000Mbps preset (1 ns tCK), re-rounded by Ramulator against tCK 0.625 ns.
+# nBL 1 / nCCDS 1 / nCCDL 2: a 16 B access holds the bus for one tCK (same reasoning as hbm3salp_none.yaml).
+Frontend:
+  impl: HBFrontend
+  clock_ratio: 1
+
+MemorySystem:
+  impl: GenericDRAM
+  clock_ratio: 1
+
+  DRAM:
+    impl: HBM2
+    org:
+      preset: HBM2_4Gb
+      channel: 32
+      pseudochannel: 1
+      row: 32768
+    timing:
+      rate: 3200
+      nBL: 1
+      tCL: 14.0
+      tRCDRD: 14.0
+      tRCDWR: 12.0
+      tRP: 14.0
+      tRAS: 34.0
+      tRC: 48.0
+      tWR: 16.0
+      tRTPL: 5.0
+      tCWL: 5.0
+      nCCDS: 1
+      nCCDL: 2
+      tWTRS: 6.0
+      tWTRL: 8.0
+      tRTPS: 4.0
+      tRRDS: 4.0
+      tRRDL: 6.0
+      tRTW: 3.0
+      tFAW: 16.0
+      tRFCSB: 160.0
+      tREFI: 3900.0
+      tRREFD: 8.0
+
+  Controller:
+    impl: Generic
+    Scheduler:
+      impl: FRFCFS
+    RefreshManager:
+      impl: NoRefresh
+    RowPolicy:
+      impl: OpenRowPolicy
+    plugins:
+
+  AddrMapper:
+    impl: OneLevelInterleave
+    channel_lowest_bit: 0

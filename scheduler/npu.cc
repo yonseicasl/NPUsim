@@ -85,6 +85,10 @@ npu_t::npu_t() :
  num_pes(1),
  compression_type(compression_type_t::DENSE),
  num_skipped_timing_layers(0),
+    program_setup_cycle(0.0),
+    interlayer_overlap(false),
+    activation_residency(0),
+    timeline_dram_tiles(false),
  multi_chip(NULL),
  dram(NULL),
  decomp(NULL),
@@ -192,6 +196,28 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
 
         if(section_config.name == "accelerator") {
             section_config.get_setting("num_pes", &num_pes);
+            // Once-per-run cost, outside every layer: what a program pays to start (e.g. a TPU XLA
+            // program's first operand fetch before any kernel overlaps it). Default 0.
+            section_config.get_setting("program_setup_cycle", &program_setup_cycle);
+            // Layers of one run overlap like kernels of one program: the next layer's off-chip prologue
+            // under the previous layer's tail (stats_t::update_network_stats). Default 0: serial layers.
+            section_config.get_setting("interlayer_overlap", &interlayer_overlap);
+            // Activations between layers stay in the GLB when they fit (an XLA program keeps a small
+            // intermediate in on-chip memory): 1 = between this run's layers, 2 = also this run's own input
+            // and output (the run stands for a kernel in the middle of a longer program). Default 0.
+            section_config.get_setting("activation_residency", &activation_residency);
+            // The layer timeline's tile clock counts the DRAM-level loop too (GLB repetitions x DRAM
+            // iterations) instead of one DRAM iteration's GLB repetitions: with several DRAM tiles (e.g.
+            // weight strips) the pipeline fills once, not once per DRAM tile. Default 0 (previous clock).
+            section_config.get_setting("timeline_dram_tiles", &timeline_dram_tiles);
+            if(activation_residency > 2) {
+                std::cerr << "Error: [accelerator] activation_residency must be 0, 1 or 2" << std::endl;
+                exit(1);
+            }
+            if(program_setup_cycle < 0.0) {
+                std::cerr << "Error: [accelerator] program_setup_cycle must be >= 0" << std::endl;
+                exit(1);
+            }
     
             // Initialize compression type : Dense, CSR, CSC, SparseMap.
             std::string compression_str;
@@ -650,6 +676,7 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
         layer_stats[i]->update_tile_size(schedulers[i]);
     }
     network_stats = new stats_t();
+    network_stats->interlayer_overlap = interlayer_overlap;
     std::cout << "  Done!" << std::endl;
 }
 void npu_t::override_executable_layer_geometry() {
@@ -1358,6 +1385,30 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                         std::to_string(residency.capacity) + " bytes";
                     layer_stats[stats_index]->apply_graph_residency(
                         input_in_glb, residency.retain_output, note);
+                } else if(activation_residency > 0) {
+                    // Network path: keep the activation between mapped layers on chip when it fits the GLB's
+                    // tensor residency capacity; the run's own input/output only with activation_residency 2.
+                    auto mapped_at = [&](unsigned i) {
+                        return network->layers[i]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
+                               network->layers[i]->layer_type == nebula::CONNECTED_LAYER;
+                    };
+                    bool has_prev = false, has_next = false;
+                    for(unsigned i = 0; i < index; ++i) has_prev = has_prev || mapped_at(i);
+                    for(unsigned i = index + 1; i < network->num_layers; ++i) has_next = has_next || mapped_at(i);
+                    const bool ends = activation_residency >= 2;
+                    const size_t capacity = global_buffers.empty() ? 0 : global_buffers[0]->tensor_residency_capacity();
+                    const size_t batch = static_cast<size_t>(network->batch_size);
+                    const size_t in_bytes = runtime_datatypes().storage_bytes(data_type_t::INPUT,
+                        static_cast<size_t>(network->layers[index]->input_size)*batch);
+                    const size_t out_bytes = runtime_datatypes().storage_bytes(data_type_t::OUTPUT,
+                        static_cast<size_t>(network->layers[index]->output_size)*batch);
+                    const bool in_glb = (has_prev || ends) && in_bytes <= capacity;
+                    const bool out_glb = (has_next || ends) && out_bytes <= capacity;
+                    const std::string note = std::string("activation_residency ") + std::to_string(activation_residency) +
+                        ": input " + (in_glb ? "GLB-resident" : "DRAM-backed") + ", output " +
+                        (out_glb ? "retained in GLB" : "materialized to DRAM") + " (capacity " +
+                        std::to_string(capacity) + " bytes)";
+                    layer_stats[stats_index]->apply_graph_residency(in_glb, out_glb, note);
                 }
                 const input_halo_reuse_t input_halo = scheduler->mapping_table->input_halo_reuse();
                 const bool halo_capacity_sufficient = !global_buffers.empty() &&
@@ -1365,6 +1416,9 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 apply_fused_sfu_activation(index, stats_index);
                 apply_kv_cache_read(stats_index);
                 apply_weight_decompression(stats_index);
+                layer_stats[stats_index]->timeline_outer_iterations = timeline_dram_tiles
+                    ? std::max(1u, scheduler->mapping_table->calculate_active_component(component_type_t::DRAM))
+                    : 1;
                 layer_stats[stats_index]->scale_serial_repetitions(
                     global_buffer_repetitions, scheduler->mapping_table->datatype_repetitions(),
                     input_halo, halo_capacity_sufficient);
@@ -1621,7 +1675,16 @@ void npu_t::print_total_result(const std::string m_accelerator_config, const std
     // L11/P4-14: hand the rollup its timing scope before printing, so the scope line appears
     // next to the latency it qualifies rather than only as a trailing warning.
     network_stats->excluded_timing_layers = num_skipped_timing_layers;
+    // The run's once-per-program cost goes into the network totals only (the layer reports stay
+    // per layer): both latency axes, as it is a serial prologue no layer overlaps.
+    network_stats->layer_latency += program_setup_cycle;
+    network_stats->stage_axis_compute += program_setup_cycle;
     network_stats->print_results(output_file);
+    if(program_setup_cycle > 0.0) {
+        output_file << "Program setup         :" << std::setw(11) << std::fixed << std::setprecision(1)
+                    << program_setup_cycle << " cycles (once per run, included in the latencies above)"
+                    << std::endl;
+    }
     print_workload_provenance(output_file);
     if(num_skipped_timing_layers > 0) {
         const std::string warning = "WARNING: partial timing result; " +

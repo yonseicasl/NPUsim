@@ -239,6 +239,11 @@ void stats_t::init() {
     global_buffer_bypass.assign(data_type_t::NUM_DATA_TYPES, false);
     network_rollup = false;
     network_rollup_mapped_seeded = false;
+    overlap_head_cycle = 0.0;
+    overlap_tail_cycle = 0.0;
+    interlayer_overlap = false;
+    interlayer_prev_tail = 0.0;
+    interlayer_hidden_cycle = 0.0;
     output_tile_array_resident = false;
     compute_energy_basis = "computation_energy";
     authoritative_frequency_mhz = 0.0;
@@ -274,6 +279,7 @@ void stats_t::init() {
     psum_store_access_cycle_pe_array = 0.0;
     psum_store_access_energy_pe_array = 0.0;
     temporal_repetition_tiles = 1;
+    timeline_outer_iterations = 1;
 
     /* SFU */
     sfu_present = false;
@@ -1662,8 +1668,18 @@ void stats_t::finalize_layer_timeline() {
     // (DRAM/multi-chip refetch fewer tiles than the on-chip stages consume, and used to
     // force the whole run back to a flat max()), (b) per-tile cost variation, and (c) the
     // stall attribution reported below.
-    const unsigned tiles = std::max(1U, temporal_repetition_tiles);
-    const unsigned offchip_tiles = std::min(tiles, std::max(1U, offchip_repetition_tiles));
+    // The DRAM-level loop is simulated iteration by iteration and its stage totals are summed, so every
+    // iteration contributes its own GLB-repetition tiles to the clock (timeline_outer_iterations, 1 unless
+    // [accelerator] timeline_dram_tiles): off-chip work and output commits repeat with it.
+    const unsigned outer = std::max(1U, timeline_outer_iterations);
+    const unsigned long long clock = static_cast<unsigned long long>(std::max(1U, temporal_repetition_tiles))*outer;
+    if(clock > 16000000ULL) {
+        std::cerr << "Error: layer timeline tile clock too long (" << clock << " tiles)" << std::endl;
+        exit(1);
+    }
+    const unsigned tiles = static_cast<unsigned>(clock);
+    const unsigned offchip_tiles = static_cast<unsigned>(std::min<unsigned long long>(
+        tiles, static_cast<unsigned long long>(std::max(1U, offchip_repetition_tiles))*outer));
     std::vector<std::vector<double>> stage_tile_costs(5, std::vector<double>(tiles, 0.0));
     for(unsigned stage = 0; stage < 5; ++stage) {
         // Stages 0 and 1 are off-chip: they serve only `offchip_tiles` of the shared tile
@@ -1701,7 +1717,12 @@ void stats_t::finalize_layer_timeline() {
     if(timeline_offchip_outstanding > 0) boundary_depths[0] = timeline_offchip_outstanding;
     for(unsigned b = 0; b < 4; ++b) timeline_boundary_depth[b] = boundary_depths[b];
     std::vector<double> stall;
-    double final_latency = pipeline_timeline_cycles(stage_tile_costs, boundary_depths, &stall);
+    double pipeline_head = 0.0, pipeline_dram_finish = 0.0;
+    double final_latency = pipeline_timeline_cycles(stage_tile_costs, boundary_depths, &stall,
+                                                    &pipeline_head, &pipeline_dram_finish);
+    // Only a plain producer timeline exposes a clean prologue / tail for the inter-layer overlap.
+    const bool plain_timeline = !sfu_pending && !decomp_pending && !kv_pending && !kv_sched_pending &&
+                                !attn_pending;
     for(unsigned stage = 0; stage < 5; ++stage) {
         timeline_stall[stage] = (stage < stall.size()) ? stall[stage] : 0.0;
     }
@@ -1723,7 +1744,8 @@ void stats_t::finalize_layer_timeline() {
     if(sfu_pending && sfu_pending_invocation.busy_cycle > 0.0) {
         const double producer_latency = final_latency;
         if(sfu_queue_depth >= 2) {
-            const unsigned sfu_tiles = std::min(tiles, std::max(1u, output_repetition_tiles));
+            const unsigned sfu_tiles = static_cast<unsigned>(std::min<unsigned long long>(
+                tiles, static_cast<unsigned long long>(std::max(1u, output_repetition_tiles))*outer));
             std::vector<double> sfu_tile_costs(tiles, 0.0);
             const double per_output_tile =
                 sfu_pending_invocation.busy_cycle/static_cast<double>(sfu_tiles);
@@ -1947,6 +1969,8 @@ void stats_t::finalize_layer_timeline() {
         }
     }
     layer_latency = final_latency;
+    overlap_head_cycle = plain_timeline ? pipeline_head : 0.0;
+    overlap_tail_cycle = plain_timeline ? std::max(0.0, layer_latency - pipeline_dram_finish) : 0.0;
     mac_available_cycle = timeline_physical_macs*layer_latency;
     utilization_mac = calculate_time_based_mac_utilization(mac_busy_cycle, mac_available_cycle);
     utilization_mac = std::min(1.0, utilization_mac);
@@ -2420,7 +2444,14 @@ void stats_t::update_network_stats(stats_t *m_source) {
     num_computation += m_source->num_computation;
 
     // Update computation cost
-    layer_latency += m_source->layer_latency;
+    // Inter-layer overlap: layer i+1's off-chip prologue runs during layer i's tail once layer i's
+    // DRAM stream is done; its compute still starts after layer i (the hidden part is at most both the
+    // tail and the prologue), as in a program whose next kernel prefetches while the last one drains.
+    const double hidden = (interlayer_overlap && network_timing_layers > 1)
+        ? std::min(interlayer_prev_tail, m_source->overlap_head_cycle) : 0.0;
+    interlayer_hidden_cycle += hidden;
+    interlayer_prev_tail = m_source->overlap_tail_cycle;
+    layer_latency += m_source->layer_latency - hidden;
     busy_cycle_pe += m_source->busy_cycle_pe;
     busy_cycle_pe_array += m_source->busy_cycle_pe_array;
     busy_cycle_global_buffer += m_source->busy_cycle_global_buffer;
@@ -3238,6 +3269,16 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                                                   << stage_axis_compute << " cycles (validated metric)" << std::endl;
     m_output_file << "Critical-path latency :" << std::setw(11) << std::setprecision(1)
                                                << layer_latency << " cycles" << std::endl;
+    if(!network_rollup) {
+        m_output_file << "Overlap prologue/tail :" << std::setw(11) << std::setprecision(1) << overlap_head_cycle
+                      << " /" << std::setw(11) << overlap_tail_cycle
+                      << " cycles (before the last stage starts / after the first stage ends)" << std::endl;
+    }
+    if(network_rollup && interlayer_overlap) {
+        m_output_file << "Inter-layer overlap   :" << std::setw(11) << std::setprecision(1)
+                      << interlayer_hidden_cycle << " cycles hidden (next prologue under previous tail)"
+                      << std::endl;
+    }
     if(!graph_residency_note.empty()) {
         m_output_file << "Tensor residency     : " << graph_residency_note << std::endl;
     }

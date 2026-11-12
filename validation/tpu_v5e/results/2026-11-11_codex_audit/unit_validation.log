@@ -1,0 +1,29 @@
+Warning: test link bitwidth derived from bandwidth/frequency truncates 7.2 -> 7 bits; set 'bitwidth' explicitly
+validated 617 configuration files
+test_cli_rejects_invalid_graph (test_pytorch_frontend.GraphIRCommandTest) ... ok
+test_cli_validates_fixture_without_torch (test_pytorch_frontend.GraphIRCommandTest) ... ok
+test_rejects_non_topological_node (test_pytorch_frontend.GraphIRValidationTest) ... ok
+test_rejects_wrong_logical_bytes (test_pytorch_frontend.GraphIRValidationTest) ... ok
+test_valid_graph_has_stable_hash_and_round_trips (test_pytorch_frontend.GraphIRValidationTest) ... ok
+test_alias_chains_resolve_to_the_storage_tensor (test_pytorch_lowering.PyTorchAliasElisionTest) ... ok
+test_executable_validator_rejects_alias_of_alias (test_pytorch_lowering.PyTorchAliasElisionTest) ... ok
+test_executable_validator_rejects_undeclared_alias_targets (test_pytorch_lowering.PyTorchAliasElisionTest) ... ok
+test_flatten_elides_to_alias_without_an_operation (test_pytorch_lowering.PyTorchAliasElisionTest) ... ok
+test_non_contiguous_reshape_fails_loudly (test_pytorch_lowering.PyTorchAliasElisionTest) ... ok
+test_reshape_must_preserve_the_element_count (test_pytorch_lowering.PyTorchAliasElisionTest) ... ok
+test_cli_compiles_without_torch (test_pytorch_lowering.PyTorchCompileCommandTest) ... ok
+test_batch_norm_executable_epsilon_must_be_positive_and_finite (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_conv2d_attributes_lower_to_geometry (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_elementwise_broadcast_and_batch_norm_training_fail_loudly (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_executable_round_trip_checks_hash (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_linear_relu_fuses_with_exact_geometry (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_residual_dag_lowers_pool_elementwise_concat_and_batch_norm (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_standalone_activation_is_not_silently_skipped (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_unknown_operation_fails (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+test_validator_rejects_symbolic_executable_shape (test_pytorch_lowering.PyTorchLoweringTest) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.235s
+
+OK
+NPUsim validation checks passed

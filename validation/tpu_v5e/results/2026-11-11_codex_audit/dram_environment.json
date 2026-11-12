@@ -1,0 +1,13 @@
+{
+  "mosaic_head": "5c16d92013981be0cdf1ef724fbde0355a6eed7b",
+  "files": {
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/bin/dram_bw_probe": {
+      "sha256": "456c7f5234c07f32a525564c09497ce4c5dfd897e2f04bcf693128caa48d4c2b",
+      "size": 1407784
+    },
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/lib/libramulator.so": {
+      "sha256": "f4309d9e952e233565e558adc39b2b692b58fde7a4f8341fccf10a7fb342ad86",
+      "size": 2687496
+    }
+  }
+}

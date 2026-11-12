@@ -41,6 +41,7 @@ HBM_BPS = 1200e9
 ICI_BPS = 270e9            # per-chip interconnect bandwidth quoted by the paper
 ACT_BYTES = 2              # bf16 activations and KV cache
 DIM, MXUS = 128, 8
+MOSAIC_DRAM = None         # a MOSAIC DRAM yaml: NPUsim's DRAM streams on Ramulator2 (needs a MOSAIC build)
 CONTEXT = 2048 + 32        # mean context while generating 64 tokens after a 2048-token prompt
 
 MODELS = {  # PaLM (Chowdhery et al. 2022; 540B also in Pope et al. Table D.1)
@@ -81,6 +82,8 @@ def run_gemm(args):
     cfgroot, rundir, name, accel = args
     env = dict(os.environ, NPUSIM_CONFIG_ROOT=cfgroot)
     env.pop("NPUSIM_MOSAIC_DRAM", None)
+    if MOSAIC_DRAM:                                   # time the DRAM tile streams on MOSAIC's Ramulator2
+        env["NPUSIM_MOSAIC_DRAM"] = MOSAIC_DRAM
     p = subprocess.run([os.path.join(ROOT, "models", "model"), "run", accel, name, "ws"], cwd=rundir, env=env,
                        capture_output=True, text=True)
     if p.returncode:
@@ -89,16 +92,22 @@ def run_gemm(args):
     return float(re.search(r"Critical-path latency\s*:\s*([\d.]+)", text).group(1)) / CLOCK_HZ
 
 
-def main():
-    golden = list(csv.DictReader(open(os.path.join(HERE, "golden_pope2023_decode.csv"))))
+def workdir(accels):
+    """(tmp, config root, run dir) holding copies of configs/accelerators/<accels>.cfg."""
     tmp = tempfile.mkdtemp(prefix="palm_")
     cfgroot, rundir = os.path.join(tmp, "configs"), os.path.join(tmp, "run")
     for d in ("accelerators", "networks", "mappings"):
         os.makedirs(os.path.join(cfgroot, d))
     os.makedirs(os.path.join(rundir, "weights"))
     os.symlink(os.path.join(ROOT, "models", "datasets"), os.path.join(rundir, "datasets"))
-    for a in ("tpu_v4", "tpu_v4_int8w"):
+    for a in accels:
         shutil.copy(os.path.join(ROOT, "configs", "accelerators", f"{a}.cfg"), os.path.join(cfgroot, "accelerators"))
+    return tmp, cfgroot, rundir
+
+
+def main():
+    golden = list(csv.DictReader(open(os.path.join(HERE, "golden_pope2023_decode.csv"))))
+    tmp, cfgroot, rundir = workdir(("tpu_v4", "tpu_v4_int8w"))
 
     cases, jobs = [], []
     for g in golden:

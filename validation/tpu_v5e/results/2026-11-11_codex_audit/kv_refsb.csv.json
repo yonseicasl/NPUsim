@@ -1,0 +1,58 @@
+{
+  "model": "contiguous head-major K+V DRAM supply, no attention compute",
+  "geometry": {
+    "kv_heads": 8,
+    "head_dim": 128,
+    "element_bytes": 2
+  },
+  "max_probe_bytes": 33554432,
+  "samples": {
+    "2097152": {
+      "us": 2.8175,
+      "command": [
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/bin/dram_bw_probe",
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml",
+        "2",
+        "0"
+      ],
+      "stdout": "yaml=/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml channels=16 tx=32B tCK=0.625ns\nreqs=65536 ticks=4508 time=2.8us sustained=744.33 GB/s (read_bytes=2097152 write_bytes=0)\n"
+    },
+    "8388608": {
+      "us": 11.226875,
+      "command": [
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/bin/dram_bw_probe",
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml",
+        "8",
+        "0"
+      ],
+      "stdout": "yaml=/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml channels=16 tx=32B tCK=0.625ns\nreqs=262144 ticks=17963 time=11.2us sustained=747.19 GB/s (read_bytes=8388608 write_bytes=0)\n"
+    },
+    "33554432": {
+      "us": 44.668125,
+      "command": [
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/bin/dram_bw_probe",
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml",
+        "32",
+        "0"
+      ],
+      "stdout": "yaml=/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml channels=16 tx=32B tCK=0.625ns\nreqs=1048576 ticks=71469 time=44.7us sustained=751.19 GB/s (read_bytes=33554432 write_bytes=0)\n"
+    },
+    "16777216": {
+      "us": 22.375,
+      "command": [
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/bin/dram_bw_probe",
+        "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml",
+        "16",
+        "0"
+      ],
+      "stdout": "yaml=/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml channels=16 tx=32B tCK=0.625ns\nreqs=524288 ticks=35800 time=22.4us sustained=749.82 GB/s (read_bytes=16777216 write_bytes=0)\n"
+    }
+  },
+  "inputs": {
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-03_colab_v5e1_followup3/results.json": "a2ae7b2578aa564e0691896ef9a852b5f30e0eb82b50860fd14a3ef451e13588",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c",
+    "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/bin/dram_bw_probe": "456c7f5234c07f32a525564c09497ce4c5dfd897e2f04bcf693128caa48d4c2b"
+  },
+  "output_sha256": "23a91d778efe5bbf48e88742ef44b5df79ca814a36c6e12190ef38b7b938bfeb",
+  "limitation": "Fresh single sequential stream; no layout, competing traffic, QK/softmax/AV or vector costs. Large streams may be extrapolated; see method."
+}

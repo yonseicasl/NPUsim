@@ -506,9 +506,13 @@ double entity_combined_cycles(const std::vector<std::vector<double>> &a,
 
 double pipeline_timeline_cycles(const std::vector<std::vector<double>> &stage_tile_costs,
                                const std::vector<unsigned> &boundary_depths,
-                               std::vector<double> *stall) {
+                               std::vector<double> *stall,
+                               double *last_stage_first_start,
+                               double *first_stage_finish) {
     const size_t stages = stage_tile_costs.size();
     if(stall) stall->assign(stages, 0.0);
+    if(last_stage_first_start) *last_stage_first_start = 0.0;
+    if(first_stage_finish) *first_stage_finish = 0.0;
     if(stages == 0) return 0.0;
     const size_t tiles = stage_tile_costs[0].size();
     for(size_t s = 1; s < stages; ++s) {
@@ -552,7 +556,9 @@ double pipeline_timeline_cycles(const std::vector<std::vector<double>> &stage_ti
             const double unblocked = start;
             start = std::max(start, back_pressure);
             if(stall && start > unblocked) stall->at(s) += start - unblocked;
+            if(last_stage_first_start && k == 0 && s + 1 == stages) *last_stage_first_start = start;
             finish[s][k % ring] = start + stage_tile_costs[s][k];
+            if(first_stage_finish && s == 0) *first_stage_finish = finish[s][k % ring];
             makespan = std::max(makespan, finish[s][k % ring]);
         }
     }
