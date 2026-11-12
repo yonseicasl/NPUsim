@@ -189,7 +189,8 @@ per-case change against the residency2 batch). Mean / MAPE in %:
 | partial edge windows | 14 | -10.4 / 10.4 | -7.4 / 7.4 | -1.9 / 3.2 | 14 of 14 |
 | all | 28 | -7.9 / 8.1 | -5.0 / 5.8 | -0.4 / 2.7 | 24 of 28 |
 
-Analytic DRAM: A -11.9 / 11.9, B -9.0 / 9.0, C -3.7 / 5.0 (memory-bound still -6.8%: the 819 GB/s).
+Analytic DRAM: A -12.0 / 12.0, B -9.1 / 9.1, C -3.7 / 4.9 (memory-bound still -6.5 / 6.5%: the 819 GB/s;
+compute-bound +1.1 / 1.8%, balanced -4.8 / 5.9%).
 
 - **Four regressions now, all memory-bound bf16** (absolute error, points): 32 x 4096 +3.30 (-1.5 -> +4.8),
   32 x 8192 +1.70, 64 x 8192 +1.60, 64 x 4096 +0.50. With the input read restored the A baseline of these cases
