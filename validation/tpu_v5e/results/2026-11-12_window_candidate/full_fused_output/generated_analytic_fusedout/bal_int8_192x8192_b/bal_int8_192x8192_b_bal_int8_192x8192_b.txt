@@ -1,0 +1,407 @@
+============ Layer timeline =============
+Timing scope          : 1 of 3 layers  (PARTIAL: 2 unsupported layer(s) excluded; this is NOT an end-to-end network latency)
+Compute-schedule latency :   196938.0 cycles (validated metric)
+Critical-path latency :   201574.3 cycles
+Inter-layer overlap   :        0.0 cycles hidden (next prologue under previous tail)
+Tensor residency     : fused_output_consumer: input DRAM-backed, output consumed on chip as produced (not materialized; no whole-tensor capacity; the consumer's own work and result are not simulated)
+Busy cycles (ratio of critical path)  [network: summed over layers]
+ * DRAM               :   131768.0 cycles (65.4 %)
+ * Multi-chip (NoP)   :    68608.0 cycles (34.0 %)
+ * Global buffer      :   196608.0 cycles (97.5 %)
+ * PE array           :   198656.0 cycles (98.6 %)
+ * PE (compute+LB)    :   196938.0 cycles (97.7 %)
+Bottleneck level      :         PE array
+Busy-cycle axes (access / link / overlap)  [network: per-axis work summed over layers; NOT reducible to busy]
+ * DRAM               :        0.0 /   128640.0 /   131768.0 cycles
+ * Multi-chip (NoP)   :        0.0 /    68608.0 /        0.0 cycles
+ * Global buffer      :    32768.0 /   196608.0 /    98304.0 cycles
+ * PE array           :        0.0 /   198656.0 /        0.0 cycles
+ * PE (compute+LB)    :        0.0 /        0.0 /        0.0 cycles
+PE format-IP axis     :        0.0 cycles
+PE local buffer       :   double-buffered
+Buffer depth (tiles in flight across each boundary)
+ * DRAM -> Multi-chip :         16 tiles
+ * Multi-chip -> GLB  :         21 tiles
+ * GLB -> PE array    :          2 tiles
+ * PE array -> PE     :          2 tiles
+Back-pressure stall (blocked by a full downstream buffer)
+ * DRAM               :    62240.0 cycles
+ * Multi-chip (NoP)   :   190618.0 cycles
+ * Global buffer      :     2044.0 cycles
+ * PE array           :        0.0 cycles
+ * PE (compute+LB)    :        0.0 cycles
+GLB datatype rule     :  max (partitions)
+
+============= Energy summary ============
+MAC energy basis      : computation_energy -- NOT calibrated for bf16 x int8 -> fp32 (declare mac_energy_<input>_<weight>_<accumulator> for it)
+Energy unit           : uncalibrated (ESTIMATED scale; absolute totals and power are NOT meaningful) -- no energy_unit declared, so the numbers are relative event x unit-cost sums of unknown scale
+Component                         dynamic           static            total
+ * MAC (compute+format)              0.00             0.00             0.00   <- modeled zero: every cost is declared and declared 0
+ * PE (local buffer)                 0.00             0.00             0.00   <- modeled zero: every cost is declared and declared 0
+ * PE array                          0.00             0.00             0.00   <- modeled zero: every cost is declared and declared 0
+ * Global buffer                     0.00             0.00             0.00   <- modeled zero: every cost is declared and declared 0
+ * Multi-chip (NoP)                  0.00             0.00             0.00   <- modeled zero: every cost is declared and declared 0
+ * DRAM                              0.00             0.00             0.00   <- modeled zero: every cost is declared and declared 0
+Energy scope          : 1 of 3 layers  (PARTIAL: 2 unsupported layer(s) excluded; this is NOT an end-to-end network energy)
+Network dynamic energy:              0.00 uncalibrated
+Network static energy :              0.00 uncalibrated
+Network total energy  :              0.00 uncalibrated   (ESTIMATED: not calibrated for absolute comparison)
+Unpriced active events: 5 -- these FIRED and the config declares no cost for them, so the total above is missing a charge of undeclared size
+  * layer setup fired but [pe_array] layer_setup_energy is not declared
+  * accumulator reload/spill fired but [pe_array] accumulator_spill_energy is not declared
+  * final output cast fired but [multi_chip] output_cast_energy is not declared
+  * Format-IP payload fired but [pe_array] format_payload_energy is not declared
+  * PE local-buffer leakage fired but [pe_array] lb_static_energy is not declared
+  (declare the key as 0 to state a modeled zero; an ABSENT key is not the same statement)
+
+============= Power summary =============
+Clock domain          : all modeled components share one clock
+Authoritative clock   :         1500.0 MHz
+Not included          : DRAM background/refresh and I/O termination, clock network, controller/DMA, PHY; core datapath only
+Peak power            : unsupported (needs per-event concurrency; this model resolves stage-level overlap only)
+Average power         : unsupported (uncalibrated energy) -- no energy_unit declared, so the numbers are relative event x unit-cost sums of unknown scale
+
+============== MAC result ===============
+# of computations     :       12884901888
+# of data request to Local buffer
+ * Input data         :       12884901888
+ * Weight             :          67108864
+ * Output data        :       12884901888
+
+Cycle
+Computation cycle     :   196608.0 cycles
+MAX                   :   196608.0 cycles
+MIN                   :   196608.0 cycles
+AVG                   :   196608.0 cycles
+Access cycle
+ * Input register     :        0.0 cycles
+ * Weight register    :        0.0 cycles
+ * Output register    :        0.0 cycles
+MAX access cycle
+ * Input register     :        0.0 cycles
+ * Weight register    :        0.0 cycles
+ * Output register    :        0.0 cycles
+MIN access cycle
+ * Input register     :        0.0 cycles
+ * Weight register    :        0.0 cycles
+ * Output register    :        0.0 cycles
+AVG access cycle
+ * Input register     :        0.0 cycles
+ * Weight register    :        0.0 cycles
+ * Output register    :        0.0 cycles
+
+Energy
+Computation energy    :           0.00 uncalibrated
+Format-IP cycle (payload/metadata/spill)
+ * Input               :        0.0 cycles
+ * Weight              :        0.0 cycles
+ * Output              :        0.0 cycles
+Weight-fold energy    :           0.00 uncalibrated over 0 fold event(s)
+Layer-setup energy    :           0.00 uncalibrated over 4 setup event(s) [unit cost UNCALIBRATED: the setup executes for 0 cycle(s) but no layer_setup_energy is declared]
+Stripe-transition energy:         0.00 uncalibrated over 0 transition(s) [not modeled: no stripe_transition_cycle declared]
+Reduction energy      :           0.00 uncalibrated
+Accumulator retained events   :         0   (prior partial sum already in the MAC: no LB->MAC read-back, so no reload)
+Accumulator create events     :      1024
+Accumulator reload bytes      :51539603456
+Accumulator spill bytes       :51539607552
+Accumulator energy (PE):          0.00 uncalibrated
+Format-IP energy
+ * Input               :           0.00 uncalibrated
+ * Weight              :           0.00 uncalibrated
+ * Output              :           0.00 uncalibrated
+Access energy
+ * Input register     :           0.00 uncalibrated
+ * Weight register    :           0.00 uncalibrated
+ * Output register    :           0.00 uncalibrated
+
+Utilization
+MAC utilization (time):            97.5 %
+ * Busy scalar-MAC cycles     :12884901888.0
+ * Available scalar-MAC cycles:13210374784.0
+
+============== PE result ================
+# of data transfer to MAC
+ * Input data         :       12884901888
+ * Weight             :          67108864
+ * Output data        :       12884900864
+
+# of data request to PE array
+ * Input data         :          71303168
+ * Weight             :          71303168
+ * Output data        :          71303168
+Cycle
+Access cycle
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+MAX access cycle
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+MIN access cycle
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+AVG access cycle
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+
+Energy
+Access energy
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Local buffer utilization
+
+========== MAC - Local buffer ===========
+# of data transfer
+ * Input data         :       12884901888
+ * Weight             :          67108864
+ * Output data        :       12884900864
+
+MAC <-> local-buffer transactions (payload/metadata/serialized)
+ * Input data         :12884901888/0/12884901888
+ * Weight             :67108864/0/67108864
+ * Output data        :25769802752/0/25769802752
+
+Cycle (MAC-Local buffer)
+Transfer cycle
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+Total cycle
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+
+Energy
+Transfer energy
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Static energy (leakage over layer elapsed cycles)
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+============ PE array result ============
+# of data transfer to PEs
+ * Input data         :               256
+ * Weight             :              4096
+ * Output data        :              3072
+
+PE-array NoC transactions (payload/metadata/serialized)
+ * Input data         :49152/0/49152
+ * Weight             :262144/0/262144
+ * Output data        :134807552/0/134807552
+
+NoC link contract     : distribution -- one traversal of the shared medium per transaction (bus/crossbar); the GLB attach link and each PE's buffer write are charged to their own components; write-back -- router-to-router links only: each PE's average dimension-order route to the corner egress router, (h-1)/2 + (w-1)/2 hops; write-back injection PARALLEL (dedicated per-PE links: streams overlap in time, every wire traversal still costs energy); fabric SEPARATE per datatype (link axis = max across streams)
+Output tile residency : written back to the GLB during the layer
+
+# of request to Global buffer
+ * Input data         :              4096
+ * Weight             :              4096
+ * Output data        :              3840
+
+Cycle
+Interconnection cycle
+ * Input data         :    12288.0 cycles
+ * Weight             :    65536.0 cycles
+ * Output data        :   198656.0 cycles
+Fold fill cycle       :      330.0 cycles
+Overlapped cycle (temporal buffer)
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+
+Energy
+Access energy (temporal buffer)
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Interconnection energy
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Accumulator energy (edge):        0.00 uncalibrated
+Weight-fold energy    :           0.00 uncalibrated
+Static energy (leakage over layer elapsed cycles)
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Utilization
+PE array utilization  :             0.0 %
+Temporal-buffer occupancy
+ * Input data         :             0.0 %
+ * Weight             :             0.0 %
+ * Output data        :             0.0 %
+
+========= Global buffer result ==========
+ # of data transfer to PE array
+ * Input data         :               256
+ * Weight             :              4096
+ * Output data        :                48
+
+ Psum round trip      :                48 loads / 64 stores
+
+PE-array <-> GLB transactions (payload/metadata/serialized)
+ * Input data         :   24576/0/24576
+ * Weight             :  131072/0/131072
+ * Output data        :   10752/0/10752
+GLB-bypassed (direct stream) :       none
+
+ # of request to Chip-level processor
+ * Input data         :              4096
+ * Weight             :              4096
+ * Output data        :                 0
+
+ Cycle
+ Access cycle
+ * Input data         :     6144.0 cycles
+ * Weight             :    32768.0 cycles
+ * Output data        :     1536.0 cycles
+
+Energy
+Access energy
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+Interconnection energy
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Static energy (leakage over layer elapsed cycles)
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Global buffer utilization
+
+========== PEs - Global buffer ==========
+# of data transfer
+ * Input data         :               256
+ * Weight             :              4096
+ * Output data        :                48
+
+Cycle (PE array-Global buffer)
+Transfer cycle
+ * Input data         :     6144.0 cycles
+ * Weight             :    32768.0 cycles
+ * Output data        :     3072.0 cycles
+
+Total cycle
+ * Input data         :     6144.0 cycles
+ * Weight             :    32768.0 cycles
+ * Output data        :     1536.0 cycles
+
+=========== Multi chip result ===========
+# of data transfer to global buffers (loads)
+ * Input data         :                64
+ * Weight             :              1024
+ * Output data        :                 0
+
+GLB <-> multi-chip NoP transactions (payload/metadata/serialized)
+ * Input data         :3072/0/3072
+ * Weight             :65536/0/65536
+ * Output data        :0/0/0
+
+NoP link contract     : one traversal of the shared package medium per transaction (a bus transmission is physically seen by every chip); each chip's GLB write is charged to the GLB
+
+# of request to off-chip memory
+ * Input data         :              1024
+ * Weight             :              1024
+ * Output data        :                 0
+
+Cycle
+Access cycle (DRAM fill + NoP source reads)
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+Interconnection cycle
+ * Input data         :     3072.0 cycles
+ * Weight             :    65536.0 cycles
+ * Output data        :        0.0 cycles
+
+Energy
+Access energy (temporal buffer)
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Interconnection energy
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Output cast bytes     :           3145728
+Output cast energy    :           0.00 uncalibrated
+Output cast cycle     :            0.0 cycles  [enters the fabric's busy time as a MAX against its access/transfer axes, not a serial addition]
+Static energy (leakage over layer elapsed cycles)
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Utilization
+Chip utilization      :             0.0 %
+Temporal-buffer occupancy
+ * Input data         :             0.0 %
+ * Weight             :             0.0 %
+ * Output data        :             0.0 %
+
+============== DRAM result ==============
+DRAM timing model     : flat per-access (no row-buffer model)
+DRAM cost provenance  : the [dram] unit costs, verbatim. `dram_config` selects a DRAMsim3 device model in a -DDRAMSIM3 build only and derives no cost here
+  not modeled here    : row activations, bank/row state, queueing, turnaround, burst scheduling
+# of data transfer to multi chip (loads)
+ * Input data         :                64
+ * Weight             :              1024
+ * Output data        :                 0
+
+Multi-chip <-> DRAM transactions (payload/metadata/serialized)
+ * Input data         :3072/0/3072
+ * Weight             :65536/0/65536
+ * Output data        :0/0/0
+
+Cycle
+Access cycle
+ * Input data         :        0.0 cycles
+ * Weight             :        0.0 cycles
+ * Output data        :        0.0 cycles
+
+Energy
+Access energy
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+Interconnection energy (link + row activation)
+ * Input data         :           0.00 uncalibrated
+ * Weight             :           0.00 uncalibrated
+ * Output data        :           0.00 uncalibrated
+
+======Multi chips - Off-chip memory======
+# of data transfer
+ * Input data         :                64
+ * Weight             :              1024
+ * Output data        :                 0
+
+Cycle (Multi chips - Off-chip memory)
+Transfer cycle
+ * Input data         :     5760.0 cycles
+ * Weight             :   122880.0 cycles
+ * Output data        :        0.0 cycles
+
+Total cycle
+ * Input data         :     5944.0 cycles
+ * Weight             :   125824.0 cycles
+ * Output data        :        0.0 cycles
+
+WARNING: partial timing result; 2 non-convolution/connected layers were excluded.
+

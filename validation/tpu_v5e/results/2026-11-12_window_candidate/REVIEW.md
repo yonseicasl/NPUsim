@@ -169,3 +169,37 @@ compiler-accounted) HBM bytes.
    matters; the 14 partial-window cases are 3.7% against 2.1%.
 5. Only after 2-4: the older bf16 / int8 stream sets (follow-up 2, with HLO windows where an HLO exists), and a
    decision on promoting a named calibration profile.
+
+## Full batch with `fused_output_consumer` (added 2026-11-12; `full_fused_output/`)
+
+Same 28 cases, same 590 cycles, same window counts; only the activation traffic changed to what the compiler
+accounts for the loop (weights + M x K x 2 read, no output) -- checked in every one of the 168 runs from the
+`[dram] line_size` of its saved config. A traffic-consistency correction: it is not offered as a timing gain,
+and the comparison below is A / B / C within this batch (`full_fused_output/summary.txt` has every split and the
+per-case change against the residency2 batch). Mean / MAPE in %:
+
+| refsb DRAM | n | A | B | C | C closer than A |
+|---|---|---|---|---|---|
+| memory-bound | 10 | -2.6 / 3.0 | +0.3 / 1.9 | +1.0 / 1.8 | 6 of 10 |
+| balanced | 10 | -12.8 / 12.8 | -8.8 / 8.9 | -3.1 / 4.4 | 10 of 10 |
+| compute-bound | 8 | -8.4 / 8.4 | -7.0 / 7.0 | +1.2 / 1.8 | 8 of 8 |
+| bf16 | 14 | -6.6 / 6.9 | -3.1 / 4.7 | -1.0 / 3.1 | 10 of 14 |
+| int8 | 14 | -9.2 / 9.2 | -7.0 / 7.0 | +0.2 / 2.3 | 14 of 14 |
+| full windows | 14 | -5.5 / 5.7 | -2.6 / 4.2 | +1.2 / 2.2 | 10 of 14 |
+| partial edge windows | 14 | -10.4 / 10.4 | -7.4 / 7.4 | -1.9 / 3.2 | 14 of 14 |
+| all | 28 | -7.9 / 8.1 | -5.0 / 5.8 | -0.4 / 2.7 | 24 of 28 |
+
+Analytic DRAM: A -11.9 / 11.9, B -9.0 / 9.0, C -3.7 / 5.0 (memory-bound still -6.8%: the 819 GB/s).
+
+- **Four regressions now, all memory-bound bf16** (absolute error, points): 32 x 4096 +3.30 (-1.5 -> +4.8),
+  32 x 8192 +1.70, 64 x 8192 +1.60, 64 x 4096 +0.50. With the input read restored the A baseline of these cases
+  is closer (bf16 memory-bound A: -2.9 -> -1.6%), so the whole-window tail costs more against it: for
+  memory-bound bf16 as a group the candidate is slightly WORSE on MAPE (A 2.2%, C 2.4%; signed -1.6 -> +2.3).
+- The balanced residual is unchanged in size (-3.1 / 4.4%; worst bf16 384 x 4096 -8.9, 256 x 8192 -6.6,
+  256 x 4096 -6.5, int8 128 x 4096 -5.3, int8 192 x 8192 +5.3); compute-bound is within 2%.
+- int8: 14 of 14 closer, C +0.2 / 2.3%.
+
+Reading: with consistent traffic the picture of the residency2 batch holds -- the window schedule with one
+fixed per-window cost removes most of the balanced and compute-bound deficit (refsb 8.1% -> 2.7%), and it
+over-predicts memory-bound bf16 through the on-chip weight-load tail. Whether that tail is physical is still
+the open measurement; until then the candidate should not be enabled for memory-bound streaming.
