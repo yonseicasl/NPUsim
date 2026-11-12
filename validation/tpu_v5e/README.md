@@ -558,3 +558,46 @@ the GEMM alone), the complete op list, the traces and the optimized HLO of each 
 as a separately labelled control. bf16 at M ~ 256 also at ~1.2 x max
 -> a pipeline effect to model for every dtype; only int8 -> a dtype-specific stage; excess per window constant
 over K -> per window, per weight element constant -> per element.
+
+### Balance run (2026-11-12, Colab v5e-1): the stream / compute excess is not an int8 effect
+
+`results/2026-11-12_colab_v5e1_balance/` (`balance.csv`, `loopk*.csv`, the optimized HLO of all 56 programs;
+`balance_analyze.py` -> `balance_analyze.log`; raw archive with traces: `SOURCE.sha256`). 28 loop cases: bf16 and
+int8 weights, K = N = 4096 and 8192, M 32-512, on the stream bench's loop.
+
+- **Scope check.** Each loop program has two profiled ops, the `while` and one fused op per iteration; the wall
+  loop slope and that fused op's device time agree to 1.3% on average (5.2% at most); the loop itself costs
+  0.4 us per iteration. The ~2 us fixed part seen before is inside the fused op.
+- **bf16 shows the same excess at compute ~ stream.** fused / max(stream, compute) at C/S ~ 1: bf16 1.27 (K 4096,
+  M 256), 1.18 (K 8192); int8 1.36, 1.26. It rises from ~1.0-1.1 at C/S 0.1-0.5 and falls back to 1.06-1.14 at
+  C/S 2-4 for both dtypes. So the int8 M = 128 error is the balanced regime, which int8 reaches at half the M.
+- **XLA's windows follow M and dtype** (HLO `iteration_bounds`): K 4096 bf16 has 8 windows up to M 192, 11 at
+  M 256, 16 at M 512; int8 11 up to M 192, 16 above; K 8192: 32-52 (bf16), 39-64 (int8).
+- **Predictions fixed before the run** (R 752 GB/s, F 2 us, w 0.393 us per window, all from earlier data), error
+  against the fused op, mean / MAPE:
+
+| | perfect overlap (max + F) | window pipeline | window pipeline + w |
+|---|---|---|---|
+| all 28 | -8.0 / 8.0% | -5.4 / 5.8% | -0.2 / 2.6% |
+| bf16 (14) | -7.5 / 7.6% | -4.5 / 5.1% | -1.8 / 2.7% |
+| int8 (14) | -8.4 / 8.4% | -6.2 / 6.6% | +1.5 / 2.6% |
+| C/S < 0.6 (10) | -2.1 / 2.2% | -0.0 / 1.3% | +0.7 / 1.7% |
+| C/S 0.6-1.6 (10) | -13.8 / 13.8% | -9.7 / 9.7% | -2.4 / 4.2% |
+| C/S > 1.6 (8) | -8.1 / 8.1% | -6.6 / 6.6% | +1.5 / 2.0% |
+
+  NPUsim today behaves like the first column. The per-window cost predicted a new run, new shapes and bf16 in the
+  balanced regime without refitting; worst cases bf16 384 x 4096 (-8.3%) and 192 x 8192 (-7.3%).
+- **Control, a different schedule** (one-op program, operand copied first when <= ~67 MB): the copy runs at 750
+  GB/s and the kernel after it is the compute roofline + 2.5-7 us (K 4096) or 7-15 us (int8 K 8192), with no
+  bump at M 256. Streaming hides 0.71-0.94 of the shorter of the two phases (`eta`). So the excess belongs to
+  streaming and computing at the same time; whether it sits at window boundaries (what `w` assumes) or is
+  interference between DMA and compute is still not shown, and the staged kernels suggest less than w per window
+  (0.2-0.3 us).
+- **loopk.** A `fori_loop` iteration adds +0.19 / +0.39 / +0.36 / -0.13 / +0.74 us to an unrolled kernel (five
+  shapes): small. The -22% on odd GEMMs inside a `while` loop is not the loop. Unexplained: the unrolled
+  per-kernel cost of 100 x 1000 x 1000 here is 4.1 us (single window: stream + compute in series), where the
+  smallk2 `oddchain` slope gave 2.81 us for the same GEMM (that program staged 11 us of copies); the
+  "chained odd GEMM" set rests on the latter schedule.
+
+Not changed: simulator and configs. What this run supports modelling next, for every dtype: weights arriving in
+XLA-sized windows with a cost per window on the compute side -- its value measured (0.2-0.4 us), its mechanism open.
