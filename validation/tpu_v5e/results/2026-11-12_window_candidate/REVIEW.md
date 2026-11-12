@@ -13,8 +13,10 @@ gain over an earlier cohort: A, B and C are compared on the same 28 cases, same 
   `codex_independent_review/npusim_codex_full_fused_review.json` (Codex's independent check of both batches).
 - The residency2 batch (section "Results") is a valid historical run on a different activation assumption; it is
   no longer the primary comparison.
-- 590 cycles is unchanged since before the measurement; nothing was refitted. Byte accounting is the compiler's
-  static accounting, not measured traffic. All knobs opt-in, default 0; no config, no push, no merge.
+- 590 cycles is unchanged since before the measurement; nothing was refitted. The traffic is the compiler's
+  static MATRIX-payload accounting (weights and the input matrix read; no output matrix), not measured traffic:
+  the fused op's 4-byte scalar write, its scalar reads and its extra work (input add, output conversion and
+  reduction) are not modelled. All knobs opt-in, default 0; no config, no push, no merge.
 - Open: the memory-bound bf16 over-prediction (section "Remaining evidence gap").
 
 ## What was implemented
@@ -60,30 +62,34 @@ Regime = compute / stream with compute = 2 M K N / 196.6 TFLOPS and stream = wei
 
 | refsb DRAM | n | A | B | C | cases where C is closer than A |
 |---|---|---|---|---|---|
-| memory-bound, C/S < 0.6 | 10 | -4.1 / 4.2 | -1.1 / 2.6 | -0.4 / 2.4 | 7 of 10 |
-| balanced, 0.6-1.6 | 10 | -14.0 / 14.0 | -10.0 / 10.0 | -3.3 / 4.5 | 10 of 10 |
-| compute-bound, > 1.6 | 8 | -8.4 / 8.4 | -6.8 / 6.8 | +1.3 / 1.7 | 8 of 8 |
-| bf16 | 14 | -7.5 / 7.6 | -3.9 / 5.0 | -1.6 / 3.1 | 11 of 14 |
-| int8 | 14 | -10.2 / 10.2 | -7.9 / 7.9 | -0.3 / 2.8 | 14 of 14 |
-| full windows | 14 | -6.2 / 6.3 | -3.3 / 4.4 | +0.5 / 2.1 | 11 of 14 |
-| partial edge windows | 14 | -11.5 / 11.5 | -8.6 / 8.6 | -2.4 / 3.7 | 14 of 14 |
-| activations actually on chip | 16 | -9.1 / 9.2 | -5.4 / 6.3 | -1.5 / 2.9 | 13 of 16 |
-| activations to / from DRAM (fallback) | 12 | -8.6 / 8.6 | -6.7 / 6.7 | -0.2 / 3.0 | 12 of 12 |
-| (all 28, mixed residency) | 28 | -8.9 / 8.9 | -5.9 / 6.5 | -0.9 / 2.9 | 25 of 28 |
+| memory-bound, C/S < 0.6 | 10 | -4.09 / 4.23 | -1.11 / 2.66 | -0.39 / 2.37 | 7 of 10 |
+| balanced, 0.6-1.6 | 10 | -13.96 / 13.96 | -9.99 / 9.99 | -3.32 / 4.45 | 10 of 10 |
+| compute-bound, > 1.6 | 8 | -8.45 / 8.45 | -6.84 / 6.84 | +1.29 / 1.73 | 8 of 8 |
+| bf16 | 14 | -7.49 / 7.60 | -3.90 / 5.01 | -1.62 / 3.07 | 11 of 14 |
+| int8 | 14 | -10.23 / 10.23 | -7.93 / 7.93 | -0.30 / 2.79 | 14 of 14 |
+| full windows | 14 | -6.20 / 6.30 | -3.28 / 4.39 | +0.52 / 2.14 | 11 of 14 |
+| partial edge windows | 14 | -11.53 / 11.53 | -8.56 / 8.56 | -2.43 / 3.71 | 14 of 14 |
+| activations actually on chip | 16 | -9.07 / 9.16 | -5.37 / 6.34 | -1.53 / 2.87 | 13 of 16 |
+| activations to / from DRAM (fallback) | 12 | -8.58 / 8.58 | -6.64 / 6.64 | -0.20 / 3.00 | 12 of 12 |
+| (all 28, mixed residency) | 28 | -8.86 / 8.91 | -5.92 / 6.47 | -0.96 / 2.93 | 25 of 28 |
 
-Analytic DRAM (819 GB/s, ~9% faster than the measured copy rate): A -12.6 / 12.6, B -9.7 / 9.7, C -4.3 / 5.5;
-its memory-bound group stays at -7.9% (the DRAM rate), compute-bound +1.2 / 1.7, balanced -5.1 / 6.2.
+All aggregates in this note are computed from unrounded per-run errors (`window_candidate_summary.py` ->
+`summary_exact.txt`; the earlier `summary.txt` used the CSV's one-decimal percentages).
 
-Worst C (refsb): bf16 384x4096 -8.4, bf16 256x4096 -7.0, bf16 256x8192 -6.3, int8 128x4096 -5.7,
-int8 192x8192 +5.4, int8 128x8192 -5.3: the balanced regime is improved, not solved.
+Analytic DRAM (819 GB/s, ~9% faster than the measured copy rate): A -12.57 / 12.57, B -9.72 / 9.72,
+C -4.32 / 5.53; its memory-bound group stays at -7.91% (the DRAM rate), compute-bound +1.16 / 1.73, balanced
+-5.11 / 6.20.
+
+Worst C (refsb): bf16 384x4096 -8.42, bf16 256x4096 -6.96, bf16 256x8192 -6.29, int8 128x4096 -5.73,
+int8 192x8192 +5.37, int8 128x8192 -5.26: the balanced regime is improved, not solved.
 
 ## The three regressions (refsb; all memory-bound bf16)
 
 | case | A | B | C |
 |---|---|---|---|
-| bf16 32 x 4096 | -2.3% | +3.2% | +4.1% |
-| bf16 32 x 8192 | +0.7% | +2.1% | +2.4% |
-| bf16 64 x 8192 | -0.1% | +1.3% | +1.6% |
+| bf16 32 x 4096 | -2.26% | +3.24% | +4.09% |
+| bf16 32 x 8192 | +0.72% | +2.14% | +2.36% |
+| bf16 64 x 8192 | -0.07% | +1.34% | +1.56% |
 
 From the saved reports, in cycles (1500 = 1 us), identical in all three: **B - A = 3840, C - B = 590**.
 
@@ -177,9 +183,9 @@ compiler-accounted) HBM bytes.
 1. Keep the knobs opt-in; no config promotion on these numbers.
 2. Done: byte accounting from the kept traces (section above). Next: the output-only residency mode, tested,
    and the 28 cases re-run on it.
-3. For the on-chip weight-load tail: the kept traces cannot attribute it (one event per fused op). It needs a
-   measurement that separates DMA end from op end -- e.g. the same loop with the weights already resident, or
-   Pallas kernels with explicit DMAs as in `tpu_v5e1_hbm_probe.py` -- before touching the stage.
+3. For the on-chip weight-load tail: the kept traces cannot attribute it (one event per fused op). Without
+   per-DMA events nothing here measures "DMA end to op end" directly; a loop on one reused weight is only an
+   additional contrast (and the compiler decides whether that weight is staged at all). See the last section.
 4. Geometry: represent full and edge windows (unequal shares) only if 2-3 show the equal-share approximation
    matters; the 14 partial-window cases are 3.7% against 2.1%.
 5. Only after 2-4: the older bf16 / int8 stream sets (follow-up 2, with HLO windows where an HLO exists), and a
@@ -195,28 +201,28 @@ per-case change against the residency2 batch). Mean / MAPE in %:
 
 | refsb DRAM | n | A | B | C | C closer than A |
 |---|---|---|---|---|---|
-| memory-bound | 10 | -2.6 / 3.0 | +0.3 / 1.9 | +1.0 / 1.8 | 6 of 10 |
-| balanced | 10 | -12.8 / 12.8 | -8.8 / 8.9 | -3.1 / 4.4 | 10 of 10 |
-| compute-bound | 8 | -8.4 / 8.4 | -7.0 / 7.0 | +1.2 / 1.8 | 8 of 8 |
-| bf16 | 14 | -6.6 / 6.9 | -3.1 / 4.7 | -1.0 / 3.1 | 10 of 14 |
-| int8 | 14 | -9.2 / 9.2 | -7.0 / 7.0 | +0.2 / 2.3 | 14 of 14 |
-| full windows | 14 | -5.5 / 5.7 | -2.6 / 4.2 | +1.2 / 2.2 | 10 of 14 |
-| partial edge windows | 14 | -10.4 / 10.4 | -7.4 / 7.4 | -1.9 / 3.2 | 14 of 14 |
-| all | 28 | -7.9 / 8.1 | -5.0 / 5.8 | -0.4 / 2.7 | 24 of 28 |
+| memory-bound | 10 | -2.66 / 3.02 | +0.32 / 1.92 | +1.03 / 1.78 | 6 of 10 |
+| balanced | 10 | -12.81 / 12.81 | -8.85 / 8.88 | -3.07 / 4.41 | 10 of 10 |
+| compute-bound | 8 | -8.46 / 8.46 | -6.96 / 6.96 | +1.18 / 1.80 | 8 of 8 |
+| bf16 | 14 | -6.63 / 6.89 | -3.10 / 4.72 | -0.97 / 3.13 | 10 of 14 |
+| int8 | 14 | -9.25 / 9.25 | -6.96 / 6.96 | +0.20 / 2.32 | 14 of 14 |
+| full windows | 14 | -5.50 / 5.76 | -2.63 / 4.25 | +1.16 / 2.20 | 10 of 14 |
+| partial edge windows | 14 | -10.38 / 10.38 | -7.43 / 7.43 | -1.94 / 3.25 | 14 of 14 |
+| all | 28 | -7.94 / 8.07 | -5.03 / 5.84 | -0.39 / 2.73 | 24 of 28 |
 
-Analytic DRAM: A -12.0 / 12.0, B -9.1 / 9.1, C -3.7 / 4.9 (memory-bound still -6.5 / 6.5%: the 819 GB/s;
-compute-bound +1.1 / 1.8%, balanced -4.8 / 5.9%).
+Analytic DRAM: A -11.96 / 11.96, B -9.13 / 9.13, C -3.75 / 4.94 (compute-bound +1.05 / 1.80%, balanced
+-4.85 / 5.91%; memory-bound stays short by the 819 GB/s). Exact tables: `full_fused_output/summary_exact.txt`.
 
-- **Four regressions now, all memory-bound bf16** (absolute error, points): 32 x 4096 +3.30 (-1.5 -> +4.8),
-  32 x 8192 +1.70, 64 x 8192 +1.60, 64 x 4096 +0.50. With the input read restored the A baseline of these cases
-  is closer (bf16 memory-bound A: -2.9 -> -1.6%), so the whole-window tail costs more against it: for
-  memory-bound bf16 as a group the candidate is slightly WORSE on MAPE (A 2.2%, C 2.4%; signed -1.6 -> +2.3).
-- The balanced residual is unchanged in size (-3.1 / 4.4%; worst bf16 384 x 4096 -8.9, 256 x 8192 -6.6,
-  256 x 4096 -6.5, int8 128 x 4096 -5.3, int8 192 x 8192 +5.3); compute-bound is within 2%.
-- int8: 14 of 14 closer, C +0.2 / 2.3%.
+- **Four regressions now, all memory-bound bf16** (absolute error, points): 32 x 4096 +3.35 (-1.50 -> +4.85),
+  32 x 8192 +1.64, 64 x 8192 +1.63, 64 x 4096 +0.49. With the input read restored the A baseline of these cases
+  is closer (bf16 memory-bound A: -2.91 -> -1.61%), so the whole-window tail costs more against it: for
+  memory-bound bf16 as a group the candidate is slightly WORSE on MAPE (A 2.22%, C 2.37%; signed -1.61 -> +2.29).
+- The balanced residual is unchanged in size (-3.07 / 4.41%; worst bf16 384 x 4096 -8.92, 256 x 8192 -6.62,
+  256 x 4096 -6.51, int8 192 x 8192 +5.31, int8 128 x 4096 -5.31); compute-bound is within 2%.
+- int8: 14 of 14 closer, C +0.20 / 2.32%.
 
 Reading: with consistent traffic the picture of the residency2 batch holds -- the window schedule with one
-fixed per-window cost removes most of the balanced and compute-bound deficit (refsb 8.1% -> 2.7%), and it
+fixed per-window cost removes most of the balanced and compute-bound deficit (refsb 8.07% -> 2.73%), and it
 over-predicts memory-bound bf16 through the on-chip weight-load tail. Whether that tail is physical is still
 the open measurement; until then the candidate should not be enabled for memory-bound streaming.
 
@@ -238,18 +244,25 @@ partial 3.25%; worst bf16 384 x 4096 -8.92%.
 plus one window cost: 3.2 us for a bf16 window (4783 cycles), 1.4 us for an int8 one (2127). Whether the TPU
 spends that is not known: the traces have one event per fused op.
 
-What the existing loop data bound, without a new measurement (same program, memory-bound rows, two points
-K 4096 -> 8192 at fixed M and dtype, bytes = weights + input): the measured fused op is `bytes / r + c0` with
-c0 = 1.84 us (bf16 M 32), 2.51 (bf16 M 64), 1.42 (int8 M 32), 1.32 (int8 M 64) and r 726-757 GB/s. c0 is ALL
-of the per-iteration fixed time -- last-window work, window cost, start-up -- so it is an upper bound on the
-tail. Against it NPUsim's bf16 tail is 0.7-1.4 us too long while its int8 tail is about right, and variant A's
-(0.24 us) is ~1.2-2.3 us too short. Two points give no residual to judge the fit by; this is a bound, not a
-measurement of the tail, and nothing was tuned to it.
+A conditional diagnostic only, NOT a bound and NOT a measured tail: writing the measured fused op of the
+memory-bound rows as `bytes / r + c0` through the two points K = 4096 and 8192 (bytes = weights + input) gives
+c0 = 1.84 us (bf16 M 32), 2.51 (bf16 M 64), 1.42 (int8 M 32), 1.32 (int8 M 64). Those two points are different
+compiled programs (4x the weights, 2x the activations, another window count and possibly another effective
+rate), the line has no residual degree of freedom, and c0 is whatever an assumed straight line leaves over. It
+neither bounds the last-window time nor tests the weight-load stage. No conclusion is drawn from it.
 
-**Smallest next measurement (one chip, the same loop, no new mechanism assumed):** fix M at 32 (memory-bound for
-every size) and sweep the weight size at SEVERAL window sizes -- K in {2048, 4096, 8192} x N in {2048, 4096, 8192,
-16384}, bf16 and int8, saving the fused-op time and the HLO window of each. The N sweep at fixed K gives the
-fixed per-iteration time with residual degrees of freedom; comparing it across the window sizes XLA picks
-decides the question: a fixed time proportional to the window's bytes (about bytes / 1.5 TB/s) is the on-chip
-load tail NPUsim models; a constant is not, and then the weight-load stage should not sit behind the window
-barrier. Until then the candidate is not to be enabled for memory-bound streaming, and no parameter is refitted.
+**Next observation needed, and what it can and cannot give.** No available trace has per-DMA events, so the
+"DMA end to fused-op end" time cannot be measured directly with these tools; every option below is a contrast
+between programs, and one Colab run may be inconclusive because the compiler chooses the memory space, the
+window geometry and what it hoists.
+
+Prepared, not run: `measure_tpu_v5e1.py --only tailprobe` (see README "Tail probe"). For the four regressing
+bf16 cases and one int8 control it runs the same loop body twice -- on a bank of distinct weights (streaming)
+and on ONE reused weight -- and records, per program, the fused-op event duration, the wall loop slope, the
+full HLO and trace, and the compiler's actual choices (weight layout and memory space, copies, convolution
+operand types, fusions per iteration, window geometry). The pair is reported as comparable only if those
+choices match apart from the weight's staging, and as "staged" only if the HLO shows it; otherwise the result
+is flagged inconclusive. It reports durations and compiler facts; it does not subtract programs into a "tail".
+
+Until such an observation exists the candidate is not to be enabled for memory-bound streaming, and no
+parameter is refitted.

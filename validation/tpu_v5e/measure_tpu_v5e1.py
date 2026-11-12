@@ -22,12 +22,14 @@ import argparse
 import csv
 import glob
 import gzip
+import hashlib
 import json
 import math
 import os
 import re
 import shutil
 import statistics
+import sys
 import time
 
 try:
@@ -516,6 +518,141 @@ def balance():
     write("balance.csv", rows)
 
 
+def hlo_facts(text):
+    """The compiler's choices in an optimized HLO text, as written -- nothing inferred about hardware.
+    windows: the window_config fields of each convolution; convolutions: (result type, operand types);
+    tagged: non-scalar tensors carrying a memory-space tag S(n) (untagged = the default space); copies and
+    cross-program prefetch; fusion / while counts."""
+    types = dict(re.findall(r"(?m)^\s*(?:ROOT\s+)?%([\w.\-]+) = ([a-z]\w*\[[\d,]*\](?:\{[^}]*\})?) ", text))
+    convs = []
+    for res, args in re.findall(r"= ([a-z]\w*\[[\d,]*\](?:\{[^}]*\})?) convolution\(([^)]*)\)", text):
+        ops = []
+        for arg in args.split(","):
+            arg = arg.strip()
+            m = re.match(r"([a-z]\w*\[[\d,]*\])", arg)                # operand printed with its type
+            ops.append(m.group(1) if m else re.sub(r"\{.*", "", types.get(arg.lstrip("%"), "?")))
+        convs.append((re.sub(r"\{.*", "", res), tuple(ops)))
+    keys = ("iteration_bounds", "kernel_window_bounds", "input_window_bounds", "output_window_bounds")
+    found = {k: re.findall(rf'"{k}":\[([^\]]*)\]', text) for k in keys}
+    n = len(found["iteration_bounds"])
+    windows = [{k: found[k][i].replace('"', "") if i < len(found[k]) else None for k in keys} for i in range(n)]
+    tagged = sorted({f"{shape}:S({space})" for shape, space in
+                     re.findall(r"([a-z]\w*\[\d+,[\d,]+\])\{[^}]*S\((\d+)\)[^}]*\}", text)})
+    return dict(convolutions=convs, windows=windows, tagged=tagged,
+                copy_start=len(re.findall(r" copy-start\(", text)), copy_done=len(re.findall(r" copy-done\(", text)),
+                prefetch="cross_program_prefetch_index" in text,
+                fusions=len(re.findall(r" fusion\(", text)), whiles=len(re.findall(r" while\(", text)))
+
+
+def pair_verdict(banked, single, K):
+    """Can the banked-weight loop and the one-weight loop be contrasted at all? (verdict, reasons). Comparable =
+    the same convolution signature, window geometry, fusion and loop structure. The reused weight counts as
+    STAGED only if the HLO says so (a [.., K, K] tensor with a memory-space tag, or copy / prefetch ops, that the
+    banked program lacks). Reusing one weight does not by itself put it on chip."""
+    reasons = [f"{k}: banked {banked[k]} vs single {single[k]}"
+               for k in ("convolutions", "windows", "fusions", "whiles") if banked[k] != single[k]]
+    if not banked["convolutions"] or not banked["windows"]:
+        reasons.append("no convolution / window_config in the HLO (not a TPU compile?)")
+    if reasons:
+        return "inconclusive: the two programs are not the same schedule", reasons
+    weightish = lambda f: {t for t in f["tagged"] if re.search(rf"\[(?:\d+,)?{K},{K}\]", t)}
+    staged = (weightish(single) - weightish(banked)) or single["copy_start"] > banked["copy_start"] \
+        or (single["prefetch"] and not banked["prefetch"])
+    if not staged:
+        return ("comparable schedule, reused weight NOT staged (same memory space as the bank): any time "
+                "difference is a rate / reuse effect, not a staged-weight contrast"), []
+    return ("comparable schedule, reused weight staged per the HLO: a streamed-vs-staged contrast of one fused op "
+            "-- still a difference between two programs, not a measured DMA tail"), [f"staging evidence: {sorted(staged) if isinstance(staged, set) else 'copy / prefetch ops'}"]
+
+
+def tailprobe():
+    """Optional probe for the memory-bound bf16 over-prediction of the window-schedule candidate (not in the
+    default --only). The four regressing cases (bf16 32 / 64 x 4096 / 8192) and one int8 control, each as TWO
+    programs with the SAME loop body as `balance` ((x + carry) @ W[i % R].astype(bf16), f32 sum into the carry):
+      banked  W = a bank of R distinct weights (>= --rotate-mb): every iteration streams a new weight
+      single  W = one weight, reused by every iteration
+    Per program: loop_slope_us (wall slope), module_us_n8 and fused_ops_sum_per_iter_us (profiled EVENT
+    DURATIONS), all op events, the kept trace, the optimized HLO, and hlo_facts() -- what the compiler actually
+    chose. Per case, pair_verdict(): whether the two programs are the same schedule and whether the reused
+    weight is really staged. What this is NOT: a measurement of the time between the last DMA and the end of the
+    fused op (the profiler has no per-DMA events), and the single-weight program is not assumed to be "on chip".
+    No times are subtracted here. Writes tailprobe.csv, tailprobe_pairs.csv, tailprobe_meta.json, hlo/, traces/.
+    Full sizes need a TPU; --quick on CPU checks only that the code runs."""
+    if jax.default_backend() != "tpu" and not ARGS.quick:
+        raise SystemExit("tailprobe: no TPU backend (full sizes are TPU-only; --quick is the CPU functional check)")
+    ARGS.keep_traces = True
+    cases = [("bf16", 32, 512), ("int8", 32, 512)] if ARGS.quick else \
+        [("bf16", 32, 4096), ("bf16", 64, 4096), ("bf16", 32, 8192), ("bf16", 64, 8192), ("int8", 32, 4096)]
+
+    def loop(n, x, ws):                           # identical to balance(): same body, dependence and reduction
+        def body(i, c):
+            w = jax.lax.dynamic_index_in_dim(ws, i % ws.shape[0], keepdims=False)
+            y = (x + c.astype(x.dtype)) @ w.astype(BF16)
+            return c + jnp.sum(y.astype(F32)) * 1e-9
+        return jax.lax.fori_loop(0, n, body, jnp.float32(0))
+    run_loop = jax.jit(loop, static_argnums=0)
+
+    def stack(key, shape, dtype):
+        if dtype == "int8":
+            gen = lambda k: jax.random.randint(k, shape, -8, 8, jnp.int8)
+        else:
+            gen = lambda k: (jax.random.normal(k, shape, F32) * 0.02).astype(BF16)
+        return jax.jit(gen)(jax.random.PRNGKey(key))
+
+    def slope(x, ws, n, repeats=5):
+        def wall(k):
+            t = time.perf_counter()
+            jax.block_until_ready(run_loop(k, x, ws))
+            return time.perf_counter() - t
+        for k in (n, 2 * n):
+            wall(k)
+        return max(statistics.median(wall(2 * n) for _ in range(repeats))
+                   - statistics.median(wall(n) for _ in range(repeats)), 0.0) / n * 1e6
+
+    os.makedirs(os.path.join(ARGS.out, "hlo"), exist_ok=True)
+    rows, pairs = [], []
+    for dtype, M, K in cases:
+        wbytes = 1 if dtype == "int8" else 2
+        R = max(2, math.ceil(max(ARGS.rotate_mb, 1) * 2 ** 20 / (K * K * wbytes)))
+        x = stack(M + 7, (M, K), "bf16")
+        bank = stack(K + wbytes, (R, K, K), dtype)
+        facts = {}
+        for mode, ws in (("banked", bank), ("single", stack(K + wbytes + 100, (1, K, K), dtype))):
+            tag = f"tailprobe_{dtype}_{M}x{K}_{mode}"
+            try:
+                text = run_loop.lower(8, x, ws).compile().as_text()
+            except Exception as e:
+                text = ""
+                print(f"  [{tag}] hlo: {type(e).__name__}: {e}")
+            open(os.path.join(ARGS.out, "hlo", tag + ".txt"), "w").write(text)
+            facts[mode] = hlo_facts(text)
+            us = slope(x, ws, 10 if M * K * K > 2 ** 33 else 40)
+            r = bench(lambda a, b: run_loop(8, a, b), (x, ws), tag)
+            fus = r["ops"] and sum(v for k, v in r["ops"].items() if "fusion" in k or "convolution" in k) / 8
+            rows.append(dict(dtype=dtype, M=M, K=K, N=K, mode=mode, weights_in_loop=ws.shape[0],
+                             loop_slope_us=round(us, 3), module_us_n8=r["device_us"] and round(r["device_us"], 3),
+                             fused_ops_sum_per_iter_us=fus and round(fus, 3),
+                             ops=r["ops"] and ";".join(f"{k}={v:.3f}" for k, v in r["ops"].items()),
+                             hlo_facts=json.dumps(facts[mode]), hlo_sha256=hashlib.sha256(text.encode()).hexdigest()))
+            print(f"tailprobe {mode:6s} {dtype} {M:3d} x {K:5d}  slope {us:9.2f} us  fused ops / iter {fus and round(fus, 2)}")
+        verdict, reasons = pair_verdict(facts["banked"], facts["single"], K)
+        pairs.append(dict(dtype=dtype, M=M, K=K, verdict=verdict, reasons=" | ".join(reasons),
+                          windows_banked=json.dumps(facts["banked"]["windows"]),
+                          windows_single=json.dumps(facts["single"]["windows"])))
+        print(f"  -> {verdict}" + (f" ({'; '.join(reasons)})" if reasons else ""))
+        del bank
+    write("tailprobe.csv", rows)
+    write("tailprobe_pairs.csv", pairs)
+    json.dump(dict(script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(),
+                   argv=sys.argv, quick=ARGS.quick, backend=jax.default_backend(), jax=jax.__version__,
+                   rotate_mb=ARGS.rotate_mb, cases=cases,
+                   kinds=dict(loop_slope_us="wall-clock slope of the loop, host side",
+                              fused_ops_sum_per_iter_us="profiler event durations of the loop's fused ops / 8",
+                              hlo_facts="compiler output, static", verdict="comparison of the two HLO texts"),
+                   not_measured="time between the last DMA and the end of the fused op; measured HBM bytes"),
+              open(os.path.join(ARGS.out, "tailprobe_meta.json"), "w"), indent=1)
+
+
 def run(experiments, default_only, out_name, argv=None):
     """Parse the common options, write env.json and run the selected experiments (name -> function)."""
     global ARGS
@@ -548,7 +685,8 @@ def run(experiments, default_only, out_name, argv=None):
 
 
 def main(argv=None):
-    run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk, "balance": balance},
+    run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk, "balance": balance,
+         "tailprobe": tailprobe},
         "gemm,vector,decode", "tpu_v5e1", argv)
 
 

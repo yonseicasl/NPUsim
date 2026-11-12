@@ -614,3 +614,33 @@ the measurement) 2.73%; bf16 6.89 -> 3.13%, int8 9.25 -> 2.32%; 24 of 28 closer,
 worse (+0.5 .. +3.3 points) through the on-chip weight-load tail, whose existence on the TPU is the open
 measurement. An earlier batch on another activation assumption (2.93%) is kept as history; the first batches of
 that driver ran on wrong inputs and are withdrawn (`INVALID_SHARED_NETWORK/`).
+
+### Tail probe (optional; prepared 2026-11-12, NOT run -- needs one TPU v5e chip)
+
+`measure_tpu_v5e1.py --only tailprobe` (TPU only at full size; `--quick` on CPU is a functional check). For the
+four memory-bound bf16 cases the window-schedule candidate over-predicts (32 / 64 x 4096 / 8192) and one int8
+control (32 x 4096), the same loop body as `balance` runs as two programs: **banked** (a bank of distinct
+weights, a new one streamed every iteration) and **single** (one weight reused by every iteration).
+
+Three kinds of numbers come out, and they are kept apart:
+
+| kind | columns | what it is |
+|---|---|---|
+| event duration | `fused_ops_sum_per_iter_us`, `module_us_n8`, `ops` | profiler events of the device; one event per fused op, no per-DMA events |
+| wall slope | `loop_slope_us` | host wall clock, (median wall(2n) - median wall(n)) / n |
+| compiler facts | `hlo_facts`, `hlo/*.txt`, `tailprobe_pairs.csv` | read from the optimized HLO: convolution operand types, window geometry, memory-space tags, copies / prefetch, fusion and loop counts -- static, not measured |
+
+`tailprobe_pairs.csv` gives a verdict per case from the two HLO texts alone: *inconclusive* when the two programs
+are not the same schedule (different window geometry, convolution signature, fusion or loop structure -- e.g. the
+reused weight was hoisted); *comparable, reused weight NOT staged* when the HLO puts it in the same memory space
+as the bank; *comparable, staged per the HLO* only when a tag or a copy shows it. Reusing one weight is not
+assumed to put it on chip.
+
+What it cannot give: the time between the end of the last DMA and the end of the fused op -- there is no event
+for it. A banked-vs-single difference is a difference between two programs; it is not to be reported as a
+measured tail, and no model parameter is to be fitted to it. One run may well end inconclusive. `test_tailprobe.py`
+(CPU): `hlo_facts` on HLO saved from the balance run, `pair_verdict` on constructed cases, the `--quick` run and
+the TPU guard.
+
+Run (Colab, TPU v5e-1): `%run measure_tpu_v5e1.py --only tailprobe`, then zip the output directory (it keeps
+`traces/`).
