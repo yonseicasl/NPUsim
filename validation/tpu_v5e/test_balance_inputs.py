@@ -32,6 +32,18 @@ for accel in runs:
     assert ("weight_format = int8" in cfg) == (dt == "int8"), accel
     assert ("offchip_window_count" in cfg) == (v != "a") and ("window_switch_cycle" in cfg) == (v == "c"), accel
     assert "activation_residency = 2" in cfg and "program_setup_cycle = 0" in cfg, accel
+    assert "fused_output_consumer" not in cfg, accel
+shutil.rmtree(out)
+
+# --activations fused_output: its own artifact names and config lines; the default mode is untouched above
+out = tempfile.mkdtemp()
+subprocess.run([sys.executable, os.path.join(HERE, "balance_npusim.py"), run, out, "--only", "int8:128:4096",
+                "--generate-only", "--activations", "fused_output"], check=True, capture_output=True)
+gen = os.path.join(out, "generated_analytic_fusedout")
+for accel in sorted(os.listdir(gen)):
+    cfg = open(os.path.join(gen, accel, accel + ".cfg")).read()
+    assert "fused_output_consumer = 1" in cfg and "activation_residency = 0" in cfg, accel
+    assert "activation_residency = 2" not in cfg, accel
 shutil.rmtree(out)
 
 # the old bug, reproduced: two shapes written under one name -> the first run's network is the second shape

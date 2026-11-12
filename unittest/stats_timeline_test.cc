@@ -319,6 +319,43 @@ void run_window_cases() {
     expect_close(run_windows(8, 2, 80.0, 40.0, 0.0, 0.0, 16), 100.0, "explicit outstanding limit 16 respected");
 }
 
+// What [accelerator] fused_output_consumer applies: apply_graph_residency(input off chip, output on chip). The
+// output's off-chip traffic (multi-chip link and DRAM: requests, transfers, payload transactions, cycles) is
+// removed; the input's and the weight's are untouched; everything on chip -- including the output's own GLB
+// accesses -- is untouched. No capacity enters: the caller decides, here unconditionally.
+void run_fused_output_consumer() {
+    stats_t stats;
+    for(unsigned t = 0; t < data_type_t::NUM_DATA_TYPES; ++t) {
+        stats.num_data_transfer_dram[t] = 100 + t;
+        stats.payload_link_transactions_dram[t] = 200 + t;
+        stats.access_cycle_dram[t] = 300.0 + t;
+        stats.transfer_cycle_dram[t] = 400.0 + t;
+        stats.payload_link_transactions_multi_chip[t] = 500 + t;
+        stats.access_cycle_multi_chip[t] = 600.0 + t;
+        stats.access_cycle_global_buffer[t] = 700.0 + t;
+        stats.fill_access_cycle_global_buffer[t] = 800.0 + t;
+    }
+    stats.apply_graph_residency(false, true, "test");
+    const unsigned in = data_type_t::INPUT, wt = data_type_t::WEIGHT, out = data_type_t::OUTPUT;
+    for(unsigned t : {in, wt}) {
+        expect(stats.num_data_transfer_dram[t] == 100 + t && stats.payload_link_transactions_dram[t] == 200 + t,
+               "fused output consumer: input / weight DRAM transfers unchanged");
+        expect_close(stats.access_cycle_dram[t], 300.0 + t, "fused output consumer: input / weight DRAM cycles");
+        expect_close(stats.transfer_cycle_dram[t], 400.0 + t, "fused output consumer: input / weight DRAM link");
+        expect(stats.payload_link_transactions_multi_chip[t] == 500 + t, "fused output consumer: input / weight link");
+        expect_close(stats.access_cycle_multi_chip[t], 600.0 + t, "fused output consumer: input / weight link cycles");
+        expect_close(stats.fill_access_cycle_global_buffer[t], 800.0 + t, "fused output consumer: input fill kept");
+    }
+    expect(stats.num_data_transfer_dram[out] == 0 && stats.payload_link_transactions_dram[out] == 0,
+           "fused output consumer: no output DRAM transfers");
+    expect_close(stats.access_cycle_dram[out] + stats.transfer_cycle_dram[out], 0.0, "fused output consumer: no output DRAM cycles");
+    expect(stats.payload_link_transactions_multi_chip[out] == 0, "fused output consumer: no output link transfers");
+    expect_close(stats.access_cycle_multi_chip[out], 0.0, "fused output consumer: no output link cycles");
+    for(unsigned t = 0; t < data_type_t::NUM_DATA_TYPES; ++t) {
+        expect_close(stats.access_cycle_global_buffer[t], 700.0 + t, "fused output consumer: on-chip GLB accesses kept");
+    }
+}
+
 } // namespace
 
 int main() {
@@ -328,6 +365,7 @@ int main() {
     run_sfu_streaming_cases();
     run_outer_iterations();
     run_window_cases();
+    run_fused_output_consumer();
     if(failures != 0) {
         std::cerr << failures << " stats timeline check(s) FAILED" << std::endl;
         return 1;

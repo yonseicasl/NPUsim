@@ -89,6 +89,7 @@ npu_t::npu_t() :
     interlayer_overlap(false),
     activation_residency(0),
     timeline_dram_tiles(false),
+    fused_output_consumer(false),
     offchip_window_count(0),
     window_switch_cycle(0.0),
  multi_chip(NULL),
@@ -225,6 +226,17 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             }
             if(activation_residency > 2) {
                 std::cerr << "Error: [accelerator] activation_residency must be 0, 1 or 2" << std::endl;
+                exit(1);
+            }
+            // fused_output_consumer: the run's output is consumed by an on-chip fused consumer AS IT IS PRODUCED
+            // (e.g. a reduction fused into the GEMM), so the output matrix is never materialized off chip -- and
+            // never held whole on chip either, so no whole-tensor capacity applies (unlike activation_residency).
+            // The input is still read from DRAM; the on-chip output / partial-sum costs stay. The consumer's own
+            // work and its result are NOT simulated. One mapped layer per run only; not with activation_residency.
+            section_config.get_setting("fused_output_consumer", &fused_output_consumer);
+            if(fused_output_consumer && activation_residency > 0) {
+                std::cerr << "Error: [accelerator] fused_output_consumer cannot be combined with "
+                          << "activation_residency" << std::endl;
                 exit(1);
             }
             if(program_setup_cycle < 0.0) {
@@ -848,6 +860,24 @@ void npu_t::connect() {
 void npu_t::run(const std::string m_accelerator_config, const std::string m_network_config) {
     std::cout << "# Run the network" << std::endl;
 
+    // fused_output_consumer describes a run of exactly ONE mapped layer of a network config; anything else is
+    // refused here, before any layer runs.
+    if(fused_output_consumer) {
+        unsigned mapped = 0;
+        if(!executable_ir_mode) {
+            for(unsigned i = 0; i < network->num_layers; ++i) {
+                mapped += network->layers[i]->layer_type == nebula::CONVOLUTIONAL_LAYER ||
+                          network->layers[i]->layer_type == nebula::CONNECTED_LAYER;
+            }
+        }
+        if(executable_ir_mode || mapped != 1) {
+            std::cerr << "Error: [accelerator] fused_output_consumer describes a run of exactly one mapped layer "
+                      << "of a network config (" << (executable_ir_mode ? std::string("executable-IR workload")
+                                                     : std::to_string(mapped) + " mapped layers") << ")" << std::endl;
+            exit(1);
+        }
+    }
+
     if(executable_ir_mode && sfus.empty()) {
         for(const workload_operation_t &operation : workload->operations) {
             if(!operation.mapping_required) {
@@ -1398,6 +1428,11 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                         std::to_string(residency.capacity) + " bytes";
                     layer_stats[stats_index]->apply_graph_residency(
                         input_in_glb, residency.retain_output, note);
+                } else if(fused_output_consumer) {      // one mapped layer, checked at the top of run()
+                    layer_stats[stats_index]->apply_graph_residency(false, true,
+                        "fused_output_consumer: input DRAM-backed, output consumed on chip as produced (not "
+                        "materialized; no whole-tensor capacity; the consumer's own work and result are not "
+                        "simulated)");
                 } else if(activation_residency > 0) {
                     // Network path: keep the activation between mapped layers on chip when it fits the GLB's
                     // tensor residency capacity; the run's own input/output only with activation_residency 2.

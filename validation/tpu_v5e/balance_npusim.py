@@ -2,8 +2,14 @@
 """NPUsim on the loop cases of a `measure_tpu_v5e1.py --only balance` run: three ablations per case.
 
 Each GEMM is simulated WHOLE (every 512-column strip a DRAM iteration; no strip extrapolation), in-program
-(program_setup_cycle 0) with activations resident (activation_residency 2: the loop's output is reduced on chip;
-its input read, M x K bf16 per iteration, is NOT modelled), on an unchanged DRAM model:
+(program_setup_cycle 0), on an unchanged DRAM model. Activations, --activations:
+  residency2    activation_residency = 2 REQUESTED: input and output on chip, granted only when the whole tensors
+                fit the GLB residency capacity -- otherwise both go through DRAM (12 of the 28 cases).
+  fused_output  fused_output_consumer = 1: input read from DRAM, output matrix never materialized. This is what
+                the compiler's static accounting of the loop's fused op says (weights + M x K x 2 bytes read,
+                4 bytes written; trace_bytes.py) -- compiler accounting, not measured traffic.
+In both modes the fused op's own extra work (input add, output conversion and reduction) and its 4-byte result
+are NOT simulated. Variants:
   A  the config as it is: off-chip stages follow the mapping's tiles
   B  offchip_window_count = the case's XLA window count (iteration_bounds of the run's own optimized HLO)
   C  B + window_switch_cycle = 590 (0.393 us at 1.5 GHz; fixed before the balance run, both dtypes)
@@ -14,7 +20,8 @@ What the window schedule is and is not: COUNT-BASED, EQUAL-SHARE. Only the numbe
 the layer's off-chip cost and a near-equal run of the simulator's tiles. XLA's window geometry (kernel_window,
 partial edge windows) is not represented: `window_coverage` > 1 marks cases whose last windows are partial
 (windows x window size / weight size, reading kernel_window as [8 K-rows, 128 columns] units -- an assumption).
-Not modelled and not absorbed by w: the loop's input read and add, the output conversion and reduction.
+Not modelled in either mode and not absorbed by w: the fused op's input add, its output conversion and reduction.
+The input READ is modelled only with --activations fused_output (and in residency2's capacity-fallback cases).
 
 The binary and library are hashed before and after the batch and the batch fails if they changed; the generated
 configs, networks, mappings and NPUsim reports of every run are saved under OUT/generated_<dram>/. Every run has
@@ -90,6 +97,10 @@ def main():
     ap.add_argument("--w", type=int, default=W_CYCLES, help="window_switch_cycle of variant C (sensitivity only)")
     ap.add_argument("-j", "--jobs", type=int, default=6)
     ap.add_argument("--generate-only", action="store_true", help="write and check every run's inputs, run nothing")
+    ap.add_argument("--activations", choices=("residency2", "fused_output"), default="residency2",
+                    help="residency2 (the first batches): activation_residency = 2, granted only when the tensors "
+                         "fit the GLB capacity. fused_output: fused_output_consumer = 1 -- input read from DRAM, "
+                         "output consumed on chip as produced, as the compiler accounts the loop's fused op")
     a = ap.parse_args()
     only = a.only and {tuple(x.split(":")) for x in a.only.split(",")}
     cases = []
@@ -110,7 +121,9 @@ def main():
     for x in cases:
         base = open(os.path.join(cfgroot, "accelerators", ACCEL[x["dtype"]] + ".cfg")).read()
         base = re.sub(r"(?m)^program_setup_cycle\s*=.*$", "program_setup_cycle = 0", base)
-        base, k = re.subn(r"(?m)^activation_residency\s*=.*$", "activation_residency = 2", base)
+        act = "activation_residency = 2" if a.activations == "residency2" else \
+            "activation_residency = 0\nfused_output_consumer = 1"
+        base, k = re.subn(r"(?m)^activation_residency\s*=.*$", act, base)
         assert k == 1 and "offchip_window_count" not in base
         knobs = {"A": "", "B": f"offchip_window_count = {x['windows']}\n",
                  "C": f"offchip_window_count = {x['windows']}\nwindow_switch_cycle = {a.w}\n"}
@@ -126,7 +139,8 @@ def main():
         check_inputs(cfgroot, name, accel, M, K, K)
     assert len({t[2] for t in todo.values()}) == len(todo)
     os.makedirs(a.out, exist_ok=True)
-    tag = (os.path.splitext(os.path.basename(a.dram))[0] if a.dram else "analytic") + (f"_w{a.w}" if a.w != W_CYCLES else "")
+    tag = (os.path.splitext(os.path.basename(a.dram))[0] if a.dram else "analytic") + (f"_w{a.w}" if a.w != W_CYCLES else "") \
+        + ("_fusedout" if a.activations == "fused_output" else "")
     gen = os.path.join(a.out, "generated_" + tag)            # what every run is given
     shutil.rmtree(gen, ignore_errors=True)
     for _, _, name, accel in todo.values():
@@ -163,7 +177,28 @@ def main():
             accel = todo[x["dtype"], x["M"], x["K"], v][3]       # what the run itself reports, not what was asked
             m = re.search(r"Tensor residency\s*:\s*(.*)", open(os.path.join(gen, accel, f"{accel}_{accel}_layer_0.txt")).read())
             row[f"residency_{v}"] = m.group(1).strip() if m else "not reported"
+            # the run's own DRAM payload transactions; A, B and C of a case must move the same data
+            text = open(os.path.join(gen, accel, f"{accel}_{accel}_layer_0.txt")).read()
+            blk = text[text.index("Multi-chip <-> DRAM transactions"):][:400]
+            tx = tuple(int(re.search(rf"\* {key}\s*:\s*(\d+)", blk).group(1)) for key in ("Input data", "Weight", "Output data"))
+            assert row.setdefault("_tx", tx) == tx, f"{accel}: DRAM traffic differs between variants"
             cells.append(f"{us:8.2f} {100 * e:+5.1f}%")
+        tx = row.pop("_tx")
+        # Bytes = transactions x the DRAM line size READ FROM THE RUN'S SAVED CONFIG ([dram] line_size, bits, per
+        # datatype input:weight:output) -- then checked against the tensor sizes, not derived from them.
+        cfg = open(os.path.join(gen, accel, accel + ".cfg")).read()
+        dram = cfg[cfg.index("[dram]"):]
+        bits = [int(b) for b in re.search(r"(?m)^line_size\s*=\s*([\d:]+)", dram).group(1).split(":")]
+        assert len(bits) == 3 and all(b % 8 == 0 for b in bits), bits
+        got = [t * b // 8 for t, b in zip(tx, bits)]
+        wbytes = x["K"] * x["K"] * (1 if x["dtype"] == "int8" else 2)
+        act = x["M"] * x["K"] * 2
+        row.update(dram_line_bits=":".join(map(str, bits)), dram_input_bytes=got[0], dram_weight_bytes=got[1],
+                   dram_output_bytes=got[2], dram_traffic="same for all variants of the case")
+        assert got[1] == wbytes, f"{accel}: DRAM weight payload {got[1]} B, tensor {wbytes} B"
+        assert got[0] in (0, act) and got[2] in (0, act), f"{accel}: activation payload {got[0]} / {got[2]} B, tensor {act} B"
+        if a.activations == "fused_output":
+            assert (got[0], got[2]) == (act, 0), f"{accel}: fused_output wants input {act} B and no output, got {got}"
         rows.append(row)
         print(f"{x['dtype']:5} {x['M']:4d} {x['K']:5d} {x['windows']:3d} | {x['measured_us']:8.2f} | " + " | ".join(cells))
     for g in ("all", "bf16", "int8", "full windows", "partial edge windows"):   # edge effects are not pooled away
@@ -192,10 +227,16 @@ def main():
                                                    "before the 2026-11-12 balance run; one value for both dtypes",
                                             regime="XLA streaming loop on TPU v5e (JAX 0.11.2); not for staged / "
                                                    "isolated one-op programs or shapes without an HLO"),
+                   activations=a.activations,
                    assumptions=["program_setup_cycle = 0 (in-program)",
-                                "activation_residency = 2: output reduced on chip; the loop's input read "
-                                "(M x K bf16 per iteration) is not modelled",
-                                "input add and output conversion / reduction of the fused op are not modelled"]),
+                                "NOT simulated in either mode: the fused op's input add, output conversion and "
+                                "reduction, and its 4-byte result"] + (
+                       ["activation_residency = 2 REQUESTED; granted only when input and output fit the GLB "
+                        "residency capacity, else both go through DRAM -- see residency_<variant> per case"]
+                       if a.activations == "residency2" else
+                       ["fused_output_consumer = 1: input read from DRAM, output matrix not materialized (no "
+                        "whole-tensor capacity); matches the compiler's static accounting of the loop's fused op "
+                        "(weights + M x K x 2 read, 4 B written), which is not measured traffic"])),
               open(os.path.join(a.out, f"balance_npusim_{tag}.json"), "w"), indent=1)
 
 
