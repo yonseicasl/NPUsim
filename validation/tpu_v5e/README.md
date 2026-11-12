@@ -650,5 +650,6 @@ not), `pair_verdict` cases (an extra copy alone or a tag alone never yields a st
 run and the TPU guard. `tailprobe_meta.json` records script hash, argv, backend, device kind, JAX version; each
 row the HLO hash, the hash of every trace file by its relative path, and requested vs traced invocation counts.
 
-Run (Colab, TPU v5e-1): `%run measure_tpu_v5e1.py --only tailprobe`, then zip the output directory (it keeps
-`traces/`).
+Run (Colab, TPU v5e-1): `%run measure_tpu_v5e1.py --only tailprobe --out <fresh directory>`, then zip the output
+directory (it keeps `traces/`). An `--out` that already holds tailprobe output is refused before anything is
+written: earlier captures are never removed or overwritten.

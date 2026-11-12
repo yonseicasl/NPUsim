@@ -18,6 +18,11 @@ gain over an earlier cohort: A, B and C are compared on the same 28 cases, same 
   the fused op's 4-byte scalar write, its scalar reads and its extra work (input add, output conversion and
   reduction) are not modelled. All knobs opt-in, default 0; no config, no push, no merge.
 - Open: the memory-bound bf16 over-prediction (section "Remaining evidence gap").
+- The measurement side was re-audited independently by Codex from the original archive, without this branch's
+  parsers: in all 28 balance-loop captures every convolution event lies inside exactly one module interval and
+  every module holds exactly 8 (5020 modules, 40160 events), and sum(durations) / modules / 8 reproduces each
+  `fused_ops_sum_per_iter_us` of `balance.csv` within its rounding
+  (`codex_independent_review/npusim_codex_balance_trace_audit.json`, `npusim_codex_audit_balance_traces.py`).
 
 ## What was implemented
 

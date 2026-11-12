@@ -144,6 +144,31 @@ meta = json.load(open(os.path.join(out, "tailprobe_meta.json")))
 assert meta["backend"] == "cpu" and meta["quick"] and meta["device_kind"] and meta["profiled_loop_iterations"] == 8
 assert "not_measured" in meta and "smoke check" in meta["cpu_note"] and len(meta["script_sha256"]) == 64
 assert len(os.listdir(os.path.join(out, "hlo"))) == 4
-p = subprocess.run([sys.executable, script, "--only", "tailprobe", "--out", out], capture_output=True, text=True)
-assert p.returncode != 0 and "no TPU backend" in (p.stderr + p.stdout), p.stderr[-300:]
+p = subprocess.run([sys.executable, script, "--only", "tailprobe", "--out", tempfile.mkdtemp()], capture_output=True, text=True)
+assert p.returncode != 0 and "no TPU backend" in (p.stderr + p.stdout), p.stderr[-300:]   # full size, fresh --out
+
+# a second run into the same --out is refused and every earlier file stays byte-identical
+def snapshot(root):
+    return {os.path.relpath(os.path.join(dp, f), root): open(os.path.join(dp, f), "rb").read()
+            for dp, _, fs in os.walk(root) for f in fs}
+
+
+before = snapshot(out)
+assert any(k.startswith(os.path.join("hlo", "tailprobe_")) for k in before) and "tailprobe.csv" in before
+p = subprocess.run([sys.executable, script, "--only", "tailprobe", "--quick", "--max-iters", "5", "--rotate-mb", "2",
+                    "--out", out], capture_output=True, text=True)
+after = snapshot(out)
+assert p.returncode != 0 and "already holds tailprobe output" in (p.stderr + p.stdout), p.stderr[-300:]
+assert after == before                                      # every file, env.json included, byte-identical
+
+marked = tempfile.mkdtemp()                                 # an earlier capture alone (e.g. an interrupted run)
+os.makedirs(os.path.join(marked, "traces", "tailprobe_bf16_32x512_banked"))
+marker = os.path.join(marked, "traces", "tailprobe_bf16_32x512_banked", "earlier_capture.bin")
+open(marker, "wb").write(b"\x00evidence\xff")
+p = subprocess.run([sys.executable, script, "--only", "tailprobe", "--quick", "--max-iters", "5", "--rotate-mb", "2",
+                    "--out", marked], capture_output=True, text=True)
+assert p.returncode != 0 and "nothing was changed" in (p.stderr + p.stdout), p.stderr[-300:]
+assert open(marker, "rb").read() == b"\x00evidence\xff"
+assert not os.path.exists(os.path.join(marked, "tailprobe.csv")) and not os.path.isdir(os.path.join(marked, "hlo"))
+assert snapshot(marked) == {os.path.join("traces", "tailprobe_bf16_32x512_banked", "earlier_capture.bin"): b"\x00evidence\xff"}
 print("ok (functional checks on CPU only; no hardware validation)")

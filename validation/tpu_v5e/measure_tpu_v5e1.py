@@ -647,6 +647,15 @@ def pair_verdict(banked, single, K, banked_ev=None, single_ev=None):
             + "; any time difference is a two-program contrast, not a measured DMA tail"), raw
 
 
+def tailprobe_refuse_existing(out):
+    """Nothing of an earlier tailprobe run is removed or overwritten: stop if `out` already holds any."""
+    old = [p for pat in ("tailprobe*.csv", "tailprobe*.json", os.path.join("hlo", "tailprobe_*"),
+                         os.path.join("traces", "tailprobe_*")) for p in glob.glob(os.path.join(out, pat))]
+    if old:
+        raise SystemExit(f"tailprobe: {out} already holds tailprobe output ({len(old)} entries, e.g. "
+                         f"{os.path.relpath(sorted(old)[0], out)}); nothing was changed -- use a fresh --out")
+
+
 def tailprobe():
     """Optional probe for the memory-bound bf16 over-prediction of the window-schedule candidate (not in the
     default --only). The four regressing cases (bf16 32 / 64 x 4096 / 8192) and one int8 control, each as TWO
@@ -669,9 +678,10 @@ def tailprobe():
     traces show one convolution-fusion event per iteration; staging is never concluded, only raw evidence listed.
     What this is NOT: a measurement of the time between the last DMA and the end of the fused op (there are no
     per-DMA events); nothing is subtracted between programs. Full sizes need a TPU; --quick on CPU checks only
-    that the code runs."""
+    that the code runs. An --out that already holds tailprobe output is refused untouched (fresh --out per run)."""
     if jax.default_backend() != "tpu" and not ARGS.quick:
         raise SystemExit("tailprobe: no TPU backend (full sizes are TPU-only; --quick is the CPU functional check)")
+    tailprobe_refuse_existing(ARGS.out)           # also checked in main() before env.json is written
     ARGS.keep_traces = True
     ITERS = 8                                     # loop iterations of the profiled program
     cases = [("bf16", 32, 512), ("int8", 32, 512)] if ARGS.quick else \
@@ -721,7 +731,6 @@ def tailprobe():
             n = 10 if M * K * K > 2 ** 33 else 40
             wn, w2n = walls(x, ws, n)
             us = (statistics.median(w2n) - statistics.median(wn)) / n * 1e6
-            shutil.rmtree(os.path.join(ARGS.out, "traces", tag), ignore_errors=True)   # this capture only
             r = bench(lambda a, b: run_loop(ITERS, a, b), (x, ws), tag)
             ev = evs[mode] = op_events(os.path.join(ARGS.out, "traces", tag), ITERS)
             ok = bool(ev and ev["verified"])       # without it no device time of this capture is reported
@@ -797,6 +806,13 @@ def run(experiments, default_only, out_name, argv=None):
 
 
 def main(argv=None):
+    # before run() writes anything (env.json): a tailprobe run never touches an --out that already has its output
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--only", default="")
+    pre.add_argument("--out", default="/kaggle/working/tpu_v5e1" if os.path.isdir("/kaggle/working") else "tpu_v5e1_out")
+    known = pre.parse_known_args(argv)[0]
+    if "tailprobe" in known.only.split(","):
+        tailprobe_refuse_existing(known.out)
     run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk, "balance": balance,
          "tailprobe": tailprobe},
         "gemm,vector,decode", "tpu_v5e1", argv)
