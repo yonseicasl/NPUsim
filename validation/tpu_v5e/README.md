@@ -759,10 +759,10 @@ The TPU comparison numbers of every set with this change are a separate entry be
 int8 weights with the knob (Codex's representative regression, `results/2026-11-11_codex_audit/core_representative/`,
 refsb, M 1 / 8, K = N = 4096): bf16 +2.9 / +3.9% -> -0.5 / +0.5%, int8 -5.8 / -4.0% -> -8.9 / -7.2%. The knob stays on
 in `tpu_v5e_int8w.cfg`: it corrects the timeline, which does not depend on the weight format, and the int8 deficit
-is visible in the measurement itself -- on the TPU int8 weights stream 3-8% slower per byte than bf16 (same shapes,
-follow-up 2 and 3: int8 / bf16 byte rate 0.92-0.97; 8.5% / 7.6% at these two cases), a cost NPUsim does not model
-(int8 -> bf16 conversion is the candidate; not verified). Before the knob the per-strip fill covered part of it.
-Open item: model the int8 weight path with its own evidence; until then int8 GEMMs read ~7-9% short.
+is in the measurement, not in the knob. (Superseded 2026-11-12: this paragraph went on to say that int8 weights
+"stream 3-8% slower per byte"; that was a ratio of total times. The fit below finds the same per-byte rate for both
+dtypes and a fixed part per loop iteration -- see "int8 weights: what the error is".) Before the knob the per-strip
+fill covered part of it.
 
 **Unresolved: row tiling in `compare_v5e.py` (found by Codex, 2026-11-11).** For M > 512 the script simulates
 one <= 512-row tile as its own run and sums the tiles. A direct run of the whole GEMM (`check_tiling.py`) gives
@@ -820,3 +820,54 @@ measurements with follow-up 2's re-run GEMM CSVs and the KV read at 819 GB/s (ru
   3.76%).
 - `hbm2e_v5e.yaml` (82% sustained, too slow a DRAM) now pools best at 4.3% (mean -1.2%): a slower DRAM
   cancelling the same missing costs, not a better model.
+
+### int8 weights: what the error is (2026-11-12; no simulator change)
+
+With Codex's audit (`INT8_AUDIT.md`, `audit_int8.py`, `results/2026-11-12_int8_audit/`). `int8_decompose.py`
+reproduces the numbers here from stored files (`results/2026-11-12_int8_core/decompose.log`); every constant in it
+is fitted to TPU data and none is in the simulator.
+
+**NPUsim's int8 path.** `tpu_v5e_int8w.cfg` differs from `tpu_v5e.cfg` in one line (`weight_format = int8`): same
+mapping, tiles and schedule, half the weight bytes. No accounting error was found in it. What it cannot express is
+that XLA compiles a different schedule per dtype (128 x 4096 x 4096: 8 windows, `kernel_window` 512x4, with bf16
+weights and 11, 512x3, with int8 -- raw compiler metadata; the cast is folded into a mixed-type convolution, there is no separate conversion op or bf16 copy in HBM).
+
+**Scope of the measured times.** `gemm.csv` / `gemm_int8.csv` of follow-up 2 are *loop slopes*: the stream bench's
+`(median wall(2n) - median wall(n)) / n`, written into `device_us` too. One iteration is `(x + carry) @
+W.astype(bf16)`, a float32 sum of the result and the carry update -- not a profiled kernel. `compare_v5e.py` now
+records `timing_kind` (`--timing device_trace | device_slope | loop_slope | wall`; unstated, it is guessed and
+marked `(inferred)`, or `unknown` when a file has only `device_us`). The stored files: follow-up 2 `gemm.csv`,
+`gemm_int8.csv` = loop_slope; smallk2 `gemm_oddchain.csv` = device_slope; `rot/gemm.csv` = device_trace.
+
+**HBM-bound (M <= 32), loop-slope scope:** `t = F + weight_bytes / r` over the four projections.
+
+| | bf16 F (us) | bf16 r (GB/s) | int8 F (us) | int8 r (GB/s) |
+|---|---|---|---|---|
+| TPU, follow-up 2 and 3, M 1 / 8 / 32 | 1.3-2.9 | 751-757 | 1.4-3.3 | 733-765 |
+| NPUsim, refsb | 0.25-0.60 | 737-742 | 0.14-0.50 | 731-742 |
+
+The per-byte rate is the same for both dtypes and NPUsim has it within 2%. The difference is the fixed part per loop
+iteration, ~2 us on the TPU and ~0.3 us in NPUsim, the same for bf16 and int8; with half the bytes it weighs twice
+as much (4096 x 4096: 2 us of 46 us vs of 25 us). In bf16 NPUsim's slightly slower rate covers it. What the 2 us
+is (loop body, fusion start-up) is not attributed; in the profiled fusion scope the int8 error of the same
+predictions is smaller (Codex: MAPE 6.0% loop vs 4.9% fusion) but not gone.
+
+**Compute ~ stream (int8, M = 128), device-trace scope (2026-11-04 profile run, fusion self time):** the fusion
+takes 1.20-1.36 x max(stream, compute) on 11-75 windows, where a perfectly overlapped window pipeline gives
+1.01-1.09; NPUsim, which overlaps perfectly, is 10-15% short on these four shapes (follow-up 2, loop slope). bf16 at compute ~ stream exists only with 2-3
+windows (256 x 2000^2, 256 x 2048^2), where first DMA + last compute explain it. Whether this is int8 or "any
+dtype at compute ~ stream with many windows" cannot be told from stored data.
+
+**A hypothesis that fits and is not adopted:** a compute-side cost per XLA window, hidden under DMA slack when
+HBM-bound. Estimated on the four int8 M = 128 cases (0.36-0.41 us) and applied to the other 42 multi-window cases
+of that run: mean -3.3% / MAPE 4.1% without it, -0.0% / 2.7% with it (bf16 compute-bound -9.6% -> -3.1%). Against
+it: the value is not one number (0.24-0.32 us on compute-bound cases with >= 56 windows, 0.17-0.19 on isolated
+kernels), nothing shows what happens at a window boundary, and M = 512 int8 ~ bf16 only excludes a large *serial*
+per-weight conversion, not a pipelined one. A per-window knob set from this would be a fitted constant.
+
+**Discriminating measurement (one chip; not run; indications, no single ratio is a proof):** `measure_tpu_v5e1.py --only balance` -- the stream bench's loop for
+bf16 and int8, K = N = 4096 and 8192, M 32-512, saving the loop slope, the profiled time of the loop's fused ops per iteration (all fusion ops, not
+the GEMM alone), the complete op list, the traces and the optimized HLO of each program, with the one-op program
+as a separately labelled control. bf16 at M ~ 256 also at ~1.2 x max
+-> a pipeline effect to model for every dtype; only int8 -> a dtype-specific stage; excess per window constant
+over K -> per window, per weight element constant -> per element.
