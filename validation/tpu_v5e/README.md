@@ -601,3 +601,13 @@ int8 weights, K = N = 4096 and 8192, M 32-512, on the stream bench's loop.
 
 Not changed: simulator and configs. What this run supports modelling next, for every dtype: weights arriving in
 XLA-sized windows with a cost per window on the compute side -- its value measured (0.2-0.4 us), its mechanism open.
+
+### Window-schedule candidate in NPUsim (2026-11-12; opt-in, not adopted)
+
+`[accelerator] offchip_window_count` and `window_switch_cycle` (both default 0; no config uses them) and the driver
+`balance_npusim.py`. Implementation, tests, the 28-case A / B / C results on both DRAM models, the three
+regressions, the residency fallback of 12 cases and what is not established:
+[`results/2026-11-12_window_candidate/REVIEW.md`](results/2026-11-12_window_candidate/REVIEW.md).
+On refsb, same cases and runs: A (config as is) -8.9 / 8.9%, B (window schedule) -5.9 / 6.5%, C (+ 590 cycles per
+window) -0.9 / 2.9%; 25 of 28 closer, three memory-bound bf16 cases worse. Earlier batches of that driver ran on
+wrong inputs and are withdrawn (`INVALID_SHARED_NETWORK/`).

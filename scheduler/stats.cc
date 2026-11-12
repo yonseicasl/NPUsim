@@ -280,6 +280,8 @@ void stats_t::init() {
     psum_store_access_energy_pe_array = 0.0;
     temporal_repetition_tiles = 1;
     timeline_outer_iterations = 1;
+    timeline_offchip_windows = 0;
+    window_switch_cycle = 0.0;
 
     /* SFU */
     sfu_present = false;
@@ -1238,7 +1240,8 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
                                        std::max(1u, m_datatype_repetitions[data_type_t::OUTPUT]));
     if(m_repetitions == 1) {
         // V2: the one-time per-layer setup applies regardless of repetition count.
-        fold_fill_cycle_pe_array += layer_setup_cycle_pe_array + stripe_transition_cycle_pe_array;
+        fold_fill_cycle_pe_array += layer_setup_cycle_pe_array + stripe_transition_cycle_pe_array
+                                  + window_switch_cycle*timeline_offchip_windows;
         merge_global_buffer_fill();
         finalize_layer_timeline();
         return;
@@ -1321,7 +1324,8 @@ void stats_t::scale_serial_repetitions(unsigned m_repetitions,
     // V2: fold fill repeats with every global-buffer repetition; the per-layer setup
     // (config/flush/DMA prologue) is a one-time cost added after scaling.
     fold_fill_cycle_pe_array = fold_fill_cycle_pe_array*m_repetitions + layer_setup_cycle_pe_array
-                             + stripe_transition_cycle_pe_array;
+                             + stripe_transition_cycle_pe_array
+                             + window_switch_cycle*timeline_offchip_windows;
     // E5: the same split on the energy side -- per-fold energy repeats with every GLB
     // repetition, the one-time layer setup does not.
     weight_fold_energy *= m_repetitions;
@@ -1674,23 +1678,68 @@ void stats_t::finalize_layer_timeline() {
         exit(1);
     }
     const unsigned tiles = static_cast<unsigned>(clock);
-    const unsigned offchip_tiles = static_cast<unsigned>(std::min<unsigned long long>(
-        tiles, static_cast<unsigned long long>(std::max(1U, offchip_repetition_tiles))*outer));
+    // offchip_window_count: the off-chip stages serve that many windows instead. A window is a run of
+    // consecutive tiles of the clock; the windows split the clock as evenly as integers allow and each carries
+    // an EQUAL share of the layer's off-chip cost on its first tile. This is a count-based, equal-share
+    // schedule: a compiler's actual window geometry (partial edge windows) is not represented.
+    if(timeline_offchip_windows > tiles) {
+        std::cerr << "Error: [accelerator] offchip_window_count (" << timeline_offchip_windows
+                  << ") exceeds the layer's timeline tile clock (" << tiles << " tiles)" << std::endl;
+        exit(1);
+    }
+    const bool windowed = timeline_offchip_windows > 0;
+    const unsigned offchip_tiles = windowed
+        ? timeline_offchip_windows
+        : static_cast<unsigned>(std::min<unsigned long long>(
+              tiles, static_cast<unsigned long long>(std::max(1U, offchip_repetition_tiles))*outer));
+    // window_switch_cycle is one fixed compute-side cost per window, charged on the window's LAST tile (the
+    // switch to the next window), not spread over the tiles -- windows of unequal length pay the same.
+    const double window_switch_total = windowed ? window_switch_cycle*timeline_offchip_windows : 0.0;
     std::vector<std::vector<double>> stage_tile_costs(5, std::vector<double>(tiles, 0.0));
+    double pe_scheduled_busy = 0.0;
     for(unsigned stage = 0; stage < 5; ++stage) {
         // Stages 0 and 1 are off-chip: they serve only `offchip_tiles` of the shared tile
         // clock, spread evenly, and carry their whole cost on those tiles. Stages 2-4 scale
         // uniformly with the tile clock.
         const bool offchip = stage < 2;
         const unsigned served = offchip ? offchip_tiles : tiles;
-        const double per_served_tile = stage_busy[stage]/static_cast<double>(served);
+        double per_served_tile = stage_busy[stage]/static_cast<double>(served);
+        // A window streams through DRAM and the multi-chip link at once (cut-through): fetching it whole takes
+        // the slower of the two, not their sum. Per-tile service pipelines the two anyway; per-window service
+        // would store-and-forward them, so the window's off-chip time is carried by stage 0 alone.
+        if(windowed && offchip) {
+            per_served_tile = (stage == 0)
+                ? std::max(stage_busy[0], stage_busy[1])/static_cast<double>(served) : 0.0;
+        }
         for(unsigned k = 0; k < tiles; ++k) {
             const bool serves = !offchip || k == 0 ||
                 (static_cast<unsigned long long>(k)*served)/tiles !=
                 (static_cast<unsigned long long>(k - 1)*served)/tiles;
             if(serves) stage_tile_costs[stage][k] = per_served_tile;
+            // The last tile of a window: the next tile opens another window, or the clock ends.
+            // With a window cost the PE stage is recombined PER TILE from its axes, exactly as busy_cycle_pe
+            // combines their totals: the cost joins the compute axis of the tile that carries it, and a tile
+            // whose LB transfer or format axis is longer hides it (double-buffered LB) -- subtracting it from
+            // the combined total would charge it even then.
+            if(stage == 4 && window_switch_total > 0.0) {
+                const double n = static_cast<double>(tiles);
+                const bool last_of_window = k + 1 == tiles ||
+                    (static_cast<unsigned long long>(k + 1)*offchip_tiles)/tiles !=
+                    (static_cast<unsigned long long>(k)*offchip_tiles)/tiles;
+                const double compute = (stage_axis_compute - window_switch_total)/n
+                                     + (last_of_window ? window_switch_cycle : 0.0);
+                stage_tile_costs[stage][k] = pe_double_buffer
+                    ? std::max(std::max(compute, stage_axis_access[4]/n),
+                               std::max(stage_axis_link[4]/n,
+                                        std::max(stage_axis_overlap[4]/n, stage_axis_format/n)))
+                    : compute + lb_transfer_makespan/n + stage_axis_format/n;
+                pe_scheduled_busy += stage_tile_costs[stage][k];
+            }
         }
     }
+    // With a window cost the tiles differ, and the PE stage's busy time is the sum of what the timeline
+    // actually schedules (sum of per-tile maxima), which can exceed the max of the axis totals reported above.
+    if(window_switch_total > 0.0) busy_cycle_pe = pe_scheduled_busy;
     std::vector<unsigned> boundary_depths(4, 1);
     for(unsigned b = 0; b < 4; ++b) {
         boundary_depths[b] = timeline_boundary_overlap[b] ? 2 : 1;
@@ -1711,6 +1760,20 @@ void stats_t::finalize_layer_timeline() {
     // number. Unset (0) leaves the derived depth alone, so declaring nothing changes nothing --
     // and an explicit 1 must reproduce the implicit 1 bit for bit, which is what MC1 checks.
     if(timeline_offchip_outstanding > 0) boundary_depths[0] = timeline_offchip_outstanding;
+    // Windows are double-buffered as wholes at the chip's ingress: the next window may be fetched and handed
+    // over while the current one is consumed. That needs the multi-chip -> GLB boundary to be double-buffered
+    // for every datatype (no GLB bypass); its one tile of look-ahead then becomes one window of look-ahead. A
+    // single-buffered or bypassed boundary cannot hold a second window, and this schedule is refused rather
+    // than silently overriding that contract. The DRAM <-> multi-chip depth (overlap flag or explicit
+    // max_outstanding_requests) is left exactly as configured.
+    if(windowed) {
+        if(boundary_depths[1] != 2) {
+            std::cerr << "Error: [accelerator] offchip_window_count needs a double-buffered multi-chip -> GLB "
+                      << "boundary without GLB bypass" << std::endl;
+            exit(1);
+        }
+        boundary_depths[1] = (tiles + offchip_tiles - 1)/offchip_tiles + 1;
+    }
     for(unsigned b = 0; b < 4; ++b) timeline_boundary_depth[b] = boundary_depths[b];
     std::vector<double> stall;
     double pipeline_head = 0.0, pipeline_dram_finish = 0.0;

@@ -1,0 +1,121 @@
+# Window-schedule candidate: implementation and result note (2026-11-12, for joint review)
+
+Status: **candidate, opt-in, not adopted.** Both knobs default to 0; no existing config, baseline or published
+number changes. 590 cycles is an empirically fitted effective cost, not a hardware constant. Nothing here is a
+gain over an earlier cohort: A, B and C are compared on the same 28 cases, same runs, same DRAM model.
+
+## What was implemented
+
+Core (`scheduler/stats.cc/.h`, `npu.cc/.h`), `[accelerator]`:
+
+- `offchip_window_count` (0 = off). The off-chip stages deliver the layer's data in that many windows instead of
+  once per tile of the timeline clock: a window is a run of consecutive tiles, its whole off-chip cost sits on its
+  first tile, DRAM and the multi-chip link carry it at once (cut-through: max of the two, not the sum), and the
+  multi-chip -> GLB boundary's one tile of look-ahead becomes one window (windows double-buffered as wholes).
+  The on-chip stages keep the fine clock. Refused with an error: more windows than tiles; a single-buffered or
+  GLB-bypassed multi-chip -> GLB boundary. The DRAM <-> multi-chip depth is left as configured.
+- `window_switch_cycle` (0): one compute-side cost per window, on the window's last tile, joined to the compute
+  axis of that tile inside the PE stage's own per-axis combination (hidden when another PE axis is longer);
+  `busy_cycle_pe` then reports the scheduled sum.
+- **It is a count-based, equal-share schedule**: equal off-chip share per window, near-equal runs of tiles. The
+  compiler's window geometry and partial edge windows are not represented (14 of the 28 cases have them).
+
+Tests: `unittest/stats_timeline_test.cc` `run_window_cases`, 25 hand-derived cases (off, DMA-hidden,
+compute-exposed, crossover, 1 / 3 windows, uneven 3 + 2 with and without w, count vs total-cost counterexample,
+cut-through incl. link-bound, explicit outstanding limits, LB-bound / partly exposed / single-buffered LB, PE busy
+56 / 50 / 50). `run_validation.sh` passes; with the knobs off, 6 GEMM runs are cycle-identical to commit
+`0252029`'s binary. Driver: `balance_npusim.py`; `test_balance_inputs.py` (inputs of every run, incl. the
+shared-network bug reproduced and rejected).
+
+## The experiment
+
+28 loop cases of `results/2026-11-12_colab_v5e1_balance` (bf16 / int8 weights, K = N 4096 / 8192, M 32-512).
+Measured = the loop's one fused op per iteration (device trace). NPUsim: each GEMM simulated whole (no strip
+extrapolation), `program_setup_cycle` 0, `activation_residency` 2 requested, window count = `iteration_bounds` of
+the case's own HLO (an input, not predicted). A = config as is, B = + `offchip_window_count`, C = B +
+`window_switch_cycle` 590 (0.393 us, fixed before the measurement, one value for both dtypes).
+Provenance: `FROZEN.sha256`, `balance_npusim_<dram>.json` (binary, library, configs, git, HLO and csv hashes),
+`generated_<dram>/<run>/` (cfg, network, mapping, both NPUsim reports of all 168 runs). Codex checked both
+batches independently (unique inputs, MAC counts, report = CSV, hashes). `INVALID_SHARED_NETWORK/` holds the
+earlier batches, which ran every case on the last shape's network: **withdrawn, not to be cited.**
+
+## Results (`summary.txt`; mean / MAPE in %, error vs the measured fused op)
+
+Regime = compute / stream with compute = 2 M K N / 196.6 TFLOPS and stream = weight bytes / 750 GB/s.
+
+| refsb DRAM | n | A | B | C | cases where C is closer than A |
+|---|---|---|---|---|---|
+| memory-bound, C/S < 0.6 | 10 | -4.1 / 4.2 | -1.1 / 2.6 | -0.4 / 2.4 | 7 of 10 |
+| balanced, 0.6-1.6 | 10 | -14.0 / 14.0 | -10.0 / 10.0 | -3.3 / 4.5 | 10 of 10 |
+| compute-bound, > 1.6 | 8 | -8.4 / 8.4 | -6.8 / 6.8 | +1.3 / 1.7 | 8 of 8 |
+| bf16 | 14 | -7.5 / 7.6 | -3.9 / 5.0 | -1.6 / 3.1 | 11 of 14 |
+| int8 | 14 | -10.2 / 10.2 | -7.9 / 7.9 | -0.3 / 2.8 | 14 of 14 |
+| full windows | 14 | -6.2 / 6.3 | -3.3 / 4.4 | +0.5 / 2.1 | 11 of 14 |
+| partial edge windows | 14 | -11.5 / 11.5 | -8.6 / 8.6 | -2.4 / 3.7 | 14 of 14 |
+| activations actually on chip | 16 | -9.1 / 9.2 | -5.4 / 6.3 | -1.5 / 2.9 | 13 of 16 |
+| activations to / from DRAM (fallback) | 12 | -8.6 / 8.6 | -6.7 / 6.7 | -0.2 / 3.0 | 12 of 12 |
+| (all 28, mixed residency) | 28 | -8.9 / 8.9 | -5.9 / 6.5 | -0.9 / 2.9 | 25 of 28 |
+
+Analytic DRAM (819 GB/s, ~9% faster than the measured copy rate): A -12.6 / 12.6, B -9.7 / 9.7, C -4.3 / 5.5;
+its memory-bound group stays at -7.9% (the DRAM rate), compute-bound +1.2 / 1.7, balanced -5.1 / 6.2.
+
+Worst C (refsb): bf16 384x4096 -8.4, bf16 256x4096 -7.0, bf16 256x8192 -6.3, int8 128x4096 -5.7,
+int8 192x8192 +5.4, int8 128x8192 -5.3: the balanced regime is improved, not solved.
+
+## The three regressions (refsb; all memory-bound bf16)
+
+| case | A | B | C |
+|---|---|---|---|
+| bf16 32 x 4096 | -2.3% | +3.2% | +4.1% |
+| bf16 32 x 8192 | +0.7% | +2.1% | +2.4% |
+| bf16 64 x 8192 | -0.1% | +1.3% | +1.6% |
+
+From the saved reports, in cycles (1500 = 1 us), identical in all three: **B - A = 3840, C - B = 590**.
+
+- C - B is exactly one `window_switch_cycle`: when memory-bound only the last window's cost is exposed.
+- B - A is one window of the **"PE array" stage** -- the on-chip weight load into the MXUs, which this config
+  models at 128 weights / cycle / MXU: 4096 cycles per bf16 window here, independent of M -- minus the two fine
+  tiles (256 cycles) that A already exposed. Per window the reports give DRAM 8475, link 4096, GLB 2048,
+  PE array 4096, PE 1034-2058; tail after the first stage: A 352-384, B 4192-4224, C 4782-4814. int8 32 x 4096
+  shows the same structure (B - A 1344 = 1489 - 145).
+- **Demonstrated** (simulator): fetching windows whole moves the last window's on-chip weight load, a stage that
+  existed before, from under the DMA to after it. **Not demonstrated** (TPU): that the chip spends that time
+  after the last DMA. The only measured hint is cross-program -- loop fused op minus the one-op program's copy
+  (46.49 - 44.76 = 1.73 us at 32 x 4096) against NPUsim's 3.2 us tail -- and a cross-program difference is not an
+  attributed tail. No change to that stage is proposed from this.
+
+## Activation residency: requested, not always granted
+
+`activation_residency = 2` asks for the run's input and output to stay on chip. NPUsim grants it only when the
+whole tensor fits the GLB's residency capacity (2 MiB here). The reports show: 16 cases "input GLB-resident,
+output retained in GLB"; **12 cases "input DRAM-backed, output materialized to DRAM"** (M K >= 1.5 M elements:
+bf16 / int8 384, 512 x 4096 and 192-512 x 8192). So those 12 carry 2 x M x K x 2 bytes of DRAM traffic per GEMM
+that the other 16 do not, and neither matches the benchmark, whose fused op reduces the output on chip and reads
+its input every iteration. The 12 are mostly compute-bound, where DRAM is hidden, but two balanced ones are
+affected: bf16 256 x 8192 is DRAM-bound in NPUsim on refsb (C - B = 0.39 us only, error -6.3%) while the same
+case on the analytic DRAM exposes the window cost (-6.7% from -14.0%). Their good average (C 3.0%) does not
+validate either residency assumption. Buffers were not enlarged to make them fit.
+Evidence needed before any change: the per-op HBM bytes of the loop's fused op (the kept traces through XProf:
+does it read M x K, write anything?), and the memory space of the HLO operands of the convolution.
+
+## What can and cannot be said
+
+- In NPUsim itself, on a new measurement, the window schedule plus one fixed per-window cost removes most of the
+  balanced-regime and compute-bound deficit for both dtypes with one value: refsb 8.9% -> 2.9%, 25 of 28 closer.
+- It makes three memory-bound bf16 cases worse by 1.5-6 points through a pre-existing stage, not through w.
+- Not established: the physical mechanism of the per-window cost; exact window geometry; the residency of the
+  loop's activations; transfer to isolated / staged programs or to shapes without an HLO. 28 cases from one
+  session and one compiler version are not 28 independent environments.
+
+## Proposed follow-up (nothing changed yet)
+
+1. Keep the knobs opt-in; no config promotion on these numbers.
+2. Byte accounting of the loop's fused op from the kept traces (XProf per-op HBM read / write), to settle the
+   activation traffic for all 28 cases; then one consistent residency treatment, tested, and the 12 fallback
+   cases re-run.
+3. For the on-chip weight-load tail: same-program attribution (the trace's op timeline of one loop iteration,
+   DMA end vs fusion end) before touching the stage.
+4. Geometry: represent full and edge windows (unequal shares) only if 2-3 show the equal-share approximation
+   matters; the 14 partial-window cases are 3.7% against 2.1%.
+5. Only after 2-4: the older bf16 / int8 stream sets (follow-up 2, with HLO windows where an HLO exists), and a
+   decision on promoting a named calibration profile.

@@ -1,0 +1,15 @@
+dtype,M,K,windows,measured_us,hlo_sha256,dram,timing_kind,npusim_A_us,err_A_pct,npusim_B_us,err_B_pct,npusim_C_us,err_C_pct
+bf16,32,4096,8,46.488,f63c6484fdb2d5690c1556ed51fb72a7fb8818664a39fc0f658dd3eb727d947d,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),46.14,-0.8,51.47,10.7,51.48,10.7
+bf16,64,4096,8,47.524,fe966e4d1f8abbb90cb57505c6b03169cbbaeeef8424a2bd699e7a7528a6ffe3,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),46.86,-1.4,52.24,9.9,52.25,9.9
+bf16,128,4096,8,49.6,ae3079f450867e706f74e48d5d28cdc7e7b8d5dfa9ee06ee6919a664411efc23,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),48.36,-2.5,53.84,8.5,54.23,9.3
+bf16,192,4096,8,51.667,2388e1bcf8532722822940a1c88d8ee3ef1a43a6e8be150400e710685cb348f8,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),49.94,-3.4,56.84,10.0,57.22,10.7
+bf16,256,4096,11,56.758,81dcb138e5d18ba21ee6d53c5e9295bcf618a53c6e92b80cf261629eb7ab6045,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),51.43,-9.4,57.35,1.0,57.73,1.7
+bf16,384,4096,10,82.816,daf3401d3ebf6f8ff9358fa4a0edaded27ce8b91b0673b74227dd7df033f193c,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),66.87,-19.3,74.52,-10.0,78.16,-5.6
+bf16,512,4096,16,99.474,6b0a8c771dec28df6999b8995664fee970f0a6266a6a57a9aa60a2c89e991e37,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),89.07,-10.5,93.98,-5.5,99.81,0.3
+int8,32,4096,11,24.386,7ffee2551f44346ec086ef1a7e0bc8b8af877dc885fddeb0c331a30b2ce84d09,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),23.43,-3.9,25.35,4.0,25.37,4.0
+int8,64,4096,11,25.164,44a4b451e1b36ec2adad4d4b8eed731dca0a2f595b6b433a254f77c59d3ba7d4,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),24.18,-3.9,26.15,3.9,26.53,5.4
+int8,128,4096,11,30.357,8ab86f52b975f25854e0ba5dcfd0f4f9699719f11a60a4530db6f79dc13032fb,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),25.71,-15.3,28.68,-5.5,29.99,-1.2
+int8,192,4096,11,39.821,92d60a737a4e932701ebe7767416249e56aab3746fa828b84c5bda2edebaadca,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),33.52,-15.8,36.99,-7.1,41.19,3.4
+int8,256,4096,16,51.614,fe817d6dfe99c5ca8ab754e33db7d702edfd102445915bb557af121be8bacab9,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),44.54,-13.7,46.99,-9.0,53.16,3.0
+int8,384,4096,16,75.167,5814a3f936b5a87b3badec134ffd8030159cb29a11ad4f2ba4bff73a3568fca3,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),66.74,-11.2,69.44,-7.6,75.44,0.4
+int8,512,4096,16,96.478,f26e4887d1b56aacb281e9543477bc6ab5f0f13f8092e31a212ab78bca1d2264,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),88.94,-7.8,91.89,-4.8,97.72,1.3

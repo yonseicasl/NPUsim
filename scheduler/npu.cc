@@ -89,6 +89,8 @@ npu_t::npu_t() :
     interlayer_overlap(false),
     activation_residency(0),
     timeline_dram_tiles(false),
+    offchip_window_count(0),
+    window_switch_cycle(0.0),
  multi_chip(NULL),
  dram(NULL),
  decomp(NULL),
@@ -210,6 +212,17 @@ void npu_t::init(const std::string m_accelerator_config, const std::string m_net
             // iterations) instead of one DRAM iteration's GLB repetitions: with several DRAM tiles (e.g.
             // weight strips) the pipeline fills once, not once per DRAM tile. Default 0 (previous clock).
             section_config.get_setting("timeline_dram_tiles", &timeline_dram_tiles);
+            // offchip_window_count: every layer's off-chip data arrives in this many windows, each fetched whole
+            // before its on-chip use and double-buffered as a whole (a compiler's window schedule, e.g. XLA's
+            // iteration_bounds; one count for the run, so one layer per run). window_switch_cycle: compute-side
+            // cycles per window. Defaults 0: the off-chip stages follow the mapping's tiles as before.
+            section_config.get_setting("offchip_window_count", &offchip_window_count);
+            section_config.get_setting("window_switch_cycle", &window_switch_cycle);
+            if(window_switch_cycle < 0.0 || (window_switch_cycle > 0.0 && offchip_window_count == 0)) {
+                std::cerr << "Error: [accelerator] window_switch_cycle needs offchip_window_count > 0 and must "
+                          << "not be negative" << std::endl;
+                exit(1);
+            }
             if(activation_residency > 2) {
                 std::cerr << "Error: [accelerator] activation_residency must be 0, 1 or 2" << std::endl;
                 exit(1);
@@ -1419,6 +1432,8 @@ void npu_t::run(const std::string m_accelerator_config, const std::string m_netw
                 layer_stats[stats_index]->timeline_outer_iterations = timeline_dram_tiles
                     ? std::max(1u, scheduler->mapping_table->calculate_active_component(component_type_t::DRAM))
                     : 1;
+                layer_stats[stats_index]->timeline_offchip_windows = offchip_window_count;
+                layer_stats[stats_index]->window_switch_cycle = window_switch_cycle;
                 layer_stats[stats_index]->scale_serial_repetitions(
                     global_buffer_repetitions, scheduler->mapping_table->datatype_repetitions(),
                     input_halo, halo_capacity_sufficient);
