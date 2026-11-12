@@ -626,21 +626,28 @@ Three kinds of numbers come out, and they are kept apart:
 
 | kind | columns | what it is |
 |---|---|---|
-| event duration | `fused_ops_sum_per_iter_us`, `module_us_n8`, `ops` | profiler events of the device; one event per fused op, no per-DMA events |
-| wall slope | `loop_slope_us` | host wall clock, (median wall(2n) - median wall(n)) / n |
-| compiler facts | `hlo_facts`, `hlo/*.txt`, `tailprobe_pairs.csv` | read from the optimized HLO: convolution operand types, window geometry, memory-space tags, copies / prefetch, fusion and loop counts -- static, not measured |
+| wall clock | `wall_n_s`, `wall_2n_s`, `loop_slope_us`, `slope_flag` | raw host samples of the n- and 2n-iteration loop and their SIGNED slope; a nonpositive slope is flagged, not clipped |
+| profiler events | `modules_traced`, `op_event_counts`, `op_event_us`, `conv_fusion_events_per_module`, `conv_fusion_us_per_event`, `all_fusion_event_sum_per_requested_iter_us` | device events, one per op execution; no per-DMA events. The per-event convolution time is given only when the trace has exactly 8 convolution-fusion events per 8-iteration module; the all-fusion sum may include fusions outside the loop and is not a loop-kernel time |
+| compiler facts | `hlo_facts`, `hlo/*.txt` | read from the optimized HLO: convolution operand types, window geometry, memory-space tags, copies / prefetch, fusion and loop counts -- static, not measured |
 
-`tailprobe_pairs.csv` gives a verdict per case from the two HLO texts alone: *inconclusive* when the two programs
-are not the same schedule (different window geometry, convolution signature, fusion or loop structure -- e.g. the
-reused weight was hoisted); *comparable, reused weight NOT staged* when the HLO puts it in the same memory space
-as the bank; *comparable, staged per the HLO* only when a tag or a copy shows it. Reusing one weight is not
-assumed to put it on chip.
+`tailprobe_pairs.csv` gives one conservative verdict per case:
+
+- *inconclusive* when the two HLO texts do not show the same signatures (convolution types, window geometry,
+  fusion / loop counts), or when one convolution-fusion event per loop iteration is not verified in BOTH traces
+  (equal global counts in the HLO do not show that the GEMM stayed inside the loop);
+- otherwise *same observed signatures ...; weight staging NOT ESTABLISHED*. Staging is never concluded: a
+  memory-space tag on a weight-shaped tensor or extra copy / prefetch ops in the single-weight program are listed
+  as raw evidence (a copy may be of the input; a tag is not a traced dataflow), and their absence does not show
+  the weight was not staged.
 
 What it cannot give: the time between the end of the last DMA and the end of the fused op -- there is no event
-for it. A banked-vs-single difference is a difference between two programs; it is not to be reported as a
-measured tail, and no model parameter is to be fitted to it. One run may well end inconclusive. `test_tailprobe.py`
-(CPU): `hlo_facts` on HLO saved from the balance run, `pair_verdict` on constructed cases, the `--quick` run and
-the TPU guard.
+for it -- nor where the reused weight physically resides. A banked-vs-single difference is a difference between
+two programs; it is not to be reported as a measured tail, and no model parameter is to be fitted to it. One
+run may well end inconclusive. `test_tailprobe.py` (CPU, functional only): `hlo_facts` on HLO saved from the
+balance run, `op_events` on synthetic traces (8 per module verified; 9, 1 and none are not), `pair_verdict`
+cases (an extra copy alone or a tag alone never yields a staging conclusion), the `--quick` run and the TPU
+guard. `tailprobe_meta.json` records script hash, argv, backend, device kind, JAX version; each row the HLO and
+trace file hashes and requested vs traced module counts.
 
 Run (Colab, TPU v5e-1): `%run measure_tpu_v5e1.py --only tailprobe`, then zip the output directory (it keeps
 `traces/`).

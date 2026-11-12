@@ -544,25 +544,67 @@ def hlo_facts(text):
                 fusions=len(re.findall(r" fusion\(", text)), whiles=len(re.findall(r" while\(", text)))
 
 
-def pair_verdict(banked, single, K):
-    """Can the banked-weight loop and the one-weight loop be contrasted at all? (verdict, reasons). Comparable =
-    the same convolution signature, window geometry, fusion and loop structure. The reused weight counts as
-    STAGED only if the HLO says so (a [.., K, K] tensor with a memory-space tag, or copy / prefetch ops, that the
-    banked program lacks). Reusing one weight does not by itself put it on chip."""
-    reasons = [f"{k}: banked {banked[k]} vs single {single[k]}"
-               for k in ("convolutions", "windows", "fusions", "whiles") if banked[k] != single[k]]
+def op_events(d, per_module):
+    """Raw device events of a kept trace: module count and, per op name, (count, total us); the events whose
+    hlo_category says convolution; sha256 of the trace files. `verified` only when exactly `per_module`
+    convolution-fusion events were recorded per module -- the trace-level evidence that the GEMM ran once per
+    requested loop iteration. None without a readable device trace."""
+    files = sorted(glob.glob(os.path.join(d, "**", "*"), recursive=True))
+    hashes = {os.path.basename(f): hashlib.sha256(open(f, "rb").read()).hexdigest() for f in files if os.path.isfile(f)}
+    paths = [f for f in files if f.endswith("perfetto_trace.json.gz")]
+    if not paths:
+        return None
+    ev = json.load(gzip.open(paths[0]))
+    ev = ev.get("traceEvents", []) if isinstance(ev, dict) else ev
+    name = lambda kind, key: {key(e): e["args"]["name"] for e in ev if e.get("ph") == "M" and e.get("name") == kind}
+    procs, threads = name("process_name", lambda e: e["pid"]), name("thread_name", lambda e: (e["pid"], e.get("tid")))
+    pids = sorted((p for p, n in procs.items() if re.search(ARGS.device_match, n)), key=lambda p: procs[p])
+    if not pids:
+        return None
+    modules, ops, conv = 0, {}, [0, 0.0]
+    for e in ev:
+        if e.get("ph") != "X" or e.get("pid") != pids[0]:
+            continue
+        t = threads.get((pids[0], e.get("tid")), "")
+        if "Module" in t:
+            modules += 1
+        elif "Ops" in t:
+            c = ops.setdefault(e["name"], [0, 0.0])
+            c[0], c[1] = c[0] + 1, c[1] + float(e["dur"])
+            if "convolution" in str(e.get("args", {}).get("hlo_category", "")):
+                conv[0], conv[1] = conv[0] + 1, conv[1] + float(e["dur"])
+    return dict(modules=modules, ops=ops, conv_events=conv[0], conv_us=conv[1], files=hashes,
+                verified=modules > 0 and conv[0] == per_module * modules)
+
+
+def pair_verdict(banked, single, K, banked_ev=None, single_ev=None):
+    """What the two programs' artifacts allow to be said -- (verdict, notes). Deliberately conservative:
+      * differing HLO signatures (convolution types, window geometry, fusion / loop counts) -> inconclusive;
+      * equal signatures are only "the same observed signatures": global counts do not show that the GEMM is
+        inside the loop. That needs the trace: exactly one convolution-fusion event per requested iteration in
+        BOTH programs (op_events().verified); without it -> inconclusive;
+      * weight staging is never concluded. A memory-space tag on a weight-shaped tensor, or extra copy /
+        prefetch ops, in the single-weight program are listed as RAW evidence (a copy may be of the input, a tag
+        is not a traced dataflow), and their absence is "not established", not "not staged"."""
+    diff = [f"{k}: banked {banked[k]} vs single {single[k]}"
+            for k in ("convolutions", "windows", "fusions", "whiles") if banked[k] != single[k]]
     if not banked["convolutions"] or not banked["windows"]:
-        reasons.append("no convolution / window_config in the HLO (not a TPU compile?)")
-    if reasons:
-        return "inconclusive: the two programs are not the same schedule", reasons
+        diff.append("no convolution / window_config in the HLO (not a TPU compile?)")
+    if diff:
+        return "inconclusive: the two HLO texts do not show the same signatures", diff
+    if not (banked_ev and single_ev and banked_ev["verified"] and single_ev["verified"]):
+        got = lambda e: "no device trace" if not e else f"{e['conv_events']} convolution-fusion events in {e['modules']} modules"
+        return ("inconclusive: same observed HLO signatures, but one convolution-fusion event per loop iteration "
+                "is not verified in both traces"), [f"banked: {got(banked_ev)}", f"single: {got(single_ev)}"]
     weightish = lambda f: {t for t in f["tagged"] if re.search(rf"\[(?:\d+,)?{K},{K}\]", t)}
-    staged = (weightish(single) - weightish(banked)) or single["copy_start"] > banked["copy_start"] \
-        or (single["prefetch"] and not banked["prefetch"])
-    if not staged:
-        return ("comparable schedule, reused weight NOT staged (same memory space as the bank): any time "
-                "difference is a rate / reuse effect, not a staged-weight contrast"), []
-    return ("comparable schedule, reused weight staged per the HLO: a streamed-vs-staged contrast of one fused op "
-            "-- still a difference between two programs, not a measured DMA tail"), [f"staging evidence: {sorted(staged) if isinstance(staged, set) else 'copy / prefetch ops'}"]
+    raw = [f"memory-space tag on a weight-shaped tensor only in the single program: {sorted(weightish(single) - weightish(banked))}"] \
+        if weightish(single) - weightish(banked) else []
+    if single["copy_start"] != banked["copy_start"] or single["prefetch"] != banked["prefetch"]:
+        raw.append(f"copy-start {banked['copy_start']} -> {single['copy_start']}, prefetch {banked['prefetch']} -> "
+                   f"{single['prefetch']} (which operand is copied is not identified)")
+    return ("same observed HLO signatures, one convolution-fusion event per iteration in both traces; weight "
+            "staging NOT ESTABLISHED from these artifacts" + (" -- raw evidence listed, not a conclusion" if raw else "")
+            + "; any time difference is a two-program contrast, not a measured DMA tail"), raw
 
 
 def tailprobe():
@@ -571,16 +613,25 @@ def tailprobe():
     programs with the SAME loop body as `balance` ((x + carry) @ W[i % R].astype(bf16), f32 sum into the carry):
       banked  W = a bank of R distinct weights (>= --rotate-mb): every iteration streams a new weight
       single  W = one weight, reused by every iteration
-    Per program: loop_slope_us (wall slope), module_us_n8 and fused_ops_sum_per_iter_us (profiled EVENT
-    DURATIONS), all op events, the kept trace, the optimized HLO, and hlo_facts() -- what the compiler actually
-    chose. Per case, pair_verdict(): whether the two programs are the same schedule and whether the reused
-    weight is really staged. What this is NOT: a measurement of the time between the last DMA and the end of the
-    fused op (the profiler has no per-DMA events), and the single-weight program is not assumed to be "on chip".
-    No times are subtracted here. Writes tailprobe.csv, tailprobe_pairs.csv, tailprobe_meta.json, hlo/, traces/.
-    Full sizes need a TPU; --quick on CPU checks only that the code runs."""
+    Per program (tailprobe.csv), each number with its scope:
+      wall_n_s / wall_2n_s, loop_slope_us   raw host wall samples of the n- and 2n-iteration loop and the SIGNED
+                                            slope (median(2n) - median(n)) / n; slope_flag marks a nonpositive one
+      modules_traced, op_event_counts,      raw profiler events of the 8-iteration program
+      op_event_us
+      conv_fusion_events_per_module,        the events whose hlo_category is a convolution; a per-event time is
+      conv_fusion_us_per_event              given only when there are exactly 8 per module (else blank)
+      all_fusion_event_sum_per_requested_iter_us   every fusion / convolution event summed, / 8 -- may contain
+                                            fusions outside the loop; NOT a loop-kernel time
+      hlo_facts, hlo_sha256, trace_sha256   compiler output (static) and file hashes
+    Per case (tailprobe_pairs.csv): pair_verdict() -- inconclusive unless the HLO signatures match AND both
+    traces show one convolution-fusion event per iteration; staging is never concluded, only raw evidence listed.
+    What this is NOT: a measurement of the time between the last DMA and the end of the fused op (there are no
+    per-DMA events); nothing is subtracted between programs. Full sizes need a TPU; --quick on CPU checks only
+    that the code runs."""
     if jax.default_backend() != "tpu" and not ARGS.quick:
         raise SystemExit("tailprobe: no TPU backend (full sizes are TPU-only; --quick is the CPU functional check)")
     ARGS.keep_traces = True
+    ITERS = 8                                     # loop iterations of the profiled program
     cases = [("bf16", 32, 512), ("int8", 32, 512)] if ARGS.quick else \
         [("bf16", 32, 4096), ("bf16", 64, 4096), ("bf16", 32, 8192), ("bf16", 64, 8192), ("int8", 32, 4096)]
 
@@ -599,15 +650,14 @@ def tailprobe():
             gen = lambda k: (jax.random.normal(k, shape, F32) * 0.02).astype(BF16)
         return jax.jit(gen)(jax.random.PRNGKey(key))
 
-    def slope(x, ws, n, repeats=5):
+    def walls(x, ws, n, repeats=5):               # raw samples, nothing clipped
         def wall(k):
             t = time.perf_counter()
             jax.block_until_ready(run_loop(k, x, ws))
             return time.perf_counter() - t
         for k in (n, 2 * n):
             wall(k)
-        return max(statistics.median(wall(2 * n) for _ in range(repeats))
-                   - statistics.median(wall(n) for _ in range(repeats)), 0.0) / n * 1e6
+        return [wall(n) for _ in range(repeats)], [wall(2 * n) for _ in range(repeats)]
 
     os.makedirs(os.path.join(ARGS.out, "hlo"), exist_ok=True)
     rows, pairs = [], []
@@ -616,40 +666,56 @@ def tailprobe():
         R = max(2, math.ceil(max(ARGS.rotate_mb, 1) * 2 ** 20 / (K * K * wbytes)))
         x = stack(M + 7, (M, K), "bf16")
         bank = stack(K + wbytes, (R, K, K), dtype)
-        facts = {}
+        facts, evs = {}, {}
         for mode, ws in (("banked", bank), ("single", stack(K + wbytes + 100, (1, K, K), dtype))):
             tag = f"tailprobe_{dtype}_{M}x{K}_{mode}"
             try:
-                text = run_loop.lower(8, x, ws).compile().as_text()
+                text = run_loop.lower(ITERS, x, ws).compile().as_text()
             except Exception as e:
                 text = ""
                 print(f"  [{tag}] hlo: {type(e).__name__}: {e}")
             open(os.path.join(ARGS.out, "hlo", tag + ".txt"), "w").write(text)
             facts[mode] = hlo_facts(text)
-            us = slope(x, ws, 10 if M * K * K > 2 ** 33 else 40)
-            r = bench(lambda a, b: run_loop(8, a, b), (x, ws), tag)
-            fus = r["ops"] and sum(v for k, v in r["ops"].items() if "fusion" in k or "convolution" in k) / 8
-            rows.append(dict(dtype=dtype, M=M, K=K, N=K, mode=mode, weights_in_loop=ws.shape[0],
-                             loop_slope_us=round(us, 3), module_us_n8=r["device_us"] and round(r["device_us"], 3),
-                             fused_ops_sum_per_iter_us=fus and round(fus, 3),
-                             ops=r["ops"] and ";".join(f"{k}={v:.3f}" for k, v in r["ops"].items()),
-                             hlo_facts=json.dumps(facts[mode]), hlo_sha256=hashlib.sha256(text.encode()).hexdigest()))
-            print(f"tailprobe {mode:6s} {dtype} {M:3d} x {K:5d}  slope {us:9.2f} us  fused ops / iter {fus and round(fus, 2)}")
-        verdict, reasons = pair_verdict(facts["banked"], facts["single"], K)
-        pairs.append(dict(dtype=dtype, M=M, K=K, verdict=verdict, reasons=" | ".join(reasons),
+            n = 10 if M * K * K > 2 ** 33 else 40
+            wn, w2n = walls(x, ws, n)
+            us = (statistics.median(w2n) - statistics.median(wn)) / n * 1e6
+            r = bench(lambda a, b: run_loop(ITERS, a, b), (x, ws), tag)
+            ev = evs[mode] = op_events(os.path.join(ARGS.out, "traces", tag), ITERS)
+            allfus = ev and sum(t for k, (c, t) in ev["ops"].items() if "fusion" in k or "convolution" in k)
+            rows.append(dict(
+                dtype=dtype, M=M, K=K, N=K, mode=mode, weights_in_loop=ws.shape[0], loop_iterations_n=n,
+                wall_n_s=json.dumps(wn), wall_2n_s=json.dumps(w2n), loop_slope_us=round(us, 3),
+                slope_flag="ok" if us > 0 else "nonpositive: wall slope unusable",
+                requested_modules=r["iters"], modules_traced=ev and ev["modules"],
+                module_us_n8=r["device_us"] and round(r["device_us"], 3),
+                op_event_counts=ev and ";".join(f"{k}={c}" for k, (c, t) in ev["ops"].items()),
+                op_event_us=ev and ";".join(f"{k}={t:.3f}" for k, (c, t) in ev["ops"].items()),
+                conv_fusion_events_per_module=ev and ev["modules"] and round(ev["conv_events"] / ev["modules"], 3),
+                conv_fusion_us_per_event=round(ev["conv_us"] / ev["conv_events"], 3) if ev and ev["verified"] else None,
+                all_fusion_event_sum_per_requested_iter_us=ev and ev["modules"] and round(allfus / ev["modules"] / ITERS, 3),
+                hlo_facts=json.dumps(facts[mode]), hlo_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                trace_sha256=ev and json.dumps(ev["files"])))
+            print(f"tailprobe {mode:6s} {dtype} {M:3d} x {K:5d}  slope {us:9.2f} us ({rows[-1]['slope_flag']})  "
+                  f"conv fusion / event {rows[-1]['conv_fusion_us_per_event']}")
+        verdict, notes = pair_verdict(facts["banked"], facts["single"], K, evs["banked"], evs["single"])
+        pairs.append(dict(dtype=dtype, M=M, K=K, verdict=verdict, notes=" | ".join(notes),
                           windows_banked=json.dumps(facts["banked"]["windows"]),
                           windows_single=json.dumps(facts["single"]["windows"])))
-        print(f"  -> {verdict}" + (f" ({'; '.join(reasons)})" if reasons else ""))
+        print(f"  -> {verdict}" + (f" ({'; '.join(notes)})" if notes else ""))
         del bank
     write("tailprobe.csv", rows)
     write("tailprobe_pairs.csv", pairs)
+    dev = jax.devices()[0]
     json.dump(dict(script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(),
                    argv=sys.argv, quick=ARGS.quick, backend=jax.default_backend(), jax=jax.__version__,
-                   rotate_mb=ARGS.rotate_mb, cases=cases,
-                   kinds=dict(loop_slope_us="wall-clock slope of the loop, host side",
-                              fused_ops_sum_per_iter_us="profiler event durations of the loop's fused ops / 8",
-                              hlo_facts="compiler output, static", verdict="comparison of the two HLO texts"),
-                   not_measured="time between the last DMA and the end of the fused op; measured HBM bytes"),
+                   device_kind=dev.device_kind, device=str(dev), rotate_mb=ARGS.rotate_mb, cases=cases,
+                   profiled_loop_iterations=ITERS,
+                   kinds=dict(wall="host wall clock samples and their signed slope",
+                              events="profiler event counts / durations of the device (one event per op execution)",
+                              hlo_facts="compiler output, static", verdict="from the two HLO texts and traces only"),
+                   not_measured="time between the last DMA and the end of the fused op; measured HBM bytes; "
+                                "where the reused weight physically resides",
+                   cpu_note="a non-TPU run is a functional smoke check, not hardware validation"),
               open(os.path.join(ARGS.out, "tailprobe_meta.json"), "w"), indent=1)
 
 
