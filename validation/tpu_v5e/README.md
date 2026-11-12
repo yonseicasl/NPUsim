@@ -553,7 +553,8 @@ kernels), nothing shows what happens at a window boundary, and M = 512 int8 ~ bf
 per-weight conversion, not a pipelined one. A per-window knob set from this would be a fitted constant.
 
 **Discriminating measurement (one chip; not run; indications, no single ratio is a proof):** `measure_tpu_v5e1.py --only balance` -- the stream bench's loop for
-bf16 and int8, K = N = 4096 and 8192, M 32-512, saving the loop slope, the profiled fusion time and the optimized
-HLO of each program, with the one-op program as a separately labelled control. bf16 at M ~ 256 also at ~1.2 x max
+bf16 and int8, K = N = 4096 and 8192, M 32-512, saving the loop slope, the profiled time of the loop's fused ops per iteration (all fusion ops, not
+the GEMM alone), the complete op list, the traces and the optimized HLO of each program, with the one-op program
+as a separately labelled control. bf16 at M ~ 256 also at ~1.2 x max
 -> a pipeline effect to model for every dtype; only int8 -> a dtype-specific stage; excess per window constant
 over K -> per window, per weight element constant -> per element.

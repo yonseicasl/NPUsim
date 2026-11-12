@@ -436,8 +436,11 @@ def balance():
     fori_loop iteration is (x + carry) @ W[i % R].astype(bf16), a float32 sum of the result into the carry, W a
     stack of R distinct K x K copies (>= --rotate-mb in total). Per (dtype, K, M), three scopes, never mixed:
       loop_slope_us  (median wall(2n) - median wall(n)) / n: one loop iteration, wall clock, as in the stored csv
-      fusion_us      profiled device time of the loop's fused GEMM op per iteration (8-iteration program);
-                     module_us_n8 is that whole program, ops its op breakdown
+      fused_ops_sum_per_iter_us  profiled device time of ALL fusion / convolution ops of the 8-iteration program,
+                     / 8. NOT the GEMM alone: the loop's input add, output sum and scalar fusions are in it
+                     unless the HLO shows them fused into the convolution. module_us_n8 is the whole program;
+                     ops is its complete op breakdown, and the traces are kept (traces/), so each op can be
+                     attributed with the saved HLO afterwards
       schedule=isolated rows: the same GEMM as a one-op program (operands staged first, a different schedule) --
                      a control only; compare loop rows with loop rows.
     Reading, on loop rows (indications to follow up, none a proof by itself -- a conversion pipelined under the
@@ -446,6 +449,7 @@ def balance():
     -> per element. Writes balance.csv and the optimized HLO (window_config) of every program under hlo/."""
     if jax.default_backend() != "tpu" and not ARGS.quick:
         raise SystemExit("balance: no TPU backend (full sizes are TPU-only; --quick is the CPU smoke test)")
+    ARGS.keep_traces = True                       # needed to attribute ops to HLO instructions later
     ms = (32, 128) if ARGS.quick else (32, 64, 128, 192, 256, 384, 512)
     ks = (512,) if ARGS.quick else (4096, 8192)
 
@@ -484,7 +488,7 @@ def balance():
 
     rows = []
     os.makedirs(os.path.join(ARGS.out, "hlo"), exist_ok=True)
-    opstr = lambda r: r["ops"] and ";".join(f"{k}={v:.2f}" for k, v in list(r["ops"].items())[:6])
+    opstr = lambda r: r["ops"] and ";".join(f"{k}={v:.3f}" for k, v in r["ops"].items())   # every op
     for dtype, wbytes in (("bf16", 2), ("int8", 1)):
         for K in ks:
             R = 1 if ARGS.rotate_mb <= 0 else max(2, math.ceil(ARGS.rotate_mb * 2 ** 20 / (K * K * wbytes)))
@@ -499,8 +503,8 @@ def balance():
                 fus = r["ops"] and sum(v for k, v in r["ops"].items() if "fusion" in k or "convolution" in k) / 8
                 rows.append(dict(base, schedule="loop", loop_slope_us=round(us, 3),
                                  module_us_n8=r["device_us"] and round(r["device_us"], 3),
-                                 fusion_us=fus and round(fus, 3), ops=opstr(r)))
-                print(f"balance loop     {dtype} {M:4d} x {K:5d}  slope {us:9.2f} us  fusion {fus and round(fus, 2)}")
+                                 fused_ops_sum_per_iter_us=fus and round(fus, 3), ops=opstr(r)))
+                print(f"balance loop     {dtype} {M:4d} x {K:5d}  slope {us:9.2f} us  fused ops / iter {fus and round(fus, 2)}")
                 hlo(tag + "_isolated", isolated, x, ws[0])
                 r = bench(isolated, [(x, ws[i]) for i in range(R)], tag + "_isolated")
                 rows.append(dict(base, schedule="isolated", wall_us=round(r["wall_us"], 3),
