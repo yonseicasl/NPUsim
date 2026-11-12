@@ -4,6 +4,19 @@ Status: **candidate, opt-in, not adopted.** Both knobs default to 0; no existing
 number changes. 590 cycles is an empirically fitted effective cost, not a hardware constant. Nothing here is a
 gain over an earlier cohort: A, B and C are compared on the same 28 cases, same runs, same DRAM model.
 
+## Final status (2026-11-12)
+
+- **Primary comparison: the matched-traffic batch, `full_fused_output/`** (section "Full batch with
+  `fused_output_consumer`"): the DRAM traffic of every run is what the compiler accounts for the measured
+  program. refsb, A / B / C MAPE 8.07 / 5.84 / 2.73% (C bias -0.39%); bf16 6.89 -> 3.13%, int8 9.25 -> 2.32%;
+  24 of 28 closer (14 of 14 int8); **four regressions, all memory-bound bf16**. Exact figures:
+  `codex_independent_review/npusim_codex_full_fused_review.json` (Codex's independent check of both batches).
+- The residency2 batch (section "Results") is a valid historical run on a different activation assumption; it is
+  no longer the primary comparison.
+- 590 cycles is unchanged since before the measurement; nothing was refitted. Byte accounting is the compiler's
+  static accounting, not measured traffic. All knobs opt-in, default 0; no config, no push, no merge.
+- Open: the memory-bound bf16 over-prediction (section "Remaining evidence gap").
+
 ## What was implemented
 
 Core (`scheduler/stats.cc/.h`, `npu.cc/.h`), `[accelerator]`:
@@ -39,7 +52,9 @@ Provenance: `FROZEN.sha256`, `balance_npusim_<dram>.json` (binary, library, conf
 batches independently (unique inputs, MAC counts, report = CSV, hashes). `INVALID_SHARED_NETWORK/` holds the
 earlier batches, which ran every case on the last shape's network: **withdrawn, not to be cited.**
 
-## Results (`summary.txt`; mean / MAPE in %, error vs the measured fused op)
+## Results of the first batch, `--activations residency2` (historical; `summary.txt`)
+
+Mean / MAPE in %, error vs the measured fused op.
 
 Regime = compute / stream with compute = 2 M K N / 196.6 TFLOPS and stream = weight bytes / 750 GB/s.
 
@@ -204,3 +219,37 @@ Reading: with consistent traffic the picture of the residency2 batch holds -- th
 fixed per-window cost removes most of the balanced and compute-bound deficit (refsb 8.1% -> 2.7%), and it
 over-predicts memory-bound bf16 through the on-chip weight-load tail. Whether that tail is physical is still
 the open measurement; until then the candidate should not be enabled for memory-bound streaming.
+
+### Effect of the traffic correction alone (refsb, variant C, same cases)
+
+Reported separately because it is a semantic correction, not a model improvement: overall MAPE 2.93 -> 2.73%;
+int8 2.79 -> 2.32% (better); bf16 3.07 -> 3.13% (slightly worse); 16 cases closer, 12 farther. The 16 cases whose
+activations had been on chip: 2.87 -> 2.33%; the 12 that had fallen back to DRAM: 3.00 -> 3.25%. Matching the
+program's traffic does not guarantee a better time in each case.
+
+The four regressions, exactly (signed A -> C, increase of absolute error): bf16 32 x 4096 -1.50 -> +4.85%
+(+3.35 points); 32 x 8192 +1.11 -> +2.76% (+1.64); 64 x 8192 +0.71 -> +2.34% (+1.63); 64 x 4096 -2.86 -> +3.35%
+(+0.49). Nominal regime MAPE of C: memory-bound 1.78%, balanced 4.41%, compute-bound 1.80%; full windows 2.20%,
+partial 3.25%; worst bf16 384 x 4096 -8.92%.
+
+## Remaining evidence gap, and the smallest measurement that closes it
+
+**Gap.** In NPUsim the window schedule exposes, after the last DMA, one window of the on-chip weight-load stage
+plus one window cost: 3.2 us for a bf16 window (4783 cycles), 1.4 us for an int8 one (2127). Whether the TPU
+spends that is not known: the traces have one event per fused op.
+
+What the existing loop data bound, without a new measurement (same program, memory-bound rows, two points
+K 4096 -> 8192 at fixed M and dtype, bytes = weights + input): the measured fused op is `bytes / r + c0` with
+c0 = 1.84 us (bf16 M 32), 2.51 (bf16 M 64), 1.42 (int8 M 32), 1.32 (int8 M 64) and r 726-757 GB/s. c0 is ALL
+of the per-iteration fixed time -- last-window work, window cost, start-up -- so it is an upper bound on the
+tail. Against it NPUsim's bf16 tail is 0.7-1.4 us too long while its int8 tail is about right, and variant A's
+(0.24 us) is ~1.2-2.3 us too short. Two points give no residual to judge the fit by; this is a bound, not a
+measurement of the tail, and nothing was tuned to it.
+
+**Smallest next measurement (one chip, the same loop, no new mechanism assumed):** fix M at 32 (memory-bound for
+every size) and sweep the weight size at SEVERAL window sizes -- K in {2048, 4096, 8192} x N in {2048, 4096, 8192,
+16384}, bf16 and int8, saving the fused-op time and the HLO window of each. The N sweep at fixed K gives the
+fixed per-iteration time with residual degrees of freedom; comparing it across the window sizes XLA picks
+decides the question: a fixed time proportional to the window's bytes (about bytes / 1.5 TB/s) is the on-chip
+load tail NPUsim models; a constant is not, and then the weight-load stage should not sit behind the window
+barrier. Until then the candidate is not to be enabled for memory-bound streaming, and no parameter is refitted.

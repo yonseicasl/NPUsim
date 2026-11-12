@@ -608,6 +608,9 @@ XLA-sized windows with a cost per window on the compute side -- its value measur
 `balance_npusim.py`. Implementation, tests, the 28-case A / B / C results on both DRAM models, the three
 regressions, the residency fallback of 12 cases and what is not established:
 [`results/2026-11-12_window_candidate/REVIEW.md`](results/2026-11-12_window_candidate/REVIEW.md).
-On refsb, same cases and runs: A (config as is) -8.9 / 8.9%, B (window schedule) -5.9 / 6.5%, C (+ 590 cycles per
-window) -0.9 / 2.9%; 25 of 28 closer, three memory-bound bf16 cases worse. Earlier batches of that driver ran on
-wrong inputs and are withdrawn (`INVALID_SHARED_NETWORK/`).
+Primary comparison (DRAM traffic as the compiler accounts the measured loop, `fused_output_consumer`; refsb, same
+cases and runs): A (config as is) MAPE 8.07%, B (window schedule) 5.84%, C (+ 590 cycles per window, fixed before
+the measurement) 2.73%; bf16 6.89 -> 3.13%, int8 9.25 -> 2.32%; 24 of 28 closer, four memory-bound bf16 cases
+worse (+0.5 .. +3.3 points) through the on-chip weight-load tail, whose existence on the TPU is the open
+measurement. An earlier batch on another activation assumption (2.93%) is kept as history; the first batches of
+that driver ran on wrong inputs and are withdrawn (`INVALID_SHARED_NETWORK/`).
