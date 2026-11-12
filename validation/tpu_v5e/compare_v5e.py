@@ -55,6 +55,30 @@ def num(r, k):
     return float(r[k]) if r.get(k) not in (None, "") else None
 
 
+TIMING_KINDS = ("device_trace", "device_slope", "loop_slope", "wall")
+
+
+def timing_kind(rows):
+    """Best guess at what a GEMM csv's time column is, when --timing does not state it. A guess is marked
+    "(inferred)"; anything not recognizable is "unknown" -- a device_us column alone proves nothing
+    (gemm_int8.csv holds loop slopes in it).
+    wall          no device_us on any row: host wall time of the call
+    loop_slope    wall_us == device_us on every row: tpu_v5e1_stream_bench.py's exporter writes its per-iteration
+                  wall slope into both columns (a loop iteration with the body's other fused ops, not a kernel)
+    device_trace  every row has device_us and the op events of a parsed profiler trace (`ops`), as
+                  measure_tpu_v5e1.py writes them"""
+    has = lambda r, k: r.get(k) not in (None, "")
+    if not any(has(r, "device_us") for r in rows):
+        return "wall"
+    if not all(has(r, "device_us") for r in rows):
+        return "unknown"
+    if all(has(r, "wall_us") and float(r["wall_us"]) == float(r["device_us"]) for r in rows):
+        return "loop_slope(inferred)"
+    if all(has(r, "ops") for r in rows):
+        return "device_trace(inferred)"
+    return "unknown"
+
+
 def scale_time(sim, mt, first, inner, chain=False):
     """Kernel seconds of a GEMM from its simulated pieces. sim: {run key: (seconds, prologue s, tail s)};
     first / inner: (run keys, fit) of the first row tile (pays the layer setup) and of the other mt - 1 tiles
@@ -158,6 +182,9 @@ def main():
     ap.add_argument("--gemm", default="gemm.csv", help="GEMM measurements in RESULTS_DIR")
     ap.add_argument("--in-program", action="store_true", help="the GEMMs ran inside a loop or chain of one "
                     "program (streamed, odd_gemm, per-kernel slopes): no program_setup_cycle per GEMM")
+    ap.add_argument("--timing", choices=TIMING_KINDS, help="what the csv's time is (column timing_kind of the "
+                    "output; default: guessed, see timing_kind()). loop_slope = a stream-bench loop iteration, "
+                    "device_slope = slope of profiled device time over a chain")
     ap.add_argument("--chain", action="store_true", help="per-kernel slopes of a chain in one program: also "
                     "subtract the inter-layer overlap with the previous kernel (implies --in-program)")
     a = ap.parse_args()
@@ -166,6 +193,8 @@ def main():
     ACCEL = a.accel
     palm.MOSAIC_DRAM = a.dram and os.path.abspath(a.dram)
     gemm = list(csv.DictReader(open(os.path.join(a.results, a.gemm))))
+    kind = a.timing or timing_kind(gemm)
+    print(f"measured time: {kind}" + ("" if a.timing else "  -- not stated; pass --timing"), flush=True)
     dpath = os.path.join(a.results, "decode.csv")
     decode = list(csv.DictReader(open(dpath))) if os.path.exists(dpath) else []
     shapes = {(int(r["M"]), int(r["K"]), int(r["N"])) for r in gemm}
@@ -208,7 +237,7 @@ def main():
         out.append(dict(M=M, K=K, N=N, measured_us=meas, copy_us=round(copy, 2), kernel_us=round(kern, 2), src=src,
                         npusim_us=round(s, 2), roofline_us=round(roof, 2), err_pct=round(err, 1),
                         err_kernel_pct=round(errk, 1), npusim_noprog_us=round(sk, 2),
-                        err_kernel_noprog_pct=round(errk_noprog, 1)))
+                        err_kernel_noprog_pct=round(errk_noprog, 1), timing_kind=kind))
         print(f"{M:5d} {K:6d} {N:6d} | {meas:9.2f} {copy:7.2f} {kern:8.2f} {s:9.2f} {roof:9.2f}    | {err:+6.1f}%"
               f" {errk:+6.1f}%  {src}")
     print("MAPE " + ", ".join(f"{k} {statistics.mean(v):.1f}% (n={len(v)})" for k, v in errs.items()))

@@ -427,6 +427,88 @@ def loopk():
     write("loopk_fit.csv", fits)
 
 
+def balance():
+    """bf16 vs int8 weights where HBM streaming and MXU compute balance (not in the default --only).
+
+    Stored data: with int8 weights at M = 128 (compute ~ stream) the GEMM fusion of the stream bench takes
+    1.2-1.36 x max(stream, compute); bf16 reaches compute ~ stream at M ~ 256, never measured with more than 3
+    windows. Both dtypes run here on the SAME schedule as that data, tpu_v5e1_stream_bench.py's gemm_loop: one
+    fori_loop iteration is (x + carry) @ W[i % R].astype(bf16), a float32 sum of the result into the carry, W a
+    stack of R distinct K x K copies (>= --rotate-mb in total). Per (dtype, K, M), three scopes, never mixed:
+      loop_slope_us  (median wall(2n) - median wall(n)) / n: one loop iteration, wall clock, as in the stored csv
+      fusion_us      profiled device time of the loop's fused GEMM op per iteration (8-iteration program);
+                     module_us_n8 is that whole program, ops its op breakdown
+      schedule=isolated rows: the same GEMM as a one-op program (operands staged first, a different schedule) --
+                     a control only; compare loop rows with loop rows.
+    Reading, on loop rows: bf16 at M ~ 256 also ~1.2 x max -> not int8, a pipeline effect of any dtype; only int8
+    -> a dtype-specific stage; excess / windows constant over K -> per window; excess / weight elements constant
+    -> per element. Writes balance.csv and the optimized HLO (window_config) of every program under hlo/."""
+    ms = (32, 128) if ARGS.quick else (32, 64, 128, 192, 256, 384, 512)
+    ks = (512,) if ARGS.quick else (4096, 8192)
+
+    def loop(n, x, ws):
+        def body(i, c):
+            w = jax.lax.dynamic_index_in_dim(ws, i % ws.shape[0], keepdims=False)
+            y = (x + c.astype(x.dtype)) @ w.astype(BF16)
+            return c + jnp.sum(y.astype(F32)) * 1e-9
+        return jax.lax.fori_loop(0, n, body, jnp.float32(0))
+    run_loop = jax.jit(loop, static_argnums=0)
+    isolated = jax.jit(lambda a, b: a @ b.astype(BF16))
+
+    def stack(key, shape, dtype):                 # generated on the device, as the stream bench does
+        if dtype == "int8":
+            gen = lambda k: jax.random.randint(k, shape, -8, 8, jnp.int8)
+        else:
+            gen = lambda k: (jax.random.normal(k, shape, F32) * 0.02).astype(BF16)
+        return jax.jit(gen)(jax.random.PRNGKey(key))
+
+    def hlo(tag, f, *args):
+        try:
+            open(os.path.join(ARGS.out, "hlo", tag + ".txt"), "w").write(f.lower(*args).compile().as_text())
+        except Exception as e:
+            print(f"  [{tag}] hlo: {type(e).__name__}: {e}")
+
+    def slope(x, ws, n, repeats=5):
+        def wall(k):
+            t = time.perf_counter()
+            jax.block_until_ready(run_loop(k, x, ws))
+            return time.perf_counter() - t
+        for k in (n, 2 * n):
+            wall(k)
+        t1 = statistics.median(wall(n) for _ in range(repeats))
+        t2 = statistics.median(wall(2 * n) for _ in range(repeats))
+        return max(t2 - t1, 0.0) / n * 1e6
+
+    rows = []
+    os.makedirs(os.path.join(ARGS.out, "hlo"), exist_ok=True)
+    opstr = lambda r: r["ops"] and ";".join(f"{k}={v:.2f}" for k, v in list(r["ops"].items())[:6])
+    for dtype, wbytes in (("bf16", 2), ("int8", 1)):
+        for K in ks:
+            R = 1 if ARGS.rotate_mb <= 0 else max(2, math.ceil(ARGS.rotate_mb * 2 ** 20 / (K * K * wbytes)))
+            ws = stack(K + wbytes, (R, K, K), dtype)
+            for M in ms:
+                x = stack(M + 7, (M, K), "bf16")
+                tag = f"balance_{dtype}_{M}x{K}"
+                base = dict(dtype=dtype, M=M, K=K, N=K, copies=R)
+                hlo(tag + "_loop", run_loop, 8, x, ws)
+                us = slope(x, ws, 10 if M * K * K > 2 ** 33 else 40)
+                r = bench(lambda a, b: run_loop(8, a, b), (x, ws), tag + "_loop")
+                fus = r["ops"] and sum(v for k, v in r["ops"].items() if "fusion" in k or "convolution" in k) / 8
+                rows.append(dict(base, schedule="loop", loop_slope_us=round(us, 3),
+                                 module_us_n8=r["device_us"] and round(r["device_us"], 3),
+                                 fusion_us=fus and round(fus, 3), ops=opstr(r)))
+                print(f"balance loop     {dtype} {M:4d} x {K:5d}  slope {us:9.2f} us  fusion {fus and round(fus, 2)}")
+                hlo(tag + "_isolated", isolated, x, ws[0])
+                r = bench(isolated, [(x, ws[i]) for i in range(R)], tag + "_isolated")
+                rows.append(dict(base, schedule="isolated", wall_us=round(r["wall_us"], 3),
+                                 device_us=r["device_us"] and round(r["device_us"], 3),
+                                 copy_us=r["ops"] and round(sum(v for k, v in r["ops"].items() if "copy-" in k), 3),
+                                 ops=opstr(r)))
+                print(f"balance isolated {dtype} {M:4d} x {K:5d}  {fmt(r)}")
+            del ws
+    write("balance.csv", rows)
+
+
 def run(experiments, default_only, out_name, argv=None):
     """Parse the common options, write env.json and run the selected experiments (name -> function)."""
     global ARGS
@@ -459,7 +541,7 @@ def run(experiments, default_only, out_name, argv=None):
 
 
 def main(argv=None):
-    run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk},
+    run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk, "balance": balance},
         "gemm,vector,decode", "tpu_v5e1", argv)
 
 

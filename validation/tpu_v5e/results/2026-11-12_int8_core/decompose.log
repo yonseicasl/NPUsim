@@ -1,0 +1,44 @@
+A  loop-slope scope, M <= 32: t = F + weight_bytes / r   (F us, r GB/s)
+                         M |  bf16 F     r |  int8 F     r
+TPU followup2            1 |    1.30   751 |    2.27   742
+TPU followup2            8 |    1.76   754 |    2.80   765
+TPU followup2           32 |    2.39   752 |    2.32   737
+TPU followup3            1 |    2.60   755 |    3.33   764
+TPU followup3            8 |    2.91   757 |    2.66   757
+TPU followup3           32 |    2.42   755 |    1.39   733
+NPUsim refsb             1 |    0.25   742 |    0.14   742
+NPUsim refsb             8 |    0.31   741 |    0.22   740
+NPUsim refsb            32 |    0.60   737 |    0.50   731
+NPUsim analytic          1 |    0.37   809 |    0.27   800
+NPUsim analytic          8 |    0.41   808 |    0.29   797
+NPUsim analytic         32 |    0.66   804 |    0.56   788
+
+B  device-trace scope: 46 cold multi-window GEMM fusions; S = weight bytes / 752 GB/s, C = 2MKN / peak
+case                       windows   fusion       S       C   C/S fusion/max
+200x2048x2048_bf16               2    17.48   11.16    8.53  0.76      1.567
+200x2000x2000_bf16               2    17.09   10.64    8.14  0.76      1.607
+128x14336x4096_int8             38    95.63   78.09   76.46  0.98      1.225
+128x4096x28672_int8             75   187.22  156.17  152.92  0.98      1.199
+128x4096x4096_int8              11    30.42   22.31   21.85  0.98      1.363
+256x2000x2000_bf16               3    18.54   10.64   10.42  0.98      1.742
+256x2048x2048_bf16               2    19.16   11.16   10.92  0.98      1.718
+128x4096x6144_int8              16    42.59   33.47   32.77  0.98      1.273
+512x14336x4096_bf16             56   322.12  156.17  305.83  1.96      1.053
+512x4096x28672_bf16            112   641.89  312.34  611.67  1.96      1.049
+512x4096x4096_bf16              16    99.47   44.62   87.38  1.96      1.138
+512x4096x6144_bf16              24   144.69   66.93  131.07  1.96      1.104
+512x14336x4096_int8             56   321.96   78.09  305.83  3.92      1.053
+512x4096x28672_int8            128   653.79  156.17  611.67  3.92      1.069
+512x4096x4096_int8              16    96.55   22.31   87.38  3.92      1.105
+512x4096x6144_int8              32   142.55   33.47  131.07  3.92      1.088
+
+C  hypothesis: compute-side cost per window. w from the 4 int8 M = 128 cases: 0.398, 0.403, 0.413, 0.358 -> 0.393 us
+   the same quantity on compute-bound cases with >= 56 windows (F neglected): 512x14336x4096_bf16 0.241, 512x14336x4096_int8 0.263, 512x4096x28672_bf16 0.245, 512x4096x28672_int8 0.320
+   held-out group       n | w = 0: mean / MAPE | w = 0.393: mean / MAPE
+   all held out        42 |   -3.3 /  4.1%     |   -0.0 /  2.7%
+   bf16 C/S 0.4-1.4    10 |   -2.2 /  2.8%     |   -0.2 /  2.0%
+   bf16 C/S < 0.4       9 |   +0.9 /  0.9%     |   +1.8 /  1.8%
+   bf16 C/S > 1.4      11 |   -9.6 /  9.6%     |   -3.1 /  4.8%
+   int8 C/S < 0.4       8 |   +0.5 /  1.0%     |   +1.4 /  1.7%
+   int8 C/S > 1.4       4 |   -5.4 /  5.4%     |   +2.0 /  2.0%
+   w is not one number (0.17-0.41 us by context) and nothing shows what happens at a window boundary: not adopted.
