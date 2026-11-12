@@ -545,44 +545,82 @@ def hlo_facts(text):
 
 
 def op_events(d, per_module):
-    """Raw device events of a kept trace: module count and, per op name, (count, total us); the events whose
-    hlo_category says convolution; sha256 of the trace files. `verified` only when exactly `per_module`
-    convolution-fusion events were recorded per module -- the trace-level evidence that the GEMM ran once per
-    requested loop iteration. None without a readable device trace."""
-    files = sorted(glob.glob(os.path.join(d, "**", "*"), recursive=True))
-    hashes = {os.path.basename(f): hashlib.sha256(open(f, "rb").read()).hexdigest() for f in files if os.path.isfile(f)}
+    """Raw device events of ONE kept trace capture under d: the modules (invocations) and, per op name,
+    (count, total us); the events whose hlo_category says convolution, assigned to the module interval that
+    contains them; sha256 of every file, keyed by its path relative to d.
+    `verified` = the event counts are CONSISTENT WITH `per_module` loop iterations per invocation: one capture,
+    every convolution event has a timestamp and lies inside exactly one module interval, and every module holds
+    exactly `per_module` of them. It is a count check, not proof of each iteration or of the schedule; `why`
+    says what failed. None when d holds no trace."""
+    files = sorted(f for f in glob.glob(os.path.join(d, "**", "*"), recursive=True) if os.path.isfile(f))
+    hashes = {os.path.relpath(f, d): hashlib.sha256(open(f, "rb").read()).hexdigest() for f in files}
     paths = [f for f in files if f.endswith("perfetto_trace.json.gz")]
     if not paths:
         return None
+    out = dict(files=hashes, traces=[os.path.relpath(f, d) for f in paths], trace=None, modules=0, ops={},
+               conv_events=0, conv_us=0.0, per_module_counts=[], verified=False, why=[])
+    if len(paths) > 1:                            # e.g. a re-run into the same directory: which one is current?
+        out["why"].append(f"{len(paths)} perfetto traces under the capture directory: ambiguous")
+        return out
+    out["trace"] = out["traces"][0]
     ev = json.load(gzip.open(paths[0]))
     ev = ev.get("traceEvents", []) if isinstance(ev, dict) else ev
     name = lambda kind, key: {key(e): e["args"]["name"] for e in ev if e.get("ph") == "M" and e.get("name") == kind}
     procs, threads = name("process_name", lambda e: e["pid"]), name("thread_name", lambda e: (e["pid"], e.get("tid")))
     pids = sorted((p for p, n in procs.items() if re.search(ARGS.device_match, n)), key=lambda p: procs[p])
     if not pids:
-        return None
-    modules, ops, conv = 0, {}, [0, 0.0]
+        out["why"].append("no device process in the trace")
+        return out
+    span = lambda e: (float(e["ts"]), float(e["ts"]) + float(e["dur"])) if "ts" in e and "dur" in e else None
+    mods, convs, untimed = [], [], 0
     for e in ev:
         if e.get("ph") != "X" or e.get("pid") != pids[0]:
             continue
         t = threads.get((pids[0], e.get("tid")), "")
         if "Module" in t:
-            modules += 1
+            if span(e) is None:
+                untimed += 1
+            else:
+                mods.append(span(e))
         elif "Ops" in t:
-            c = ops.setdefault(e["name"], [0, 0.0])
-            c[0], c[1] = c[0] + 1, c[1] + float(e["dur"])
+            c = out["ops"].setdefault(e["name"], [0, 0.0])
+            c[0], c[1] = c[0] + 1, c[1] + float(e.get("dur", 0.0))
             if "convolution" in str(e.get("args", {}).get("hlo_category", "")):
-                conv[0], conv[1] = conv[0] + 1, conv[1] + float(e["dur"])
-    return dict(modules=modules, ops=ops, conv_events=conv[0], conv_us=conv[1], files=hashes,
-                verified=modules > 0 and conv[0] == per_module * modules)
+                out["conv_events"] += 1
+                out["conv_us"] += float(e.get("dur", 0.0))
+                convs.append(span(e))
+    out["modules"] = len(mods) + untimed
+    counts, outside, ambiguous, eps = [0] * len(mods), 0, 0, 1e-6
+    for c in convs:
+        inside = [i for i, (a0, a1) in enumerate(mods) if c is not None and c[0] >= a0 - eps and c[1] <= a1 + eps]
+        if len(inside) == 1:
+            counts[inside[0]] += 1
+        elif inside:
+            ambiguous += 1
+        else:
+            outside += 1                          # no timestamp, truncated, or outside every module
+    out["per_module_counts"] = counts
+    if untimed:
+        out["why"].append(f"{untimed} module events without a timestamp")
+    if not mods:
+        out["why"].append("no module events")
+    if outside:
+        out["why"].append(f"{outside} convolution events outside every module interval (or untimed / truncated)")
+    if ambiguous:
+        out["why"].append(f"{ambiguous} convolution events inside more than one module interval")
+    wrong = sorted({c for c in counts if c != per_module})
+    if wrong:
+        out["why"].append(f"modules with a convolution-event count other than {per_module}: counts seen {wrong}")
+    out["verified"] = not out["why"]
+    return out
 
 
 def pair_verdict(banked, single, K, banked_ev=None, single_ev=None):
     """What the two programs' artifacts allow to be said -- (verdict, notes). Deliberately conservative:
       * differing HLO signatures (convolution types, window geometry, fusion / loop counts) -> inconclusive;
       * equal signatures are only "the same observed signatures": global counts do not show that the GEMM is
-        inside the loop. That needs the trace: exactly one convolution-fusion event per requested iteration in
-        BOTH programs (op_events().verified); without it -> inconclusive;
+        inside the loop. The trace must agree: convolution-event counts consistent with the requested iterations
+        in every invocation of BOTH programs (op_events().verified -- a count check); without it -> inconclusive;
       * weight staging is never concluded. A memory-space tag on a weight-shaped tensor, or extra copy /
         prefetch ops, in the single-weight program are listed as RAW evidence (a copy may be of the input, a tag
         is not a traced dataflow), and their absence is "not established", not "not staged"."""
@@ -593,17 +631,19 @@ def pair_verdict(banked, single, K, banked_ev=None, single_ev=None):
     if diff:
         return "inconclusive: the two HLO texts do not show the same signatures", diff
     if not (banked_ev and single_ev and banked_ev["verified"] and single_ev["verified"]):
-        got = lambda e: "no device trace" if not e else f"{e['conv_events']} convolution-fusion events in {e['modules']} modules"
-        return ("inconclusive: same observed HLO signatures, but one convolution-fusion event per loop iteration "
-                "is not verified in both traces"), [f"banked: {got(banked_ev)}", f"single: {got(single_ev)}"]
+        got = lambda e: "no device trace" if not e else (
+            "; ".join(e["why"]) or f"{e['conv_events']} convolution events in {e['modules']} modules")
+        return ("inconclusive: same observed HLO signatures, but the traces do not both show convolution-event "
+                "counts consistent with the requested iterations per invocation"), \
+               [f"banked: {got(banked_ev)}", f"single: {got(single_ev)}"]
     weightish = lambda f: {t for t in f["tagged"] if re.search(rf"\[(?:\d+,)?{K},{K}\]", t)}
     raw = [f"memory-space tag on a weight-shaped tensor only in the single program: {sorted(weightish(single) - weightish(banked))}"] \
         if weightish(single) - weightish(banked) else []
     if single["copy_start"] != banked["copy_start"] or single["prefetch"] != banked["prefetch"]:
         raw.append(f"copy-start {banked['copy_start']} -> {single['copy_start']}, prefetch {banked['prefetch']} -> "
                    f"{single['prefetch']} (which operand is copied is not identified)")
-    return ("same observed HLO signatures, one convolution-fusion event per iteration in both traces; weight "
-            "staging NOT ESTABLISHED from these artifacts" + (" -- raw evidence listed, not a conclusion" if raw else "")
+    return ("same observed HLO signatures, convolution-event counts consistent with the requested iterations per "
+            "invocation in both traces; weight staging NOT ESTABLISHED from these artifacts" + (" -- raw evidence listed, not a conclusion" if raw else "")
             + "; any time difference is a two-program contrast, not a measured DMA tail"), raw
 
 
@@ -618,8 +658,10 @@ def tailprobe():
                                             slope (median(2n) - median(n)) / n; slope_flag marks a nonpositive one
       modules_traced, op_event_counts,      raw profiler events of the 8-iteration program
       op_event_us
-      conv_fusion_events_per_module,        the events whose hlo_category is a convolution; a per-event time is
-      conv_fusion_us_per_event              given only when there are exactly 8 per module (else blank)
+      trace_selected, trace_check,          the one capture read, and whether its convolution-event counts are
+      conv_events_per_module,               consistent with 8 iterations in EVERY invocation (each event inside
+      conv_fusion_us_per_event              exactly one module interval); module_us_n8 and the per-event time are
+                                            blank unless that check passes
       all_fusion_event_sum_per_requested_iter_us   every fusion / convolution event summed, / 8 -- may contain
                                             fusions outside the loop; NOT a loop-kernel time
       hlo_facts, hlo_sha256, trace_sha256   compiler output (static) and file hashes
@@ -679,20 +721,24 @@ def tailprobe():
             n = 10 if M * K * K > 2 ** 33 else 40
             wn, w2n = walls(x, ws, n)
             us = (statistics.median(w2n) - statistics.median(wn)) / n * 1e6
+            shutil.rmtree(os.path.join(ARGS.out, "traces", tag), ignore_errors=True)   # this capture only
             r = bench(lambda a, b: run_loop(ITERS, a, b), (x, ws), tag)
             ev = evs[mode] = op_events(os.path.join(ARGS.out, "traces", tag), ITERS)
+            ok = bool(ev and ev["verified"])       # without it no device time of this capture is reported
             allfus = ev and sum(t for k, (c, t) in ev["ops"].items() if "fusion" in k or "convolution" in k)
             rows.append(dict(
                 dtype=dtype, M=M, K=K, N=K, mode=mode, weights_in_loop=ws.shape[0], loop_iterations_n=n,
                 wall_n_s=json.dumps(wn), wall_2n_s=json.dumps(w2n), loop_slope_us=round(us, 3),
                 slope_flag="ok" if us > 0 else "nonpositive: wall slope unusable",
                 requested_modules=r["iters"], modules_traced=ev and ev["modules"],
-                module_us_n8=r["device_us"] and round(r["device_us"], 3),
+                trace_selected=ev and ev["trace"], trace_check="consistent" if ok else
+                ("no device trace" if not ev else "; ".join(ev["why"])),
+                conv_events_per_module=ev and json.dumps(sorted(set(ev["per_module_counts"]))),
+                module_us_n8=round(r["device_us"], 3) if ok and r["device_us"] else None,
                 op_event_counts=ev and ";".join(f"{k}={c}" for k, (c, t) in ev["ops"].items()),
                 op_event_us=ev and ";".join(f"{k}={t:.3f}" for k, (c, t) in ev["ops"].items()),
-                conv_fusion_events_per_module=ev and ev["modules"] and round(ev["conv_events"] / ev["modules"], 3),
-                conv_fusion_us_per_event=round(ev["conv_us"] / ev["conv_events"], 3) if ev and ev["verified"] else None,
-                all_fusion_event_sum_per_requested_iter_us=ev and ev["modules"] and round(allfus / ev["modules"] / ITERS, 3),
+                conv_fusion_us_per_event=round(ev["conv_us"] / ev["conv_events"], 3) if ok else None,
+                all_fusion_event_sum_per_requested_iter_us=round(allfus / ev["modules"] / ITERS, 3) if ev and ev["modules"] and ev["trace"] else None,
                 hlo_facts=json.dumps(facts[mode]), hlo_sha256=hashlib.sha256(text.encode()).hexdigest(),
                 trace_sha256=ev and json.dumps(ev["files"])))
             print(f"tailprobe {mode:6s} {dtype} {M:3d} x {K:5d}  slope {us:9.2f} us ({rows[-1]['slope_flag']})  "

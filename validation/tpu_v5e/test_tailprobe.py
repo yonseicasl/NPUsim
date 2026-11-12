@@ -10,6 +10,7 @@ import gzip
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,40 +33,71 @@ i8 = m.hlo_facts(open(os.path.join(H, "balance_int8_128x4096_loop.txt")).read())
 assert i8["windows"][0]["kernel_window_bounds"] == "512,3" and i8["convolutions"][0][1][1] == "s8[4096,4096]", i8
 
 
-# op_events(): raw counts from a trace; "verified" only with exactly 8 convolution-fusion events per module
-def trace(conv_per_module, modules=2, extra_fusion=0):
+# op_events(): raw counts of ONE capture; "verified" = every invocation holds exactly 8 convolution events,
+# each inside exactly one module interval -- a count check, not proof of the schedule
+def trace(counts, extra_fusion=0, stray=None, extra_files=(), second_capture=False):
+    """A synthetic capture: one module per entry of counts with that many convolution events inside it.
+    stray: "outside" (after the last module), "untimed" (no ts) or "truncated" (runs past its module's end)."""
     d = tempfile.mkdtemp()
-    os.makedirs(os.path.join(d, "plugins", "profile", "run"))
+    run = os.path.join(d, "plugins", "profile", "run")
+    os.makedirs(run)
     ev = [dict(ph="M", name="process_name", pid=3, args=dict(name="/device:TPU:0")),
           dict(ph="M", name="process_name", pid=9, args=dict(name="/host:CPU")),
           dict(ph="M", name="thread_name", pid=3, tid=1, args=dict(name="XLA Modules")),
           dict(ph="M", name="thread_name", pid=3, tid=2, args=dict(name="XLA Ops"))]
-    for i in range(modules):
+    conv = lambda ts, dur=50.0: dict(ph="X", pid=3, tid=2, name="convert_reduce_fusion.2", ts=ts, dur=dur,
+                                     args=dict(hlo_category="convolution fusion"))
+    for i, n in enumerate(counts):
         ev.append(dict(ph="X", pid=3, tid=1, name="jit_loop", ts=1000 * i, dur=500.0))
         ev.append(dict(ph="X", pid=3, tid=2, name="while.4", ts=1000 * i, dur=450.0, args=dict(hlo_category="while")))
-        for j in range(conv_per_module):
-            ev.append(dict(ph="X", pid=3, tid=2, name="convert_reduce_fusion.2", ts=1000 * i + 50 * j, dur=50.0,
-                           args=dict(hlo_category="convolution fusion")))
+        ev += [conv(1000 * i + 50 * j) for j in range(n)]
         for j in range(extra_fusion):                       # e.g. a one-time copy fusion outside the loop
-            ev.append(dict(ph="X", pid=3, tid=2, name="fusion.7", ts=1000 * i + 900, dur=30.0,
+            ev.append(dict(ph="X", pid=3, tid=2, name="fusion.7", ts=1000 * i + 460, dur=30.0,
                            args=dict(hlo_category="data formatting")))
         ev.append(dict(ph="X", pid=9, tid=5, name="convolution on the host", ts=1000 * i, dur=7.0))
-    with gzip.open(os.path.join(d, "plugins", "profile", "run", "perfetto_trace.json.gz"), "wt") as f:
+    if stray == "outside":
+        ev.append(conv(1000 * len(counts) + 700))
+    elif stray == "untimed":
+        e = conv(0); del e["ts"]; ev.append(e)
+    elif stray == "truncated":
+        ev.append(conv(480, dur=100.0))                     # starts in module 0, ends after it
+    with gzip.open(os.path.join(run, "perfetto_trace.json.gz"), "wt") as f:
         json.dump(dict(traceEvents=ev), f)
+    for rel in extra_files:
+        os.makedirs(os.path.dirname(os.path.join(d, rel)), exist_ok=True)
+        open(os.path.join(d, rel), "w").write(rel)
+    if second_capture:
+        os.makedirs(os.path.join(d, "plugins", "profile", "run2"))
+        shutil.copy(os.path.join(run, "perfetto_trace.json.gz"), os.path.join(d, "plugins", "profile", "run2"))
     return d
 
 
 m.ARGS = argparse.Namespace(device_match=r"TPU:0\b")
-good = m.op_events(trace(8), 8)
-assert good["verified"] and good["modules"] == 2 and good["conv_events"] == 16 and good["conv_us"] == 800.0, good
-assert good["ops"]["while.4"] == [2, 900.0] and len(good["files"]["perfetto_trace.json.gz"]) == 64
-nine = m.op_events(trace(9), 8)
+good = m.op_events(trace([8, 8]), 8)
+assert good["verified"] and not good["why"] and good["modules"] == 2 and good["per_module_counts"] == [8, 8], good
+assert good["conv_events"] == 16 and good["conv_us"] == 800.0 and good["ops"]["while.4"] == [2, 900.0]
+assert good["trace"] == os.path.join("plugins", "profile", "run", "perfetto_trace.json.gz")
+uneven = m.op_events(trace([7, 9]), 8)                      # 16 in total, but not 8 per invocation
+assert not uneven["verified"] and uneven["per_module_counts"] == [7, 9] and "[7, 9]" in uneven["why"][0], uneven
+nine = m.op_events(trace([9, 9]), 8)
 assert not nine["verified"] and nine["conv_events"] == 18
-hoisted = m.op_events(trace(1), 8)                          # the GEMM ran once per module, not once per iteration
+hoisted = m.op_events(trace([1, 1]), 8)                     # the GEMM ran once per module, not once per iteration
 assert not hoisted["verified"]
-mixed = m.op_events(trace(8, extra_fusion=1), 8)            # another fusion does not count as the convolution
+mixed = m.op_events(trace([8, 8], extra_fusion=1), 8)       # another fusion does not count as the convolution
 assert mixed["verified"] and mixed["conv_events"] == 16 and mixed["ops"]["fusion.7"] == [2, 60.0]
+for stray in ("outside", "untimed", "truncated"):           # an event that belongs to no single invocation
+    e = m.op_events(trace([8, 8], stray=stray), 8)
+    assert not e["verified"] and e["per_module_counts"] == [8, 8] and "outside every module interval" in e["why"][0], (stray, e)
+dup = m.op_events(trace([8, 8], extra_files=("a/host.xplane.pb", "b/host.xplane.pb")), 8)
+assert len(dup["files"]) == 3 and {"a/host.xplane.pb", "b/host.xplane.pb"} <= set(dup["files"]), dup["files"]
+assert dup["files"]["a/host.xplane.pb"] != dup["files"]["b/host.xplane.pb"] and dup["verified"]
+two = m.op_events(trace([8, 8], second_capture=True), 8)    # a re-run into the same directory
+assert not two["verified"] and two["trace"] is None and len(two["traces"]) == 2 and "ambiguous" in two["why"][0], two
 assert m.op_events(tempfile.mkdtemp(), 8) is None           # no trace
+codex = "/tmp/codex-tailprobe-counts-s8y4sikq"              # Codex's counterexample fixture, when present
+if os.path.isdir(codex):
+    e = m.op_events(codex, 8)
+    assert e is not None and not e["verified"], e
 
 # pair_verdict(): never more than the artifacts show
 same = copy.deepcopy(loop)
@@ -77,9 +109,10 @@ assert "NOT ESTABLISHED" in v and "raw evidence" in v and "which operand is copi
 tagged = copy.deepcopy(loop); tagged["tagged"] = loop["tagged"] + ["bf16[1,4096,4096]:S(1)"]
 v, notes = m.pair_verdict(loop, tagged, 4096, good, good)  # a tag is raw evidence, not a traced dataflow
 assert "NOT ESTABLISHED" in v and "raw evidence" in v and "S(1)" in notes[0], (v, notes)
-for bad in (None, nine, hoisted):                           # loop membership not verified in the trace
+for bad in (None, nine, hoisted, uneven, two):              # counts not consistent in the trace, or no single capture
     v, notes = m.pair_verdict(loop, same, 4096, good, bad)
-    assert v.startswith("inconclusive") and "not verified in both traces" in v, v
+    assert v.startswith("inconclusive") and "do not both show convolution-event counts consistent" in v, v
+    assert len(notes) == 2 and notes[1].startswith("single: "), notes
 other = copy.deepcopy(loop); other["windows"][0]["iteration_bounds"] = "8,1,1"
 assert m.pair_verdict(loop, other, 4096, good, good)[0].startswith("inconclusive")
 more = copy.deepcopy(loop); more["fusions"] += 1
@@ -103,6 +136,7 @@ for r in rows:
     assert math.isfinite(float(r["loop_slope_us"])) and r["slope_flag"] in ("ok", "nonpositive: wall slope unusable"), r
     assert (float(r["loop_slope_us"]) > 0) == (r["slope_flag"] == "ok")
     assert r["conv_fusion_us_per_event"] == "" and (r["weights_in_loop"] == "1") == (r["mode"] == "single"), r
+    assert r["trace_check"] != "consistent" and r["module_us_n8"] == "", r   # no validated capture: no device time
     assert len(r["hlo_sha256"]) == 64
 pairs = list(csv.DictReader(open(os.path.join(out, "tailprobe_pairs.csv"))))
 assert len(pairs) == 2 and all(q["verdict"].startswith("inconclusive") for q in pairs), pairs

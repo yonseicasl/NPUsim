@@ -627,14 +627,14 @@ Three kinds of numbers come out, and they are kept apart:
 | kind | columns | what it is |
 |---|---|---|
 | wall clock | `wall_n_s`, `wall_2n_s`, `loop_slope_us`, `slope_flag` | raw host samples of the n- and 2n-iteration loop and their SIGNED slope; a nonpositive slope is flagged, not clipped |
-| profiler events | `modules_traced`, `op_event_counts`, `op_event_us`, `conv_fusion_events_per_module`, `conv_fusion_us_per_event`, `all_fusion_event_sum_per_requested_iter_us` | device events, one per op execution; no per-DMA events. The per-event convolution time is given only when the trace has exactly 8 convolution-fusion events per 8-iteration module; the all-fusion sum may include fusions outside the loop and is not a loop-kernel time |
+| profiler events | `trace_selected`, `trace_check`, `modules_traced`, `conv_events_per_module`, `op_event_counts`, `op_event_us`, `module_us_n8`, `conv_fusion_us_per_event`, `all_fusion_event_sum_per_requested_iter_us` | device events of the ONE capture read (several captures in the directory = ambiguous, nothing reported), one per op execution; no per-DMA events. `trace_check` is "consistent" only when every convolution event lies inside exactly one invocation and EVERY invocation holds exactly 8 -- a count check, not proof of each iteration; `module_us_n8` and the per-event convolution time are blank otherwise. The all-fusion sum may include fusions outside the loop and is not a loop-kernel time |
 | compiler facts | `hlo_facts`, `hlo/*.txt` | read from the optimized HLO: convolution operand types, window geometry, memory-space tags, copies / prefetch, fusion and loop counts -- static, not measured |
 
 `tailprobe_pairs.csv` gives one conservative verdict per case:
 
 - *inconclusive* when the two HLO texts do not show the same signatures (convolution types, window geometry,
-  fusion / loop counts), or when one convolution-fusion event per loop iteration is not verified in BOTH traces
-  (equal global counts in the HLO do not show that the GEMM stayed inside the loop);
+  fusion / loop counts), or when the convolution-event counts are not consistent with 8 iterations in every
+  invocation of BOTH traces (equal global counts in the HLO do not show that the GEMM stayed inside the loop);
 - otherwise *same observed signatures ...; weight staging NOT ESTABLISHED*. Staging is never concluded: a
   memory-space tag on a weight-shaped tensor or extra copy / prefetch ops in the single-weight program are listed
   as raw evidence (a copy may be of the input; a tag is not a traced dataflow), and their absence does not show
@@ -644,10 +644,11 @@ What it cannot give: the time between the end of the last DMA and the end of the
 for it -- nor where the reused weight physically resides. A banked-vs-single difference is a difference between
 two programs; it is not to be reported as a measured tail, and no model parameter is to be fitted to it. One
 run may well end inconclusive. `test_tailprobe.py` (CPU, functional only): `hlo_facts` on HLO saved from the
-balance run, `op_events` on synthetic traces (8 per module verified; 9, 1 and none are not), `pair_verdict`
-cases (an extra copy alone or a tag alone never yields a staging conclusion), the `--quick` run and the TPU
-guard. `tailprobe_meta.json` records script hash, argv, backend, device kind, JAX version; each row the HLO and
-trace file hashes and requested vs traced module counts.
+balance run, `op_events` on synthetic traces ([8, 8] consistent; [7, 9], [9, 9], [1, 1], an event outside every
+invocation, without a timestamp or running past its invocation, two captures in one directory, and no trace are
+not), `pair_verdict` cases (an extra copy alone or a tag alone never yields a staging conclusion), the `--quick`
+run and the TPU guard. `tailprobe_meta.json` records script hash, argv, backend, device kind, JAX version; each
+row the HLO hash, the hash of every trace file by its relative path, and requested vs traced invocation counts.
 
 Run (Colab, TPU v5e-1): `%run measure_tpu_v5e1.py --only tailprobe`, then zip the output directory (it keeps
 `traces/`).
