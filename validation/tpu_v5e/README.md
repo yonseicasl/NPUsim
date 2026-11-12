@@ -552,7 +552,7 @@ it: the value is not one number (0.24-0.32 us on compute-bound cases with >= 56 
 kernels), nothing shows what happens at a window boundary, and M = 512 int8 ~ bf16 only excludes a large *serial*
 per-weight conversion, not a pipelined one. A per-window knob set from this would be a fitted constant.
 
-**Decisive measurement (one chip; not run):** `measure_tpu_v5e1.py --only balance` -- the stream bench's loop for
+**Discriminating measurement (one chip; not run; indications, no single ratio is a proof):** `measure_tpu_v5e1.py --only balance` -- the stream bench's loop for
 bf16 and int8, K = N = 4096 and 8192, M 32-512, saving the loop slope, the profiled fusion time and the optimized
 HLO of each program, with the one-op program as a separately labelled control. bf16 at M ~ 256 also at ~1.2 x max
 -> a pipeline effect to model for every dtype; only int8 -> a dtype-specific stage; excess per window constant

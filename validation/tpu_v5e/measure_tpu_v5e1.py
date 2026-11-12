@@ -440,9 +440,12 @@ def balance():
                      module_us_n8 is that whole program, ops its op breakdown
       schedule=isolated rows: the same GEMM as a one-op program (operands staged first, a different schedule) --
                      a control only; compare loop rows with loop rows.
-    Reading, on loop rows: bf16 at M ~ 256 also ~1.2 x max -> not int8, a pipeline effect of any dtype; only int8
+    Reading, on loop rows (indications to follow up, none a proof by itself -- a conversion pipelined under the
+    compute would not show as a ratio): bf16 at M ~ 256 also ~1.2 x max -> not int8, a pipeline effect of any dtype; only int8
     -> a dtype-specific stage; excess / windows constant over K -> per window; excess / weight elements constant
     -> per element. Writes balance.csv and the optimized HLO (window_config) of every program under hlo/."""
+    if jax.default_backend() != "tpu" and not ARGS.quick:
+        raise SystemExit("balance: no TPU backend (full sizes are TPU-only; --quick is the CPU smoke test)")
     ms = (32, 128) if ARGS.quick else (32, 64, 128, 192, 256, 384, 512)
     ks = (512,) if ARGS.quick else (4096, 8192)
 
