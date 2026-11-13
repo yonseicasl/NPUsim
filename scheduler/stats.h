@@ -216,6 +216,12 @@ public:
     // summed over its iterations, so the tile clock above (one DRAM iteration's GLB repetitions) is multiplied
     // by it. Without it a timeline tile spans every DRAM iteration and the pipeline fill grows with them.
     unsigned timeline_outer_iterations;
+    // [accelerator] offchip_window_count (0 = off): the off-chip stages deliver the layer's data in this many
+    // windows, each fetched whole before the on-chip stages consume it, the next one fetched meanwhile -- instead
+    // of once per tile of the clock. The on-chip stages keep the tile clock. window_switch_cycle: compute-side
+    // cycles per window (chip-wide, once per window), part of the compute schedule.
+    unsigned timeline_offchip_windows;
+    double window_switch_cycle;
     // E20-3: dense input-window reuse at the off-chip boundary. The logical tile requests remain
     // visible, but their overlapping payload is coalesced to the exact union footprint when the
     // GLB can retain the required sliding working set.

@@ -1,0 +1,5 @@
+dtype,M,K,windows,iteration_bounds,kernel_window_bounds,window_coverage,window_model,measured_us,hlo_sha256,dram,timing_kind,npusim_A_us,err_A_pct,npusim_B_us,err_B_pct,npusim_C_us,err_C_pct
+bf16,32,4096,8,8x1x1,512x4,1.0,count-based equal-share,46.488,f63c6484fdb2d5690c1556ed51fb72a7fb8818664a39fc0f658dd3eb727d947d,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),45.44,-2.3,48.0,3.2,48.39,4.1
+bf16,256,4096,11,11x1x1,512x3,1.031,count-based equal-share,56.758,81dcb138e5d18ba21ee6d53c5e9295bcf618a53c6e92b80cf261629eb7ab6045,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),45.8,-19.3,49.5,-12.8,52.81,-7.0
+int8,128,4096,11,11x1x1,512x3,1.031,count-based equal-share,30.357,8ab86f52b975f25854e0ba5dcfd0f4f9699719f11a60a4530db6f79dc13032fb,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),22.9,-24.6,24.75,-18.5,28.62,-5.7
+int8,64,8192,39,3x1x13,80x22,1.047,count-based equal-share,95.257,f6e02012ef1c58621f3e65c5f8251aff2303f59f16cb865cf838f87708ca1cc2,hbm2e_tpu_v5e_refsb,device_trace(fused op per loop iteration),90.57,-4.9,91.61,-3.8,92.01,-3.4

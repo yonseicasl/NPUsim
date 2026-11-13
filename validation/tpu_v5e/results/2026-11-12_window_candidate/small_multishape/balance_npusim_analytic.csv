@@ -1,0 +1,5 @@
+dtype,M,K,windows,iteration_bounds,kernel_window_bounds,window_coverage,window_model,measured_us,hlo_sha256,dram,timing_kind,npusim_A_us,err_A_pct,npusim_B_us,err_B_pct,npusim_C_us,err_C_pct
+bf16,32,4096,8,8x1x1,512x4,1.0,count-based equal-share,46.488,f63c6484fdb2d5690c1556ed51fb72a7fb8818664a39fc0f658dd3eb727d947d,analytic,device_trace(fused op per loop iteration),41.69,-10.3,44.25,-4.8,44.64,-4.0
+bf16,256,4096,11,11x1x1,512x3,1.031,count-based equal-share,56.758,81dcb138e5d18ba21ee6d53c5e9295bcf618a53c6e92b80cf261629eb7ab6045,analytic,device_trace(fused op per loop iteration),44.62,-21.4,48.14,-15.2,52.46,-7.6
+int8,128,4096,11,11x1x1,512x3,1.031,count-based equal-share,30.357,8ab86f52b975f25854e0ba5dcfd0f4f9699719f11a60a4530db6f79dc13032fb,analytic,device_trace(fused op per loop iteration),22.36,-26.3,24.14,-20.5,28.47,-6.2
+int8,64,8192,39,3x1x13,80x22,1.047,count-based equal-share,95.257,f6e02012ef1c58621f3e65c5f8251aff2303f59f16cb865cf838f87708ca1cc2,analytic,device_trace(fused op per loop iteration),84.05,-11.8,85.09,-10.7,85.49,-10.3

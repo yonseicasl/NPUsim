@@ -1,0 +1,478 @@
+{
+  "analytic": {
+    "artifact_checks": "PASS 84 inputs, 168 reports, measurements and hashes",
+    "groups": {
+      "all": {
+        "n": 28,
+        "A": {
+          "mape": 12.572585354014258,
+          "bias": -12.572585354014258
+        },
+        "B": {
+          "mape": 9.723180529793325,
+          "bias": -9.723180529793325
+        },
+        "C": {
+          "mape": 5.5333796183646715,
+          "bias": -4.32192539461565
+        }
+      },
+      "dtype=bf16": {
+        "n": 14,
+        "A": {
+          "mape": 12.703858059224626,
+          "bias": -12.703858059224626
+        },
+        "B": {
+          "mape": 9.203710111622657,
+          "bias": -9.203710111622657
+        },
+        "C": {
+          "mape": 6.305051128324545,
+          "bias": -6.285414959814353
+        }
+      },
+      "dtype=int8": {
+        "n": 14,
+        "A": {
+          "mape": 12.44131264880389,
+          "bias": -12.44131264880389
+        },
+        "B": {
+          "mape": 10.242650947963995,
+          "bias": -10.242650947963995
+        },
+        "C": {
+          "mape": 4.761708108404798,
+          "bias": -2.3584358294169467
+        }
+      },
+      "edge=full": {
+        "n": 14,
+        "A": {
+          "mape": 10.719902121233066,
+          "bias": -10.719902121233066
+        },
+        "B": {
+          "mape": 7.861502759198258,
+          "bias": -7.861502759198258
+        },
+        "C": {
+          "mape": 5.251636626822048,
+          "bias": -4.065317332571049
+        }
+      },
+      "edge=partial": {
+        "n": 14,
+        "A": {
+          "mape": 14.42526858679545,
+          "bias": -14.42526858679545
+        },
+        "B": {
+          "mape": 11.584858300388394,
+          "bias": -11.584858300388394
+        },
+        "C": {
+          "mape": 5.815122609907295,
+          "bias": -4.57853345666025
+        }
+      },
+      "regime=compute/DRAM<0.8": {
+        "n": 12,
+        "A": {
+          "mape": 12.306993683004741,
+          "bias": -12.306993683004741
+        },
+        "B": {
+          "mape": 9.024417202661056,
+          "bias": -9.024417202661056
+        },
+        "C": {
+          "mape": 8.350676307447745,
+          "bias": -8.350676307447745
+        }
+      },
+      "regime=compute/DRAM>1.25": {
+        "n": 12,
+        "A": {
+          "mape": 9.9520066840246,
+          "bias": -9.9520066840246
+        },
+        "B": {
+          "mape": 7.9067867104182605,
+          "bias": -7.9067867104182605
+        },
+        "C": {
+          "mape": 2.3992537731370454,
+          "bias": 0.42747274894400505
+        }
+      },
+      "regime=compute/DRAM[0.8,1.25]": {
+        "n": 4,
+        "A": {
+          "mape": 21.231096377011784,
+          "bias": -21.231096377011784
+        },
+        "B": {
+          "mape": 17.268651969315336,
+          "bias": -17.268651969315336
+        },
+        "C": {
+          "mape": 6.483867086798325,
+          "bias": -6.483867086798325
+        }
+      },
+      "residency_C=activation_residency 2: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)": {
+        "n": 12,
+        "A": {
+          "mape": 9.87611184049813,
+          "bias": -9.87611184049813
+        },
+        "B": {
+          "mape": 8.063432116790182,
+          "bias": -8.063432116790182
+        },
+        "C": {
+          "mape": 3.739052282413897,
+          "bias": -1.027626087978664
+        }
+      },
+      "residency_C=activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)": {
+        "n": 16,
+        "A": {
+          "mape": 14.594940489151353,
+          "bias": -14.594940489151353
+        },
+        "B": {
+          "mape": 10.967991839545684,
+          "bias": -10.967991839545684
+        },
+        "C": {
+          "mape": 6.879125120327752,
+          "bias": -6.792649874593389
+        }
+      }
+    },
+    "worst_regressions": [
+      {
+        "case": "int8:384:8192",
+        "delta_abs_error_pp": -0.5152024906475257,
+        "errors": {
+          "A": -5.003915548493609,
+          "B": -4.500023313952861,
+          "C": 4.488713057846083
+        },
+        "residency": "activation_residency 2: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)"
+      },
+      {
+        "case": "int8:64:8192",
+        "delta_abs_error_pp": -1.505401177866183,
+        "errors": {
+          "A": -11.760605519804312,
+          "B": -10.668122377708023,
+          "C": -10.255204341938128
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "int8:32:8192",
+        "delta_abs_error_pp": -1.531209374516095,
+        "errors": {
+          "A": -9.239256866494527,
+          "B": -8.132983301463149,
+          "C": -7.708047491978432
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "bf16:128:8192",
+        "delta_abs_error_pp": -1.5871067588120624,
+        "errors": {
+          "A": -11.335023258709775,
+          "B": -9.957823020341372,
+          "C": -9.747916499897713
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "bf16:64:8192",
+        "delta_abs_error_pp": -1.6300548257717873,
+        "errors": {
+          "A": -8.345917503771583,
+          "B": -6.932958015969392,
+          "C": -6.715862677999795
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "bf16:32:8192",
+        "delta_abs_error_pp": -1.6431141278142496,
+        "errors": {
+          "A": -7.623493193872644,
+          "B": -6.199213679017845,
+          "C": -5.980379066058394
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "int8:512:8192",
+        "delta_abs_error_pp": -1.9316329427030539,
+        "errors": {
+          "A": -4.547188768590981,
+          "B": -4.147853786230183,
+          "C": 2.6155558258879275
+        },
+        "residency": "activation_residency 2: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)"
+      },
+      {
+        "case": "bf16:192:8192",
+        "delta_abs_error_pp": -2.1617359374399676,
+        "errors": {
+          "A": -12.75531120477521,
+          "B": -10.790704201352186,
+          "C": -10.593575267335243
+        },
+        "residency": "activation_residency 2: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)"
+      }
+    ],
+    "improved_C_vs_A": 28
+  },
+  "hbm2e_tpu_v5e_refsb": {
+    "artifact_checks": "PASS 84 inputs, 168 reports, measurements and hashes",
+    "groups": {
+      "all": {
+        "n": 28,
+        "A": {
+          "mape": 8.913444651041992,
+          "bias": -8.861986725043064
+        },
+        "B": {
+          "mape": 6.471232433982421,
+          "bias": -5.916285705978888
+        },
+        "C": {
+          "mape": 2.927632440601456,
+          "bias": -0.9566178055315808
+        }
+      },
+      "dtype=bf16": {
+        "n": 14,
+        "A": {
+          "mape": 7.597418811555954,
+          "bias": -7.494502959558096
+        },
+        "B": {
+          "mape": 5.011026905189653,
+          "bias": -3.9011334491825873
+        },
+        "C": {
+          "mape": 3.0668119598233567,
+          "bias": -1.6153563740375687
+        }
+      },
+      "dtype=int8": {
+        "n": 14,
+        "A": {
+          "mape": 10.229470490528032,
+          "bias": -10.229470490528032
+        },
+        "B": {
+          "mape": 7.931437962775189,
+          "bias": -7.931437962775189
+        },
+        "C": {
+          "mape": 2.788452921379556,
+          "bias": -0.29787923702559294
+        }
+      },
+      "edge=full": {
+        "n": 14,
+        "A": {
+          "mape": 6.29956243064518,
+          "bias": -6.1966465786473215
+        },
+        "B": {
+          "mape": 4.385915522200003,
+          "bias": -3.2760220661929376
+        },
+        "C": {
+          "mape": 2.14068946955298,
+          "bias": 0.5201613155869256
+        }
+      },
+      "edge=partial": {
+        "n": 14,
+        "A": {
+          "mape": 11.527326871438806,
+          "bias": -11.527326871438806
+        },
+        "B": {
+          "mape": 8.55654934576484,
+          "bias": -8.55654934576484
+        },
+        "C": {
+          "mape": 3.7145754116499328,
+          "bias": -2.4333969266500874
+        }
+      },
+      "regime=compute/DRAM<0.8": {
+        "n": 12,
+        "A": {
+          "mape": 4.901508027936685,
+          "bias": -4.781439533939183
+        },
+        "B": {
+          "mape": 2.7937387522704054,
+          "bias": -1.4988630535954959
+        },
+        "C": {
+          "mape": 2.4716109283884697,
+          "bias": -0.8251221583821874
+        }
+      },
+      "regime=compute/DRAM>1.25": {
+        "n": 11,
+        "A": {
+          "mape": 9.096181629522448,
+          "bias": -9.096181629522448
+        },
+        "B": {
+          "mape": 7.2267571501568355,
+          "bias": -7.2267571501568355
+        },
+        "C": {
+          "mape": 1.7864416840776534,
+          "bias": 1.4345169106388127
+        }
+      },
+      "regime=compute/DRAM[0.8,1.25]": {
+        "n": 5,
+        "A": {
+          "mape": 18.14007119383773,
+          "bias": -18.14007119383773
+        },
+        "B": {
+          "mape": 13.635062894507547,
+          "bias": -13.635062894507547
+        },
+        "C": {
+          "mape": 6.532703734264991,
+          "bias": -6.532703734264991
+        }
+      },
+      "residency_C=activation_residency 2: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)": {
+        "n": 12,
+        "A": {
+          "mape": 8.584781971470584,
+          "bias": -8.584781971470584
+        },
+        "B": {
+          "mape": 6.641908431480696,
+          "bias": -6.641908431480696
+        },
+        "C": {
+          "mape": 2.9993996763431388,
+          "bias": -0.1950483709512146
+        }
+      },
+      "residency_C=activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)": {
+        "n": 16,
+        "A": {
+          "mape": 9.159941660720548,
+          "bias": -9.069890290222423
+        },
+        "B": {
+          "mape": 6.343225435858714,
+          "bias": -5.3720686618525315
+        },
+        "C": {
+          "mape": 2.8738070137951945,
+          "bias": -1.5277948814668556
+        }
+      }
+    },
+    "worst_regressions": [
+      {
+        "case": "bf16:32:4096",
+        "delta_abs_error_pp": 1.8249870934434642,
+        "errors": {
+          "A": -2.2639534216715496,
+          "B": 3.242844031434644,
+          "C": 4.088940515115014
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "bf16:32:8192",
+        "delta_abs_error_pp": 1.6431141278142603,
+        "errors": {
+          "A": 0.7204109639850076,
+          "B": 2.144690478839806,
+          "C": 2.363525091799268
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "bf16:64:8192",
+        "delta_abs_error_pp": 1.4933951503109055,
+        "errors": {
+          "A": -0.06832983773044088,
+          "B": 1.344629650071738,
+          "C": 1.5617249880413464
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "int8:384:8192",
+        "delta_abs_error_pp": -0.468263732217145,
+        "errors": {
+          "A": -5.00116569764314,
+          "B": -4.4558344063729605,
+          "C": 4.532901965425995
+        },
+        "residency": "activation_residency 2: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)"
+      },
+      {
+        "case": "int8:64:8192",
+        "delta_abs_error_pp": -1.5054011778662062,
+        "errors": {
+          "A": -4.918763625420375,
+          "B": -3.8262804833240738,
+          "C": -3.413362447554169
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "int8:32:8192",
+        "delta_abs_error_pp": -1.531209374516096,
+        "errors": {
+          "A": -2.1982865723885414,
+          "B": -1.092013007357151,
+          "C": -0.6670771978724455
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "bf16:128:8192",
+        "delta_abs_error_pp": -1.5871067588120735,
+        "errors": {
+          "A": -3.3315366758278397,
+          "B": -1.9543364374594252,
+          "C": -1.7444299170157662
+        },
+        "residency": "activation_residency 2: input GLB-resident, output retained in GLB (capacity 2097152 bytes)"
+      },
+      {
+        "case": "int8:512:8192",
+        "delta_abs_error_pp": -1.8940206984487613,
+        "errors": {
+          "A": -4.5449720431270375,
+          "B": -4.1124582674398225,
+          "C": 2.650951344678276
+        },
+        "residency": "activation_residency 2: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)"
+      }
+    ],
+    "improved_C_vs_A": 25
+  }
+}

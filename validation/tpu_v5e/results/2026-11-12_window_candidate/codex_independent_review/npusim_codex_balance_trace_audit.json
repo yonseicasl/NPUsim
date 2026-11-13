@@ -1,0 +1,398 @@
+{
+  "zip_sha256": "e4d2304ffacf15ba03d6ec40c81dfe7ea71791f0a46259a154a9a807f7983716",
+  "checks": "PASS all 28 original TPU traces: exactly8 convolution events contained in every module, each event uniquely assigned, reconstructed time matches CSV rounding",
+  "cases": [
+    {
+      "case": [
+        "int8",
+        256,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 51.61440363750001,
+      "csv_us": 51.614,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_256x4096_loop/plugins/profile/2026_11_12_03_57_07/perfetto_trace.json.gz",
+      "trace_sha256": "aae9feb1fb131d704b08c5aecefc426f057206d11b22cb26b0d8b01aedb8ae4d"
+    },
+    {
+      "case": [
+        "bf16",
+        128,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 49.59956686250007,
+      "csv_us": 49.6,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_128x4096_loop/plugins/profile/2026_11_12_03_56_07/perfetto_trace.json.gz",
+      "trace_sha256": "67e08bd254dbf5be63c8663b4f3782e8f3e76b09d828e07a969859125e8d873c"
+    },
+    {
+      "case": [
+        "bf16",
+        128,
+        8192
+      ],
+      "modules": 171,
+      "conv_events": 1368,
+      "events_each_module": 8,
+      "reconstructed_us": 187.38544074415196,
+      "csv_us": 187.385,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_128x8192_loop/plugins/profile/2026_11_12_03_56_37/perfetto_trace.json.gz",
+      "trace_sha256": "9eb99fbec4d0bddbf3ce4aef6aa8f2f9ce9cab88a801a43c66a9ac0d8c191a24"
+    },
+    {
+      "case": [
+        "int8",
+        32,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 24.385847875000003,
+      "csv_us": 24.386,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_32x4096_loop/plugins/profile/2026_11_12_03_56_57/perfetto_trace.json.gz",
+      "trace_sha256": "1a47052ae4183e9a959efdac72830d09c6bef2fea440762687dde7a1b6140a55"
+    },
+    {
+      "case": [
+        "int8",
+        64,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 25.163933331249968,
+      "csv_us": 25.164,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_64x4096_loop/plugins/profile/2026_11_12_03_56_59/perfetto_trace.json.gz",
+      "trace_sha256": "e73796f920d7a8d0440be8a5e4c30a3ee26078fdc5c03fb76f7979f94a36dd7c"
+    },
+    {
+      "case": [
+        "int8",
+        128,
+        8192
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 112.11165265750009,
+      "csv_us": 112.112,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_128x8192_loop/plugins/profile/2026_11_12_03_57_26/perfetto_trace.json.gz",
+      "trace_sha256": "adfbcff7c79905dac041d0715d84239e38901697e21375a608478e6a91715aaf"
+    },
+    {
+      "case": [
+        "int8",
+        128,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 30.357214671250016,
+      "csv_us": 30.357,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_128x4096_loop/plugins/profile/2026_11_12_03_57_02/perfetto_trace.json.gz",
+      "trace_sha256": "638e1257c2dc3f0dff842b9ccc6c0f1b704341b307d5450c5c703789bd202dcf"
+    },
+    {
+      "case": [
+        "bf16",
+        512,
+        8192
+      ],
+      "modules": 90,
+      "conv_events": 720,
+      "events_each_module": 8,
+      "reconstructed_us": 378.2380604194444,
+      "csv_us": 378.238,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_512x8192_loop/plugins/profile/2026_11_12_03_56_52/perfetto_trace.json.gz",
+      "trace_sha256": "9061638b1bda7deefe8d9ebef78859ea0c1419b45465680c5d0d2c6a03245f77"
+    },
+    {
+      "case": [
+        "int8",
+        32,
+        8192
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 92.56267106500002,
+      "csv_us": 92.563,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_32x8192_loop/plugins/profile/2026_11_12_03_57_20/perfetto_trace.json.gz",
+      "trace_sha256": "ed289b3a5da3d129e6870e3e44b677725bad011a4f048cdb8ea2b8978e06a6be"
+    },
+    {
+      "case": [
+        "bf16",
+        32,
+        8192
+      ],
+      "modules": 173,
+      "conv_events": 1384,
+      "events_each_module": 8,
+      "reconstructed_us": 179.7397653742776,
+      "csv_us": 179.74,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_32x8192_loop/plugins/profile/2026_11_12_03_56_31/perfetto_trace.json.gz",
+      "trace_sha256": "69fb7d472069f132fabdbcbdef759949b4aadd19c652688251cbf216db0a74a3"
+    },
+    {
+      "case": [
+        "bf16",
+        256,
+        8192
+      ],
+      "modules": 151,
+      "conv_events": 1208,
+      "events_each_module": 8,
+      "reconstructed_us": 210.4796799089406,
+      "csv_us": 210.48,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_256x8192_loop/plugins/profile/2026_11_12_03_56_44/perfetto_trace.json.gz",
+      "trace_sha256": "e21c0481d88700cad95c3353ed37a2df2f35f26e353f79e6dc946a7f130957bc"
+    },
+    {
+      "case": [
+        "bf16",
+        64,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 47.52383781750001,
+      "csv_us": 47.524,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_64x4096_loop/plugins/profile/2026_11_12_03_56_05/perfetto_trace.json.gz",
+      "trace_sha256": "eedff585f9d98a16755a8ea2d1539e9d71cf595aa4b405b973a724f9996ba4bb"
+    },
+    {
+      "case": [
+        "int8",
+        192,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 39.82080764000004,
+      "csv_us": 39.821,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_192x4096_loop/plugins/profile/2026_11_12_03_57_04/perfetto_trace.json.gz",
+      "trace_sha256": "c595c7f95255ceceb1ea237a50bb7ef88c6649b7344597578d687a7cd78f4ad0"
+    },
+    {
+      "case": [
+        "bf16",
+        512,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 99.47354680000001,
+      "csv_us": 99.474,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_512x4096_loop/plugins/profile/2026_11_12_03_56_20/perfetto_trace.json.gz",
+      "trace_sha256": "4f4b804f3bcef58ea285bd97015c721297cc61bdf599e9b0db8611973df4d5df"
+    },
+    {
+      "case": [
+        "int8",
+        384,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 75.1667316687499,
+      "csv_us": 75.167,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_384x4096_loop/plugins/profile/2026_11_12_03_57_10/perfetto_trace.json.gz",
+      "trace_sha256": "2f38a156c20701e65df3ce9fd5ec2bc0e99cf7cdf258cceb810f7de4a870e3b5"
+    },
+    {
+      "case": [
+        "bf16",
+        384,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 82.81574230874983,
+      "csv_us": 82.816,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_384x4096_loop/plugins/profile/2026_11_12_03_56_17/perfetto_trace.json.gz",
+      "trace_sha256": "7ead73a1a5ac2376d5ca80d2bf62f79e6bd9fe7312b70d823039b113cc09a5b4"
+    },
+    {
+      "case": [
+        "bf16",
+        384,
+        8192
+      ],
+      "modules": 117,
+      "conv_events": 936,
+      "events_each_module": 8,
+      "reconstructed_us": 284.50925528418793,
+      "csv_us": 284.509,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_384x8192_loop/plugins/profile/2026_11_12_03_56_47/perfetto_trace.json.gz",
+      "trace_sha256": "670c4e31a0cbaa1ad479329beea1e71d122e1977fb43511fe36e7dc2b779724d"
+    },
+    {
+      "case": [
+        "int8",
+        256,
+        8192
+      ],
+      "modules": 169,
+      "conv_events": 1352,
+      "events_each_module": 8,
+      "reconstructed_us": 192.42802697189344,
+      "csv_us": 192.428,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_256x8192_loop/plugins/profile/2026_11_12_03_57_32/perfetto_trace.json.gz",
+      "trace_sha256": "2a8b555c7ef1e9470ba6301c62f03c75fab3f842fd00034f07be3c7b41a6d5c0"
+    },
+    {
+      "case": [
+        "bf16",
+        64,
+        8192
+      ],
+      "modules": 177,
+      "conv_events": 1416,
+      "events_each_module": 8,
+      "reconstructed_us": 181.17975218785298,
+      "csv_us": 181.18,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_64x8192_loop/plugins/profile/2026_11_12_03_56_34/perfetto_trace.json.gz",
+      "trace_sha256": "0ce860ab68570e27ca6893a283ce3574e0a77f86e42c38e6ea4d31f7e0865fe8"
+    },
+    {
+      "case": [
+        "bf16",
+        32,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 46.48823787124988,
+      "csv_us": 46.488,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_32x4096_loop/plugins/profile/2026_11_12_03_56_02/perfetto_trace.json.gz",
+      "trace_sha256": "cd6853f2a467e98559e3d0afdb123ca397cb82cce03a7f63a4f6f1a6ed853f8f"
+    },
+    {
+      "case": [
+        "int8",
+        64,
+        8192
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 95.25711316250003,
+      "csv_us": 95.257,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_64x8192_loop/plugins/profile/2026_11_12_03_57_23/perfetto_trace.json.gz",
+      "trace_sha256": "825888d2534e1c4711aea263d213ce8bbb330796a680d394e9c0ab4c66514b5a"
+    },
+    {
+      "case": [
+        "int8",
+        384,
+        8192
+      ],
+      "modules": 118,
+      "conv_events": 944,
+      "events_each_module": 8,
+      "reconstructed_us": 278.8027158050848,
+      "csv_us": 278.803,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_384x8192_loop/plugins/profile/2026_11_12_03_57_36/perfetto_trace.json.gz",
+      "trace_sha256": "16612c86d6c710fb860c8b4a93f966c50bd9ca9400fd03859187268d96aeb3b9"
+    },
+    {
+      "case": [
+        "int8",
+        192,
+        8192
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 147.10038274499982,
+      "csv_us": 147.1,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_192x8192_loop/plugins/profile/2026_11_12_03_57_29/perfetto_trace.json.gz",
+      "trace_sha256": "63c0fe9f8f86c0043e3792f7849cda9c93818babbb8b3f5aea2a35abd27734c2"
+    },
+    {
+      "case": [
+        "bf16",
+        192,
+        8192
+      ],
+      "modules": 163,
+      "conv_events": 1304,
+      "events_each_module": 8,
+      "reconstructed_us": 199.53057063957056,
+      "csv_us": 199.531,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_192x8192_loop/plugins/profile/2026_11_12_03_56_40/perfetto_trace.json.gz",
+      "trace_sha256": "13535e41b2f62ec4f5f6fb3c89c5482f15770a47099e9a7f9113cf8d59020377"
+    },
+    {
+      "case": [
+        "bf16",
+        256,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 56.75783459999997,
+      "csv_us": 56.758,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_256x4096_loop/plugins/profile/2026_11_12_03_56_13/perfetto_trace.json.gz",
+      "trace_sha256": "c102c76b0fe04ff70ff2c79c909f5a115fdc496cb05396e9c0c69ddd26920d87"
+    },
+    {
+      "case": [
+        "int8",
+        512,
+        8192
+      ],
+      "modules": 91,
+      "conv_events": 728,
+      "events_each_module": 8,
+      "reconstructed_us": 369.91545467307685,
+      "csv_us": 369.915,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_512x8192_loop/plugins/profile/2026_11_12_03_57_40/perfetto_trace.json.gz",
+      "trace_sha256": "2061eaa7db2d6fba2d51f567cea1215ee309c3778960593b35cb1ca4049a45fe"
+    },
+    {
+      "case": [
+        "bf16",
+        192,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 51.66688762624988,
+      "csv_us": 51.667,
+      "trace_member": "measure_tpu_v5e1/traces/balance_bf16_192x4096_loop/plugins/profile/2026_11_12_03_56_10/perfetto_trace.json.gz",
+      "trace_sha256": "1663208f716f8e910a0ff95d9bd8b782516ebebcb0ad5416d9b2569ddfe82e73"
+    },
+    {
+      "case": [
+        "int8",
+        512,
+        4096
+      ],
+      "modules": 200,
+      "conv_events": 1600,
+      "events_each_module": 8,
+      "reconstructed_us": 96.47774099125002,
+      "csv_us": 96.478,
+      "trace_member": "measure_tpu_v5e1/traces/balance_int8_512x4096_loop/plugins/profile/2026_11_12_03_57_14/perfetto_trace.json.gz",
+      "trace_sha256": "55964963b422f88b2b355b8e7776ae3d10b6560654f7415362fb0bbbb300aa89"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+kind,M,N,fixed_us,per_kernel_us
+loop,8,128,0.54,0.513
+unrolled,8,128,0.646,0.32
+loop_minus_unrolled,8,128,,0.193
+loop,100,1000,1.127,4.483
+unrolled,100,1000,1.364,4.096
+loop_minus_unrolled,100,1000,,0.387
+loop,128,1024,1.274,4.785
+unrolled,128,1024,1.483,4.424
+loop_minus_unrolled,128,1024,,0.361
+loop,256,2048,7.852,15.244
+unrolled,256,2048,7.679,15.371
+loop_minus_unrolled,256,2048,,-0.127
+loop,8,4096,7.406,45.208
+unrolled,8,4096,7.883,44.47
+loop_minus_unrolled,8,4096,,0.739

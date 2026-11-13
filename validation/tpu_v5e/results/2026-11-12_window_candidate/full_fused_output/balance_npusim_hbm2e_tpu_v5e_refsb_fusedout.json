@@ -1,0 +1,44 @@
+{
+ "frozen": {
+  "binary_sha256": "b6fc57e3e8fd647264292a1cf5cbb5813f1122b97aa54cc937197bbb374e124c",
+  "library_sha256": "c793857e605c815869832a395e54efd8c928029f3acccd9fd80931604123e105",
+  "configs": {
+   "tpu_v5e": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+   "tpu_v5e_int8w": "62e6dee9320c99afcb8b1067eb6105e6100cfb2f136074287c984b3b623c70dc"
+  },
+  "git_head": "b5690f1c64a327e1dbf0712c7fed14772bc35bce",
+  "git_dirty": []
+ },
+ "dram": {
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c"
+ },
+ "balance_csv_sha256": "733904bf0b474f472e361749678046d3185b47f2527417e0f7392d4c815e6f2f",
+ "measurement": {
+  "run": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-12_colab_v5e1_balance",
+  "jax": "0.11.2",
+  "device": "TPU v5 lite",
+  "date": "2026-11-12 03:55:52 UTC",
+  "scope": "streaming loop, fused op per iteration (device trace)"
+ },
+ "mapping": "whole GEMM, 512-column strips as DRAM iterations, one <= 512-row tile",
+ "window_model": "count-based equal-share: offchip_window_count = HLO window count; geometry and partial edge windows not represented",
+ "variants": {
+  "A": "config as is",
+  "B": "offchip_window_count",
+  "C": "B + window_switch_cycle 590"
+ },
+ "window_switch_cycle": {
+  "value": 590,
+  "clock_hz": 1500000000.0,
+  "us": 0.3933333333333333,
+  "status": "empirically fitted effective cost, not a measured hardware constant; mechanism unidentified",
+  "source": "2026-11-04 profile run, 4 int8 M = 128 cases (0.393 us), with R 752 GB/s and F 2 us fitted on earlier stream data; fixed before the 2026-11-12 balance run; one value for both dtypes",
+  "regime": "XLA streaming loop on TPU v5e (JAX 0.11.2); not for staged / isolated one-op programs or shapes without an HLO"
+ },
+ "activations": "fused_output",
+ "assumptions": [
+  "program_setup_cycle = 0 (in-program)",
+  "NOT simulated in either mode: the fused op's input add, output conversion and reduction, and its 4-byte result",
+  "fused_output_consumer = 1: input read from DRAM, output matrix not materialized (no whole-tensor capacity); matches the compiler's static accounting of the loop's fused op (weights + M x K x 2 read, 4 B written), which is not measured traffic"
+ ]
+}

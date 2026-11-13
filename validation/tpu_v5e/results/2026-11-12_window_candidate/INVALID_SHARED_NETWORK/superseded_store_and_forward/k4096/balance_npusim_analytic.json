@@ -1,0 +1,13 @@
+{
+ "binary_sha256": "b6fc57e3e8fd647264292a1cf5cbb5813f1122b97aa54cc937197bbb374e124c",
+ "library_sha256": "90a1abe0517c00b18139b46dfcee0b411f133c0b4a8faa30b9bba083e5589eed",
+ "configs": {
+  "tpu_v5e": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+  "tpu_v5e_int8w": "62e6dee9320c99afcb8b1067eb6105e6100cfb2f136074287c984b3b623c70dc"
+ },
+ "dram": null,
+ "window_switch_cycle": 590,
+ "balance_csv_sha256": "733904bf0b474f472e361749678046d3185b47f2527417e0f7392d4c815e6f2f",
+ "mapping": "whole GEMM, 512-column strips",
+ "scope": "streaming loop cases only; window count read from each case's HLO"
+}

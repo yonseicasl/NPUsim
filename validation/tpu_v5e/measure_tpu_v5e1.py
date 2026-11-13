@@ -22,12 +22,14 @@ import argparse
 import csv
 import glob
 import gzip
+import hashlib
 import json
 import math
 import os
 import re
 import shutil
 import statistics
+import sys
 import time
 
 try:
@@ -516,6 +518,262 @@ def balance():
     write("balance.csv", rows)
 
 
+def hlo_facts(text):
+    """The compiler's choices in an optimized HLO text, as written -- nothing inferred about hardware.
+    windows: the window_config fields of each convolution; convolutions: (result type, operand types);
+    tagged: non-scalar tensors carrying a memory-space tag S(n) (untagged = the default space); copies and
+    cross-program prefetch; fusion / while counts."""
+    types = dict(re.findall(r"(?m)^\s*(?:ROOT\s+)?%([\w.\-]+) = ([a-z]\w*\[[\d,]*\](?:\{[^}]*\})?) ", text))
+    convs = []
+    for res, args in re.findall(r"= ([a-z]\w*\[[\d,]*\](?:\{[^}]*\})?) convolution\(([^)]*)\)", text):
+        ops = []
+        for arg in args.split(","):
+            arg = arg.strip()
+            m = re.match(r"([a-z]\w*\[[\d,]*\])", arg)                # operand printed with its type
+            ops.append(m.group(1) if m else re.sub(r"\{.*", "", types.get(arg.lstrip("%"), "?")))
+        convs.append((re.sub(r"\{.*", "", res), tuple(ops)))
+    keys = ("iteration_bounds", "kernel_window_bounds", "input_window_bounds", "output_window_bounds")
+    found = {k: re.findall(rf'"{k}":\[([^\]]*)\]', text) for k in keys}
+    n = len(found["iteration_bounds"])
+    windows = [{k: found[k][i].replace('"', "") if i < len(found[k]) else None for k in keys} for i in range(n)]
+    tagged = sorted({f"{shape}:S({space})" for shape, space in
+                     re.findall(r"([a-z]\w*\[\d+,[\d,]+\])\{[^}]*S\((\d+)\)[^}]*\}", text)})
+    return dict(convolutions=convs, windows=windows, tagged=tagged,
+                copy_start=len(re.findall(r" copy-start\(", text)), copy_done=len(re.findall(r" copy-done\(", text)),
+                prefetch="cross_program_prefetch_index" in text,
+                fusions=len(re.findall(r" fusion\(", text)), whiles=len(re.findall(r" while\(", text)))
+
+
+def op_events(d, per_module):
+    """Raw device events of ONE kept trace capture under d: the modules (invocations) and, per op name,
+    (count, total us); the events whose hlo_category says convolution, assigned to the module interval that
+    contains them; sha256 of every file, keyed by its path relative to d.
+    `verified` = the event counts are CONSISTENT WITH `per_module` loop iterations per invocation: one capture,
+    every convolution event has a timestamp and lies inside exactly one module interval, and every module holds
+    exactly `per_module` of them. It is a count check, not proof of each iteration or of the schedule; `why`
+    says what failed. None when d holds no trace."""
+    files = sorted(f for f in glob.glob(os.path.join(d, "**", "*"), recursive=True) if os.path.isfile(f))
+    hashes = {os.path.relpath(f, d): hashlib.sha256(open(f, "rb").read()).hexdigest() for f in files}
+    paths = [f for f in files if f.endswith("perfetto_trace.json.gz")]
+    if not paths:
+        return None
+    out = dict(files=hashes, traces=[os.path.relpath(f, d) for f in paths], trace=None, modules=0, ops={},
+               conv_events=0, conv_us=0.0, per_module_counts=[], verified=False, why=[])
+    if len(paths) > 1:                            # e.g. a re-run into the same directory: which one is current?
+        out["why"].append(f"{len(paths)} perfetto traces under the capture directory: ambiguous")
+        return out
+    out["trace"] = out["traces"][0]
+    ev = json.load(gzip.open(paths[0]))
+    ev = ev.get("traceEvents", []) if isinstance(ev, dict) else ev
+    name = lambda kind, key: {key(e): e["args"]["name"] for e in ev if e.get("ph") == "M" and e.get("name") == kind}
+    procs, threads = name("process_name", lambda e: e["pid"]), name("thread_name", lambda e: (e["pid"], e.get("tid")))
+    pids = sorted((p for p, n in procs.items() if re.search(ARGS.device_match, n)), key=lambda p: procs[p])
+    if not pids:
+        out["why"].append("no device process in the trace")
+        return out
+    span = lambda e: (float(e["ts"]), float(e["ts"]) + float(e["dur"])) if "ts" in e and "dur" in e else None
+    mods, convs, untimed = [], [], 0
+    for e in ev:
+        if e.get("ph") != "X" or e.get("pid") != pids[0]:
+            continue
+        t = threads.get((pids[0], e.get("tid")), "")
+        if "Module" in t:
+            if span(e) is None:
+                untimed += 1
+            else:
+                mods.append(span(e))
+        elif "Ops" in t:
+            c = out["ops"].setdefault(e["name"], [0, 0.0])
+            c[0], c[1] = c[0] + 1, c[1] + float(e.get("dur", 0.0))
+            if "convolution" in str(e.get("args", {}).get("hlo_category", "")):
+                out["conv_events"] += 1
+                out["conv_us"] += float(e.get("dur", 0.0))
+                convs.append(span(e))
+    out["modules"] = len(mods) + untimed
+    counts, outside, ambiguous, eps = [0] * len(mods), 0, 0, 1e-6
+    for c in convs:
+        inside = [i for i, (a0, a1) in enumerate(mods) if c is not None and c[0] >= a0 - eps and c[1] <= a1 + eps]
+        if len(inside) == 1:
+            counts[inside[0]] += 1
+        elif inside:
+            ambiguous += 1
+        else:
+            outside += 1                          # no timestamp, truncated, or outside every module
+    out["per_module_counts"] = counts
+    if untimed:
+        out["why"].append(f"{untimed} module events without a timestamp")
+    if not mods:
+        out["why"].append("no module events")
+    if outside:
+        out["why"].append(f"{outside} convolution events outside every module interval (or untimed / truncated)")
+    if ambiguous:
+        out["why"].append(f"{ambiguous} convolution events inside more than one module interval")
+    wrong = sorted({c for c in counts if c != per_module})
+    if wrong:
+        out["why"].append(f"modules with a convolution-event count other than {per_module}: counts seen {wrong}")
+    out["verified"] = not out["why"]
+    return out
+
+
+def pair_verdict(banked, single, K, banked_ev=None, single_ev=None):
+    """What the two programs' artifacts allow to be said -- (verdict, notes). Deliberately conservative:
+      * differing HLO signatures (convolution types, window geometry, fusion / loop counts) -> inconclusive;
+      * equal signatures are only "the same observed signatures": global counts do not show that the GEMM is
+        inside the loop. The trace must agree: convolution-event counts consistent with the requested iterations
+        in every invocation of BOTH programs (op_events().verified -- a count check); without it -> inconclusive;
+      * weight staging is never concluded. A memory-space tag on a weight-shaped tensor, or extra copy /
+        prefetch ops, in the single-weight program are listed as RAW evidence (a copy may be of the input, a tag
+        is not a traced dataflow), and their absence is "not established", not "not staged"."""
+    diff = [f"{k}: banked {banked[k]} vs single {single[k]}"
+            for k in ("convolutions", "windows", "fusions", "whiles") if banked[k] != single[k]]
+    if not banked["convolutions"] or not banked["windows"]:
+        diff.append("no convolution / window_config in the HLO (not a TPU compile?)")
+    if diff:
+        return "inconclusive: the two HLO texts do not show the same signatures", diff
+    if not (banked_ev and single_ev and banked_ev["verified"] and single_ev["verified"]):
+        got = lambda e: "no device trace" if not e else (
+            "; ".join(e["why"]) or f"{e['conv_events']} convolution events in {e['modules']} modules")
+        return ("inconclusive: same observed HLO signatures, but the traces do not both show convolution-event "
+                "counts consistent with the requested iterations per invocation"), \
+               [f"banked: {got(banked_ev)}", f"single: {got(single_ev)}"]
+    weightish = lambda f: {t for t in f["tagged"] if re.search(rf"\[(?:\d+,)?{K},{K}\]", t)}
+    raw = [f"memory-space tag on a weight-shaped tensor only in the single program: {sorted(weightish(single) - weightish(banked))}"] \
+        if weightish(single) - weightish(banked) else []
+    if single["copy_start"] != banked["copy_start"] or single["prefetch"] != banked["prefetch"]:
+        raw.append(f"copy-start {banked['copy_start']} -> {single['copy_start']}, prefetch {banked['prefetch']} -> "
+                   f"{single['prefetch']} (which operand is copied is not identified)")
+    return ("same observed HLO signatures, convolution-event counts consistent with the requested iterations per "
+            "invocation in both traces; weight staging NOT ESTABLISHED from these artifacts" + (" -- raw evidence listed, not a conclusion" if raw else "")
+            + "; any time difference is a two-program contrast, not a measured DMA tail"), raw
+
+
+def tailprobe_refuse_existing(out):
+    """Nothing of an earlier tailprobe run is removed or overwritten: stop if `out` already holds any."""
+    old = [p for pat in ("tailprobe*.csv", "tailprobe*.json", os.path.join("hlo", "tailprobe_*"),
+                         os.path.join("traces", "tailprobe_*")) for p in glob.glob(os.path.join(out, pat))]
+    if old:
+        raise SystemExit(f"tailprobe: {out} already holds tailprobe output ({len(old)} entries, e.g. "
+                         f"{os.path.relpath(sorted(old)[0], out)}); nothing was changed -- use a fresh --out")
+
+
+def tailprobe():
+    """Optional probe for the memory-bound bf16 over-prediction of the window-schedule candidate (not in the
+    default --only). The four regressing cases (bf16 32 / 64 x 4096 / 8192) and one int8 control, each as TWO
+    programs with the SAME loop body as `balance` ((x + carry) @ W[i % R].astype(bf16), f32 sum into the carry):
+      banked  W = a bank of R distinct weights (>= --rotate-mb): every iteration streams a new weight
+      single  W = one weight, reused by every iteration
+    Per program (tailprobe.csv), each number with its scope:
+      wall_n_s / wall_2n_s, loop_slope_us   raw host wall samples of the n- and 2n-iteration loop and the SIGNED
+                                            slope (median(2n) - median(n)) / n; slope_flag marks a nonpositive one
+      modules_traced, op_event_counts,      raw profiler events of the 8-iteration program
+      op_event_us
+      trace_selected, trace_check,          the one capture read, and whether its convolution-event counts are
+      conv_events_per_module,               consistent with 8 iterations in EVERY invocation (each event inside
+      conv_fusion_us_per_event              exactly one module interval); module_us_n8 and the per-event time are
+                                            blank unless that check passes
+      all_fusion_event_sum_per_requested_iter_us   every fusion / convolution event summed, / 8 -- may contain
+                                            fusions outside the loop; NOT a loop-kernel time
+      hlo_facts, hlo_sha256, trace_sha256   compiler output (static) and file hashes
+    Per case (tailprobe_pairs.csv): pair_verdict() -- inconclusive unless the HLO signatures match AND both
+    traces show one convolution-fusion event per iteration; staging is never concluded, only raw evidence listed.
+    What this is NOT: a measurement of the time between the last DMA and the end of the fused op (there are no
+    per-DMA events); nothing is subtracted between programs. Full sizes need a TPU; --quick on CPU checks only
+    that the code runs. An --out that already holds tailprobe output is refused untouched (fresh --out per run)."""
+    if jax.default_backend() != "tpu" and not ARGS.quick:
+        raise SystemExit("tailprobe: no TPU backend (full sizes are TPU-only; --quick is the CPU functional check)")
+    tailprobe_refuse_existing(ARGS.out)           # also checked in main() before env.json is written
+    ARGS.keep_traces = True
+    ITERS = 8                                     # loop iterations of the profiled program
+    cases = [("bf16", 32, 512), ("int8", 32, 512)] if ARGS.quick else \
+        [("bf16", 32, 4096), ("bf16", 64, 4096), ("bf16", 32, 8192), ("bf16", 64, 8192), ("int8", 32, 4096)]
+
+    def loop(n, x, ws):                           # identical to balance(): same body, dependence and reduction
+        def body(i, c):
+            w = jax.lax.dynamic_index_in_dim(ws, i % ws.shape[0], keepdims=False)
+            y = (x + c.astype(x.dtype)) @ w.astype(BF16)
+            return c + jnp.sum(y.astype(F32)) * 1e-9
+        return jax.lax.fori_loop(0, n, body, jnp.float32(0))
+    run_loop = jax.jit(loop, static_argnums=0)
+
+    def stack(key, shape, dtype):
+        if dtype == "int8":
+            gen = lambda k: jax.random.randint(k, shape, -8, 8, jnp.int8)
+        else:
+            gen = lambda k: (jax.random.normal(k, shape, F32) * 0.02).astype(BF16)
+        return jax.jit(gen)(jax.random.PRNGKey(key))
+
+    def walls(x, ws, n, repeats=5):               # raw samples, nothing clipped
+        def wall(k):
+            t = time.perf_counter()
+            jax.block_until_ready(run_loop(k, x, ws))
+            return time.perf_counter() - t
+        for k in (n, 2 * n):
+            wall(k)
+        return [wall(n) for _ in range(repeats)], [wall(2 * n) for _ in range(repeats)]
+
+    os.makedirs(os.path.join(ARGS.out, "hlo"), exist_ok=True)
+    rows, pairs = [], []
+    for dtype, M, K in cases:
+        wbytes = 1 if dtype == "int8" else 2
+        R = max(2, math.ceil(max(ARGS.rotate_mb, 1) * 2 ** 20 / (K * K * wbytes)))
+        x = stack(M + 7, (M, K), "bf16")
+        bank = stack(K + wbytes, (R, K, K), dtype)
+        facts, evs = {}, {}
+        for mode, ws in (("banked", bank), ("single", stack(K + wbytes + 100, (1, K, K), dtype))):
+            tag = f"tailprobe_{dtype}_{M}x{K}_{mode}"
+            try:
+                text = run_loop.lower(ITERS, x, ws).compile().as_text()
+            except Exception as e:
+                text = ""
+                print(f"  [{tag}] hlo: {type(e).__name__}: {e}")
+            open(os.path.join(ARGS.out, "hlo", tag + ".txt"), "w").write(text)
+            facts[mode] = hlo_facts(text)
+            n = 10 if M * K * K > 2 ** 33 else 40
+            wn, w2n = walls(x, ws, n)
+            us = (statistics.median(w2n) - statistics.median(wn)) / n * 1e6
+            r = bench(lambda a, b: run_loop(ITERS, a, b), (x, ws), tag)
+            ev = evs[mode] = op_events(os.path.join(ARGS.out, "traces", tag), ITERS)
+            ok = bool(ev and ev["verified"])       # without it no device time of this capture is reported
+            allfus = ev and sum(t for k, (c, t) in ev["ops"].items() if "fusion" in k or "convolution" in k)
+            rows.append(dict(
+                dtype=dtype, M=M, K=K, N=K, mode=mode, weights_in_loop=ws.shape[0], loop_iterations_n=n,
+                wall_n_s=json.dumps(wn), wall_2n_s=json.dumps(w2n), loop_slope_us=round(us, 3),
+                slope_flag="ok" if us > 0 else "nonpositive: wall slope unusable",
+                requested_modules=r["iters"], modules_traced=ev and ev["modules"],
+                trace_selected=ev and ev["trace"], trace_check="consistent" if ok else
+                ("no device trace" if not ev else "; ".join(ev["why"])),
+                conv_events_per_module=ev and json.dumps(sorted(set(ev["per_module_counts"]))),
+                module_us_n8=round(r["device_us"], 3) if ok and r["device_us"] else None,
+                op_event_counts=ev and ";".join(f"{k}={c}" for k, (c, t) in ev["ops"].items()),
+                op_event_us=ev and ";".join(f"{k}={t:.3f}" for k, (c, t) in ev["ops"].items()),
+                conv_fusion_us_per_event=round(ev["conv_us"] / ev["conv_events"], 3) if ok else None,
+                all_fusion_event_sum_per_requested_iter_us=round(allfus / ev["modules"] / ITERS, 3) if ev and ev["modules"] and ev["trace"] else None,
+                hlo_facts=json.dumps(facts[mode]), hlo_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                trace_sha256=ev and json.dumps(ev["files"])))
+            print(f"tailprobe {mode:6s} {dtype} {M:3d} x {K:5d}  slope {us:9.2f} us ({rows[-1]['slope_flag']})  "
+                  f"conv fusion / event {rows[-1]['conv_fusion_us_per_event']}")
+        verdict, notes = pair_verdict(facts["banked"], facts["single"], K, evs["banked"], evs["single"])
+        pairs.append(dict(dtype=dtype, M=M, K=K, verdict=verdict, notes=" | ".join(notes),
+                          windows_banked=json.dumps(facts["banked"]["windows"]),
+                          windows_single=json.dumps(facts["single"]["windows"])))
+        print(f"  -> {verdict}" + (f" ({'; '.join(notes)})" if notes else ""))
+        del bank
+    write("tailprobe.csv", rows)
+    write("tailprobe_pairs.csv", pairs)
+    dev = jax.devices()[0]
+    json.dump(dict(script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(),
+                   argv=sys.argv, quick=ARGS.quick, backend=jax.default_backend(), jax=jax.__version__,
+                   device_kind=dev.device_kind, device=str(dev), rotate_mb=ARGS.rotate_mb, cases=cases,
+                   profiled_loop_iterations=ITERS,
+                   kinds=dict(wall="host wall clock samples and their signed slope",
+                              events="profiler event counts / durations of the device (one event per op execution)",
+                              hlo_facts="compiler output, static", verdict="from the two HLO texts and traces only"),
+                   not_measured="time between the last DMA and the end of the fused op; measured HBM bytes; "
+                                "where the reused weight physically resides",
+                   cpu_note="a non-TPU run is a functional smoke check, not hardware validation"),
+              open(os.path.join(ARGS.out, "tailprobe_meta.json"), "w"), indent=1)
+
+
 def run(experiments, default_only, out_name, argv=None):
     """Parse the common options, write env.json and run the selected experiments (name -> function)."""
     global ARGS
@@ -548,7 +806,15 @@ def run(experiments, default_only, out_name, argv=None):
 
 
 def main(argv=None):
-    run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk, "balance": balance},
+    # before run() writes anything (env.json): a tailprobe run never touches an --out that already has its output
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--only", default="")
+    pre.add_argument("--out", default="/kaggle/working/tpu_v5e1" if os.path.isdir("/kaggle/working") else "tpu_v5e1_out")
+    known = pre.parse_known_args(argv)[0]
+    if "tailprobe" in known.only.split(","):
+        tailprobe_refuse_existing(known.out)
+    run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk, "balance": balance,
+         "tailprobe": tailprobe},
         "gemm,vector,decode", "tpu_v5e1", argv)
 
 

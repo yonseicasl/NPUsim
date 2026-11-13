@@ -871,3 +871,98 @@ the GEMM alone), the complete op list, the traces and the optimized HLO of each 
 as a separately labelled control. bf16 at M ~ 256 also at ~1.2 x max
 -> a pipeline effect to model for every dtype; only int8 -> a dtype-specific stage; excess per window constant
 over K -> per window, per weight element constant -> per element.
+
+### Balance run (2026-11-12, Colab v5e-1): the stream / compute excess is not an int8 effect
+
+`results/2026-11-12_colab_v5e1_balance/` (`balance.csv`, `loopk*.csv`, the optimized HLO of all 56 programs;
+`balance_analyze.py` -> `balance_analyze.log`; raw archive with traces: `SOURCE.sha256`). 28 loop cases: bf16 and
+int8 weights, K = N = 4096 and 8192, M 32-512, on the stream bench's loop.
+
+- **Scope check.** Each loop program has two profiled ops, the `while` and one fused op per iteration; the wall
+  loop slope and that fused op's device time agree to 1.3% on average (5.2% at most); the loop itself costs
+  0.4 us per iteration. The ~2 us fixed part seen before is inside the fused op.
+- **bf16 shows the same excess at compute ~ stream.** fused / max(stream, compute) at C/S ~ 1: bf16 1.27 (K 4096,
+  M 256), 1.18 (K 8192); int8 1.36, 1.26. It rises from ~1.0-1.1 at C/S 0.1-0.5 and falls back to 1.06-1.14 at
+  C/S 2-4 for both dtypes. So the int8 M = 128 error is the balanced regime, which int8 reaches at half the M.
+- **XLA's windows follow M and dtype** (HLO `iteration_bounds`): K 4096 bf16 has 8 windows up to M 192, 11 at
+  M 256, 16 at M 512; int8 11 up to M 192, 16 above; K 8192: 32-52 (bf16), 39-64 (int8).
+- **Predictions fixed before the run** (R 752 GB/s, F 2 us, w 0.393 us per window, all from earlier data), error
+  against the fused op, mean / MAPE:
+
+| | perfect overlap (max + F) | window pipeline | window pipeline + w |
+|---|---|---|---|
+| all 28 | -8.0 / 8.0% | -5.4 / 5.8% | -0.2 / 2.6% |
+| bf16 (14) | -7.5 / 7.6% | -4.5 / 5.1% | -1.8 / 2.7% |
+| int8 (14) | -8.4 / 8.4% | -6.2 / 6.6% | +1.5 / 2.6% |
+| C/S < 0.6 (10) | -2.1 / 2.2% | -0.0 / 1.3% | +0.7 / 1.7% |
+| C/S 0.6-1.6 (10) | -13.8 / 13.8% | -9.7 / 9.7% | -2.4 / 4.2% |
+| C/S > 1.6 (8) | -8.1 / 8.1% | -6.6 / 6.6% | +1.5 / 2.0% |
+
+  NPUsim today behaves like the first column. The per-window cost predicted a new run, new shapes and bf16 in the
+  balanced regime without refitting; worst cases bf16 384 x 4096 (-8.3%) and 192 x 8192 (-7.3%).
+- **Control, a different schedule** (one-op program, operand copied first when <= ~67 MB): the copy runs at 750
+  GB/s and the kernel after it is the compute roofline + 2.5-7 us (K 4096) or 7-15 us (int8 K 8192), with no
+  bump at M 256. Streaming hides 0.71-0.94 of the shorter of the two phases (`eta`). So the excess belongs to
+  streaming and computing at the same time; whether it sits at window boundaries (what `w` assumes) or is
+  interference between DMA and compute is still not shown, and the staged kernels suggest less than w per window
+  (0.2-0.3 us).
+- **loopk.** A `fori_loop` iteration adds +0.19 / +0.39 / +0.36 / -0.13 / +0.74 us to an unrolled kernel (five
+  shapes): small. The -22% on odd GEMMs inside a `while` loop is not the loop. Unexplained: the unrolled
+  per-kernel cost of 100 x 1000 x 1000 here is 4.1 us (single window: stream + compute in series), where the
+  smallk2 `oddchain` slope gave 2.81 us for the same GEMM (that program staged 11 us of copies); the
+  "chained odd GEMM" set rests on the latter schedule.
+
+Not changed: simulator and configs. What this run supports modelling next, for every dtype: weights arriving in
+XLA-sized windows with a cost per window on the compute side -- its value measured (0.2-0.4 us), its mechanism open.
+
+### Window-schedule candidate in NPUsim (2026-11-12; opt-in, not adopted)
+
+`[accelerator] offchip_window_count` and `window_switch_cycle` (both default 0; no config uses them) and the driver
+`balance_npusim.py`. Implementation, tests, the 28-case A / B / C results on both DRAM models, the three
+regressions, the residency fallback of 12 cases and what is not established:
+[`results/2026-11-12_window_candidate/REVIEW.md`](results/2026-11-12_window_candidate/REVIEW.md).
+Primary comparison (DRAM traffic as the compiler accounts the measured loop, `fused_output_consumer`; refsb, same
+cases and runs): A (config as is) MAPE 8.07%, B (window schedule) 5.84%, C (+ 590 cycles per window, fixed before
+the measurement) 2.73%; bf16 6.89 -> 3.13%, int8 9.25 -> 2.32%; 24 of 28 closer, four memory-bound bf16 cases
+worse (+0.5 .. +3.3 points) through the on-chip weight-load tail, whose existence on the TPU is the open
+measurement. An earlier batch on another activation assumption (2.93%) is kept as history; the first batches of
+that driver ran on wrong inputs and are withdrawn (`INVALID_SHARED_NETWORK/`).
+
+### Tail probe (optional; prepared 2026-11-12, NOT run -- needs one TPU v5e chip)
+
+`measure_tpu_v5e1.py --only tailprobe` (TPU only at full size; `--quick` on CPU is a functional check). For the
+four memory-bound bf16 cases the window-schedule candidate over-predicts (32 / 64 x 4096 / 8192) and one int8
+control (32 x 4096), the same loop body as `balance` runs as two programs: **banked** (a bank of distinct
+weights, a new one streamed every iteration) and **single** (one weight reused by every iteration).
+
+Three kinds of numbers come out, and they are kept apart:
+
+| kind | columns | what it is |
+|---|---|---|
+| wall clock | `wall_n_s`, `wall_2n_s`, `loop_slope_us`, `slope_flag` | raw host samples of the n- and 2n-iteration loop and their SIGNED slope; a nonpositive slope is flagged, not clipped |
+| profiler events | `trace_selected`, `trace_check`, `modules_traced`, `conv_events_per_module`, `op_event_counts`, `op_event_us`, `module_us_n8`, `conv_fusion_us_per_event`, `all_fusion_event_sum_per_requested_iter_us` | device events of the ONE capture read (several captures in the directory = ambiguous, nothing reported), one per op execution; no per-DMA events. `trace_check` is "consistent" only when every convolution event lies inside exactly one invocation and EVERY invocation holds exactly 8 -- a count check, not proof of each iteration; `module_us_n8` and the per-event convolution time are blank otherwise. The all-fusion sum may include fusions outside the loop and is not a loop-kernel time |
+| compiler facts | `hlo_facts`, `hlo/*.txt` | read from the optimized HLO: convolution operand types, window geometry, memory-space tags, copies / prefetch, fusion and loop counts -- static, not measured |
+
+`tailprobe_pairs.csv` gives one conservative verdict per case:
+
+- *inconclusive* when the two HLO texts do not show the same signatures (convolution types, window geometry,
+  fusion / loop counts), or when the convolution-event counts are not consistent with 8 iterations in every
+  invocation of BOTH traces (equal global counts in the HLO do not show that the GEMM stayed inside the loop);
+- otherwise *same observed signatures ...; weight staging NOT ESTABLISHED*. Staging is never concluded: a
+  memory-space tag on a weight-shaped tensor or extra copy / prefetch ops in the single-weight program are listed
+  as raw evidence (a copy may be of the input; a tag is not a traced dataflow), and their absence does not show
+  the weight was not staged.
+
+What it cannot give: the time between the end of the last DMA and the end of the fused op -- there is no event
+for it -- nor where the reused weight physically resides. A banked-vs-single difference is a difference between
+two programs; it is not to be reported as a measured tail, and no model parameter is to be fitted to it. One
+run may well end inconclusive. `test_tailprobe.py` (CPU, functional only): `hlo_facts` on HLO saved from the
+balance run, `op_events` on synthetic traces ([8, 8] consistent; [7, 9], [9, 9], [1, 1], an event outside every
+invocation, without a timestamp or running past its invocation, two captures in one directory, and no trace are
+not), `pair_verdict` cases (an extra copy alone or a tag alone never yields a staging conclusion), the `--quick`
+run and the TPU guard. `tailprobe_meta.json` records script hash, argv, backend, device kind, JAX version; each
+row the HLO hash, the hash of every trace file by its relative path, and requested vs traced invocation counts.
+
+Run (Colab, TPU v5e-1): `%run measure_tpu_v5e1.py --only tailprobe --out <fresh directory>`, then zip the output
+directory (it keeps `traces/`). An `--out` that already holds tailprobe output is refused before anything is
+written: earlier captures are never removed or overwritten.

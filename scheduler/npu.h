@@ -291,6 +291,9 @@ protected:
     bool interlayer_overlap;                        // [accelerator] overlap layer prologues with tails.
     unsigned activation_residency;                  // [accelerator] 0 off, 1 between layers, 2 also the run's ends.
     bool timeline_dram_tiles;                       // [accelerator] DRAM-level iterations extend the tile clock.
+    bool fused_output_consumer;                     // [accelerator] the run's output is consumed on chip as produced.
+    unsigned offchip_window_count;                  // [accelerator] off-chip data arrives in this many windows (0 off).
+    double window_switch_cycle;                     // [accelerator] compute-side cycles per such window.
     // Validate physical component counts before connecting the hierarchy.
     void validate_accelerator_components();
     // Validate mapping-selected active components before a layer starts.
