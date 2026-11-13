@@ -271,3 +271,12 @@ is flagged inconclusive. It reports durations and compiler facts; it does not su
 
 Until such an observation exists the candidate is not to be enabled for memory-bound streaming, and no
 parameter is refitted.
+
+### Addendum 2026-11-13: the tail probe was run and is inconclusive for the tail
+
+`results/2026-11-13_colab_v5e1_tailprobe/` (README "Tail probe run"). The compiler did not stage the reused
+weight (default layout, no copy, no prefetch, in all five single-weight programs), and the fused op of the
+single-weight loop takes the same time as the banked one (within 0.4%) or 3.6-4.0% longer (bf16, K 4096). No
+streamed-vs-staged contrast exists, so the evidence gap above is unchanged. Two things it does establish: the
+banked event durations reproduce the 2026-11-12 measurement in a separate session (within 0.2%), and a weight
+reused by every loop iteration is still read at the streaming rate each time.

@@ -541,6 +541,7 @@ def hlo_facts(text):
     return dict(convolutions=convs, windows=windows, tagged=tagged,
                 copy_start=len(re.findall(r" copy-start\(", text)), copy_done=len(re.findall(r" copy-done\(", text)),
                 prefetch="cross_program_prefetch_index" in text,
+                dynamic_slices=len(re.findall(r" dynamic-slice\(", text)),
                 fusions=len(re.findall(r" fusion\(", text)), whiles=len(re.findall(r" while\(", text)))
 
 
@@ -637,13 +638,17 @@ def pair_verdict(banked, single, K, banked_ev=None, single_ev=None):
                 "counts consistent with the requested iterations per invocation"), \
                [f"banked: {got(banked_ev)}", f"single: {got(single_ev)}"]
     weightish = lambda f: {t for t in f["tagged"] if re.search(rf"\[(?:\d+,)?{K},{K}\]", t)}
-    raw = [f"memory-space tag on a weight-shaped tensor only in the single program: {sorted(weightish(single) - weightish(banked))}"] \
-        if weightish(single) - weightish(banked) else []
+    raw = [f"the programs still differ in how the weight is selected: dynamic-slice ops banked "
+           f"{banked.get('dynamic_slices')} vs single {single.get('dynamic_slices')}"] \
+        if banked.get("dynamic_slices") != single.get("dynamic_slices") else []
+    if weightish(single) - weightish(banked):
+        raw.append(f"memory-space tag on a weight-shaped tensor only in the single program: "
+                   f"{sorted(weightish(single) - weightish(banked))}")
     if single["copy_start"] != banked["copy_start"] or single["prefetch"] != banked["prefetch"]:
         raw.append(f"copy-start {banked['copy_start']} -> {single['copy_start']}, prefetch {banked['prefetch']} -> "
                    f"{single['prefetch']} (which operand is copied is not identified)")
     return ("same observed HLO signatures, convolution-event counts consistent with the requested iterations per "
-            "invocation in both traces; weight staging NOT ESTABLISHED from these artifacts" + (" -- raw evidence listed, not a conclusion" if raw else "")
+            "invocation in both traces; weight staging NOT ESTABLISHED from these artifacts" + (" -- raw observations listed, not a conclusion" if raw else "")
             + "; any time difference is a two-program contrast, not a measured DMA tail"), raw
 
 
@@ -675,7 +680,7 @@ def tailprobe():
                                             fusions outside the loop; NOT a loop-kernel time
       hlo_facts, hlo_sha256, trace_sha256   compiler output (static) and file hashes
     Per case (tailprobe_pairs.csv): pair_verdict() -- inconclusive unless the HLO signatures match AND both
-    traces show one convolution-fusion event per iteration; staging is never concluded, only raw evidence listed.
+    traces show one convolution-fusion event per iteration; staging is never concluded, only raw observations listed.
     What this is NOT: a measurement of the time between the last DMA and the end of the fused op (there are no
     per-DMA events); nothing is subtracted between programs. Full sizes need a TPU; --quick on CPU checks only
     that the code runs. An --out that already holds tailprobe output is refused untouched (fresh --out per run)."""
