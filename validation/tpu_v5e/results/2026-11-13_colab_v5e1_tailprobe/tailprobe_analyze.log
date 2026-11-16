@@ -1,0 +1,17 @@
+TPU v5 lite, JAX 0.11.2, backend tpu, quick False
+case           |   banked   single  single-banked | balance run | trace check (banked / single) | HLO facts equal | dynamic-slice banked / single
+bf16  32x4096  |   46.393   48.242   +1.849 (+3.99%) |   46.488 (-0.20%) | consistent / consistent | True | 1 / 0
+   tagged tensors, copies, prefetch: banked [] 0 False; single [] 0 False   windows 8,1,1 x 512,4
+   verdict: same observed HLO signatures, convolution-event counts consistent with the requested iterations per invocation in both traces; weight staging NOT ESTABLISHED from these artifacts; any time difference is a two-program contrast, not a measured DMA tail
+bf16  64x4096  |   47.523   49.225   +1.702 (+3.58%) |   47.524 (-0.00%) | consistent / consistent | True | 1 / 0
+   tagged tensors, copies, prefetch: banked [] 0 False; single [] 0 False   windows 8,1,1 x 512,4
+   verdict: same observed HLO signatures, convolution-event counts consistent with the requested iterations per invocation in both traces; weight staging NOT ESTABLISHED from these artifacts; any time difference is a two-program contrast, not a measured DMA tail
+bf16  32x8192  |  179.740  179.764   +0.024 (+0.01%) |  179.740 (+0.00%) | consistent / consistent | True | 1 / 0
+   tagged tensors, copies, prefetch: banked [] 0 False; single [] 0 False   windows 32,1,1 x 1024,2
+   verdict: same observed HLO signatures, convolution-event counts consistent with the requested iterations per invocation in both traces; weight staging NOT ESTABLISHED from these artifacts; any time difference is a two-program contrast, not a measured DMA tail
+bf16  64x8192  |  181.182  181.215   +0.033 (+0.02%) |  181.180 (+0.00%) | consistent / consistent | True | 1 / 0
+   tagged tensors, copies, prefetch: banked [] 0 False; single [] 0 False   windows 32,1,1 x 1024,2
+   verdict: same observed HLO signatures, convolution-event counts consistent with the requested iterations per invocation in both traces; weight staging NOT ESTABLISHED from these artifacts; any time difference is a two-program contrast, not a measured DMA tail
+int8  32x4096  |   24.386   24.290   -0.096 (-0.39%) |   24.386 (+0.00%) | consistent / consistent | True | 1 / 0
+   tagged tensors, copies, prefetch: banked [] 0 False; single [] 0 False   windows 11,1,1 x 512,3
+   verdict: same observed HLO signatures, convolution-event counts consistent with the requested iterations per invocation in both traces; weight staging NOT ESTABLISHED from these artifacts; any time difference is a two-program contrast, not a measured DMA tail

@@ -105,10 +105,23 @@ v, notes = m.pair_verdict(loop, same, 4096, good, good)
 assert "weight staging NOT ESTABLISHED" in v and not notes and "not a measured DMA tail" in v, v
 copies = copy.deepcopy(loop); copies["copy_start"] += 1    # an extra copy alone is not weight staging
 v, notes = m.pair_verdict(loop, copies, 4096, good, good)
-assert "NOT ESTABLISHED" in v and "raw evidence" in v and "which operand is copied is not identified" in notes[0], (v, notes)
+assert "NOT ESTABLISHED" in v and "raw observations" in v and "which operand is copied is not identified" in notes[0], (v, notes)
 tagged = copy.deepcopy(loop); tagged["tagged"] = loop["tagged"] + ["bf16[1,4096,4096]:S(1)"]
 v, notes = m.pair_verdict(loop, tagged, 4096, good, good)  # a tag is raw evidence, not a traced dataflow
-assert "NOT ESTABLISHED" in v and "raw evidence" in v and "S(1)" in notes[0], (v, notes)
+assert "NOT ESTABLISHED" in v and "raw observations" in v and "S(1)" in notes[0], (v, notes)
+noslice = copy.deepcopy(loop); noslice["dynamic_slices"] = 0   # as the real run: the one-weight program has no slice
+assert loop["dynamic_slices"] == 1
+v, notes = m.pair_verdict(loop, noslice, 4096, good, good)
+assert "NOT ESTABLISHED" in v and "dynamic-slice ops banked 1 vs single 0" in notes[0], (v, notes)
+
+# the real 2026-11-13 run: its saved HLO pairs give that note, and no staging evidence
+T = os.path.join(HERE, "results", "2026-11-13_colab_v5e1_tailprobe", "hlo")
+for case, K in (("bf16_32x4096", 4096), ("bf16_64x8192", 8192), ("int8_32x4096", 4096)):
+    fb, fs = (m.hlo_facts(open(os.path.join(T, f"tailprobe_{case}_{mode}.txt")).read()) for mode in ("banked", "single"))
+    assert (fb["dynamic_slices"], fs["dynamic_slices"]) == (1, 0) and fb["windows"] == fs["windows"], case
+    assert not fs["tagged"] and fs["copy_start"] == 0 and not fs["prefetch"], case
+    v, notes = m.pair_verdict(fb, fs, K, good, good)
+    assert "NOT ESTABLISHED" in v and len(notes) == 1 and "dynamic-slice" in notes[0], (case, v, notes)
 for bad in (None, nine, hoisted, uneven, two):              # counts not consistent in the trace, or no single capture
     v, notes = m.pair_verdict(loop, same, 4096, good, bad)
     assert v.startswith("inconclusive") and "do not both show convolution-event counts consistent" in v, v

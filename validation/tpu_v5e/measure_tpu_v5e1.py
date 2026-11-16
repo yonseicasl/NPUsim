@@ -31,6 +31,7 @@ import shutil
 import statistics
 import sys
 import time
+import traceback
 
 try:
     import jax
@@ -541,6 +542,7 @@ def hlo_facts(text):
     return dict(convolutions=convs, windows=windows, tagged=tagged,
                 copy_start=len(re.findall(r" copy-start\(", text)), copy_done=len(re.findall(r" copy-done\(", text)),
                 prefetch="cross_program_prefetch_index" in text,
+                dynamic_slices=len(re.findall(r" dynamic-slice\(", text)),
                 fusions=len(re.findall(r" fusion\(", text)), whiles=len(re.findall(r" while\(", text)))
 
 
@@ -637,13 +639,17 @@ def pair_verdict(banked, single, K, banked_ev=None, single_ev=None):
                 "counts consistent with the requested iterations per invocation"), \
                [f"banked: {got(banked_ev)}", f"single: {got(single_ev)}"]
     weightish = lambda f: {t for t in f["tagged"] if re.search(rf"\[(?:\d+,)?{K},{K}\]", t)}
-    raw = [f"memory-space tag on a weight-shaped tensor only in the single program: {sorted(weightish(single) - weightish(banked))}"] \
-        if weightish(single) - weightish(banked) else []
+    raw = [f"the programs still differ in how the weight is selected: dynamic-slice ops banked "
+           f"{banked.get('dynamic_slices')} vs single {single.get('dynamic_slices')}"] \
+        if banked.get("dynamic_slices") != single.get("dynamic_slices") else []
+    if weightish(single) - weightish(banked):
+        raw.append(f"memory-space tag on a weight-shaped tensor only in the single program: "
+                   f"{sorted(weightish(single) - weightish(banked))}")
     if single["copy_start"] != banked["copy_start"] or single["prefetch"] != banked["prefetch"]:
         raw.append(f"copy-start {banked['copy_start']} -> {single['copy_start']}, prefetch {banked['prefetch']} -> "
                    f"{single['prefetch']} (which operand is copied is not identified)")
     return ("same observed HLO signatures, convolution-event counts consistent with the requested iterations per "
-            "invocation in both traces; weight staging NOT ESTABLISHED from these artifacts" + (" -- raw evidence listed, not a conclusion" if raw else "")
+            "invocation in both traces; weight staging NOT ESTABLISHED from these artifacts" + (" -- raw observations listed, not a conclusion" if raw else "")
             + "; any time difference is a two-program contrast, not a measured DMA tail"), raw
 
 
@@ -675,7 +681,7 @@ def tailprobe():
                                             fusions outside the loop; NOT a loop-kernel time
       hlo_facts, hlo_sha256, trace_sha256   compiler output (static) and file hashes
     Per case (tailprobe_pairs.csv): pair_verdict() -- inconclusive unless the HLO signatures match AND both
-    traces show one convolution-fusion event per iteration; staging is never concluded, only raw evidence listed.
+    traces show one convolution-fusion event per iteration; staging is never concluded, only raw observations listed.
     What this is NOT: a measurement of the time between the last DMA and the end of the fused op (there are no
     per-DMA events); nothing is subtracted between programs. Full sizes need a TPU; --quick on CPU checks only
     that the code runs. An --out that already holds tailprobe output is refused untouched (fresh --out per run)."""
@@ -787,7 +793,11 @@ def run(experiments, default_only, out_name, argv=None):
     ap.add_argument("--rotate-mb", type=float, default=512,
                     help="rotate distinct input buffers totalling this much (0: reuse one set, warm on-chip)")
     ap.add_argument("--device-match", default=r"TPU:0\b", help="regex for the trace process to read")
-    ARGS = ap.parse_args(argv)
+    # In a notebook cell sys.argv carries the kernel's own "-f <connection file>": ignore that, refuse the rest.
+    ARGS, extra = ap.parse_known_args(argv)
+    extra = [a for i, a in enumerate(extra) if a != "-f" and not (i and extra[i - 1] == "-f")]
+    if extra:
+        ap.error("unrecognized arguments: " + " ".join(extra))
     os.makedirs(ARGS.out, exist_ok=True)
     devs = jax.devices()
     env = dict(jax=jax.__version__, backend=jax.default_backend(), n_devices=len(devs),
@@ -796,13 +806,22 @@ def run(experiments, default_only, out_name, argv=None):
                date=time.strftime("%Y-%m-%d %H:%M:%S %Z"))
     json.dump(env, open(os.path.join(ARGS.out, "env.json"), "w"), indent=1)
     print(json.dumps(env))
-    for name in ARGS.only.split(","):
+    names = ARGS.only.split(",")
+    for name in names:
         if name not in experiments:
             raise SystemExit(f"unknown experiment {name!r}; choose from {', '.join(experiments)}")
+    failed = {}
+    for name in names:                            # one failing experiment does not lose the others' results
         t = time.time()
-        experiments[name]()
+        try:
+            experiments[name]()
+        except Exception:
+            failed[name] = traceback.format_exc()
+            print(f"== {name}: FAILED\n{failed[name]}")
+            json.dump(failed, open(os.path.join(ARGS.out, "errors.json"), "w"), indent=1)
+            continue
         print(f"== {name}: {time.time() - t:.0f} s")
-    print(f"results in {ARGS.out}")
+    print(f"results in {ARGS.out}" + (f"; FAILED: {', '.join(failed)} (errors.json)" if failed else ""))
 
 
 def main(argv=None):

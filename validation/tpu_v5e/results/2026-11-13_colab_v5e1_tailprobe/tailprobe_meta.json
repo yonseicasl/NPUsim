@@ -1,0 +1,52 @@
+{
+ "script_sha256": "f21d68973fec44795ef130b10dee6ec3bd2510d72b58e713cfdc923eb06d18da",
+ "argv": [
+  "measure_tpu_v5e1.py",
+  "--only",
+  "tailprobe",
+  "--out",
+  "/content/tailprobe_run1"
+ ],
+ "quick": false,
+ "backend": "tpu",
+ "jax": "0.11.2",
+ "device_kind": "TPU v5 lite",
+ "device": "TPU_0(process=0,(0,0,0,0))",
+ "rotate_mb": 512,
+ "cases": [
+  [
+   "bf16",
+   32,
+   4096
+  ],
+  [
+   "bf16",
+   64,
+   4096
+  ],
+  [
+   "bf16",
+   32,
+   8192
+  ],
+  [
+   "bf16",
+   64,
+   8192
+  ],
+  [
+   "int8",
+   32,
+   4096
+  ]
+ ],
+ "profiled_loop_iterations": 8,
+ "kinds": {
+  "wall": "host wall clock samples and their signed slope",
+  "events": "profiler event counts / durations of the device (one event per op execution)",
+  "hlo_facts": "compiler output, static",
+  "verdict": "from the two HLO texts and traces only"
+ },
+ "not_measured": "time between the last DMA and the end of the fused op; measured HBM bytes; where the reused weight physically resides",
+ "cpu_note": "a non-TPU run is a functional smoke check, not hardware validation"
+}

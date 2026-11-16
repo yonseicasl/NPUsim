@@ -344,9 +344,15 @@ Eight chips (Kaggle `TPU v5e-8`, free 20 TPU h/week with queues of hours; refs/t
 file (a copy, kept identical by `test_parse_trace.py`):
 
 ```
-%%writefile /kaggle/working/measure_tpu_v5e8.py      (then the file's contents)
+import jax; print(jax.__version__, jax.default_backend(), len(jax.devices()))   # expect: tpu 8
+%%writefile /kaggle/working/measure_tpu_v5e8.py      (a cell of its own: this line first, then the file's contents)
 %run /kaggle/working/measure_tpu_v5e8.py              (collectives,decode -> /kaggle/working/tpu_v5e8/)
-%run /kaggle/working/measure_tpu_v5e8.py --only loopk # a single-chip experiment not measured yet
+!cd /kaggle/working && zip -qr tpu_v5e8.zip tpu_v5e8  (download from the Output panel)
+
+Or paste the whole file into ONE cell and run it (defaults; the kernel's "-f ..." argument is ignored), then
+`main(["--only", "collectives"])` in a further cell for other options. Without a TPU the script stops with what
+to change (accelerator, `jax[tpu]`); a failing case is recorded in the csv, a failing experiment in
+`errors.json`, and the rest still runs (`test_notebook_run.py`: CPU, 8 virtual devices).
 ```
 
 On a VM: `python3 measure_tpu_v5e8.py --out results/<date>` (installs `jax[tpu]` if missing). Change the shared
@@ -966,3 +972,38 @@ row the HLO hash, the hash of every trace file by its relative path, and request
 Run (Colab, TPU v5e-1): `%run measure_tpu_v5e1.py --only tailprobe --out <fresh directory>`, then zip the output
 directory (it keeps `traces/`). An `--out` that already holds tailprobe output is refused before anything is
 written: earlier captures are never removed or overwritten.
+
+### Tail probe run (2026-11-13, Colab v5e-1): reusing a weight is not a staged-weight contrast
+
+`results/2026-11-13_colab_v5e1_tailprobe/` (csv, pairs, meta, env, the 10 HLO texts, the raw archive with traces;
+`tailprobe_analyze.py` -> `tailprobe_analyze.log`). TPU v5 lite, JAX 0.11.2, the script of commit `528cce3`.
+All ten captures pass the count check (every invocation holds exactly 8 convolution events).
+
+Fused-op event duration per loop iteration (us):
+
+| case | windows | banked | single weight | single - banked |
+|---|---|---|---|---|
+| bf16 32 x 4096 | 8 | 46.393 | 48.242 | +1.849 (+3.99%) |
+| bf16 64 x 4096 | 8 | 47.523 | 49.225 | +1.702 (+3.58%) |
+| bf16 32 x 8192 | 32 | 179.740 | 179.764 | +0.024 (+0.01%) |
+| bf16 64 x 8192 | 32 | 181.182 | 181.215 | +0.033 (+0.02%) |
+| int8 32 x 4096 | 11 | 24.386 | 24.290 | -0.096 (-0.39%) |
+
+What the artifacts show:
+
+- **The compiler did not stage the reused weight.** In every single-weight program the weight keeps the default
+  layout: no memory-space tag, no copy, no prefetch -- as in the banked program. Convolution operand types and
+  window geometry are identical within each pair; the one difference in the HLO is the weight selection (the
+  banked program has a `dynamic-slice` of the bank, the single one none).
+- **Reusing the weight does not make the fused op faster**: equal within 0.4% in three cases, and 1.7-1.8 us
+  (3.6-4.0%) SLOWER for bf16 at K = 4096. So the weight is evidently read again on every iteration at the same
+  rate; nothing is retained across iterations at 16-134 MB. The 1.7-1.8 us is unexplained.
+- **The banked times reproduce the 2026-11-12 balance run** from a separate session: -0.20%, 0.00%, 0.00%, 0.00%,
+  0.00% on the five shared cases.
+
+What it does not show: anything about the time after the last DMA. No staged program was obtained, so there is
+no streamed-vs-staged contrast at all -- the probe's own verdict for all five pairs is "weight staging NOT
+ESTABLISHED". The memory-bound bf16 over-prediction of the window-schedule candidate (REVIEW.md) is exactly as
+open as before; this run neither supports nor weakens the on-chip weight-load tail, and no model parameter
+changes because of it. (After this run `hlo_facts` also records the `dynamic-slice` count, so the selection
+difference appears in the pair notes.)

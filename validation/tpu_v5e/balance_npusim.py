@@ -114,7 +114,6 @@ def main():
                               window_coverage=round(n * kw[0] * 8 * kw[1] * 128 / (K * K), 3),
                               window_model="count-based equal-share",
                               measured_us=float(r["fused_ops_sum_per_iter_us"]), hlo_sha256=sha(hlo)))
-    before = frozen()
     tmp, cfgroot, rundir = palm.workdir(tuple(ACCEL.values()))
     palm.MOSAIC_DRAM = a.dram and os.path.abspath(a.dram)
     todo = {}
@@ -152,6 +151,7 @@ def main():
         shutil.rmtree(tmp)
         print(f"generated and checked {len(todo)} runs -> {gen}")
         return
+    before = frozen()                             # only a real batch needs (and hashes) the simulator
     print(f"NPUsim: {len(todo)} whole-GEMM runs on {a.jobs} threads ...", flush=True)
     with ThreadPoolExecutor(a.jobs) as ex:
         sim = dict(zip(todo, ex.map(palm.run_gemm, todo.values())))
