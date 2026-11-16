@@ -1,0 +1,807 @@
+{
+ "note": "unrounded per-run values; critical_path_cycles is read from the run's report, which prints it with one decimal; aggregates are to be computed from this file, not from the display csv",
+ "clock_hz": 1500000000.0,
+ "variants": "ABC",
+ "cases": [
+  {
+   "dtype": "bf16",
+   "M": 8,
+   "K": 4096,
+   "N": 6144,
+   "windows": 10,
+   "measured_us": 68.785752,
+   "window_coverage": 1.0417,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 93805.0,
+    "us": 62.53666666666667,
+    "err_pct": -9.084854278155351
+   },
+   "B": {
+    "critical_path_cycles": 98412.9,
+    "us": 65.6086,
+    "err_pct": -4.618910032414858
+   },
+   "C": {
+    "critical_path_cycles": 99002.89999999998,
+    "us": 66.00193333333333,
+    "err_pct": -4.047086185329018
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 8,
+   "K": 4096,
+   "N": 6144,
+   "windows": 14,
+   "measured_us": 35.3058105,
+   "window_coverage": 1.0938,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 47565.0,
+    "us": 31.71,
+    "err_pct": -10.184755565942893
+   },
+   "B": {
+    "critical_path_cycles": 49164.9,
+    "us": 32.7766,
+    "err_pct": -7.163723093115215
+   },
+   "C": {
+    "critical_path_cycles": 49754.9,
+    "us": 33.16993333333333,
+    "err_pct": -6.04964773905039
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 32,
+   "K": 4096,
+   "N": 6144,
+   "windows": 12,
+   "measured_us": 68.5801855,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 94189.49999999999,
+    "us": 62.79299999999999,
+    "err_pct": -8.438567871765246
+   },
+   "B": {
+    "critical_path_cycles": 98028.9,
+    "us": 65.3526,
+    "err_pct": -4.706294502513419
+   },
+   "C": {
+    "critical_path_cycles": 98618.89999999998,
+    "us": 65.74593333333333,
+    "err_pct": -4.13275663517515
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 32,
+   "K": 4096,
+   "N": 6144,
+   "windows": 16,
+   "measured_us": 35.1959765,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 47949.5,
+    "us": 31.96633333333333,
+    "err_pct": -9.176171505474972
+   },
+   "B": {
+    "critical_path_cycles": 49356.9,
+    "us": 32.9046,
+    "err_pct": -6.510336486899282
+   },
+   "C": {
+    "critical_path_cycles": 49946.9,
+    "us": 33.29793333333333,
+    "err_pct": -5.392784503838577
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 128,
+   "K": 4096,
+   "N": 6144,
+   "windows": 12,
+   "measured_us": 71.693545,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 95792.5,
+    "us": 63.86166666666667,
+    "err_pct": -10.924105278004214
+   },
+   "B": {
+    "critical_path_cycles": 99660.89999999998,
+    "us": 66.44059999999999,
+    "err_pct": -7.326942753353894
+   },
+   "C": {
+    "critical_path_cycles": 100250.89999999998,
+    "us": 66.83393333333332,
+    "err_pct": -6.778311306361928
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 128,
+   "K": 4096,
+   "N": 6144,
+   "windows": 16,
+   "measured_us": 42.589375,
+   "window_coverage": 1.0,
+   "w_calibration_case": true,
+   "A": {
+    "critical_path_cycles": 49987.6,
+    "us": 33.325066666666665,
+    "err_pct": -21.752628051793042
+   },
+   "B": {
+    "critical_path_cycles": 52867.6,
+    "us": 35.245066666666666,
+    "err_pct": -17.244461402247225
+   },
+   "C": {
+    "critical_path_cycles": 62305.5,
+    "us": 41.537,
+    "err_pct": -2.4709801446957114
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 512,
+   "K": 4096,
+   "N": 6144,
+   "windows": 24,
+   "measured_us": 144.6936035,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 199570.6,
+    "us": 133.04706666666667,
+    "err_pct": -8.049102760325777
+   },
+   "B": {
+    "critical_path_cycles": 203378.7,
+    "us": 135.5858,
+    "err_pct": -6.294544665203528
+   },
+   "C": {
+    "critical_path_cycles": 217466.5,
+    "us": 144.97766666666666,
+    "err_pct": 0.19632047291342491
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 512,
+   "K": 4096,
+   "N": 6144,
+   "windows": 32,
+   "measured_us": 142.5475195,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 199386.6,
+    "us": 132.9244,
+    "err_pct": -6.750815120286957
+   },
+   "B": {
+    "critical_path_cycles": 200886.20000000004,
+    "us": 133.92413333333334,
+    "err_pct": -6.049481742589458
+   },
+   "C": {
+    "critical_path_cycles": 219668.9,
+    "us": 146.44593333333333,
+    "err_pct": 2.7348170259345217
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 8,
+   "K": 4096,
+   "N": 4096,
+   "windows": 8,
+   "measured_us": 46.09611325,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 62717.5,
+    "us": 41.81166666666667,
+    "err_pct": -9.294594015111102
+   },
+   "B": {
+    "critical_path_cycles": 66557.3,
+    "us": 44.37153333333333,
+    "err_pct": -3.7412696973245785
+   },
+   "C": {
+    "critical_path_cycles": 67147.3,
+    "us": 44.76486666666667,
+    "err_pct": -2.8879801125821225
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 8,
+   "K": 4096,
+   "N": 4096,
+   "windows": 9,
+   "measured_us": 24.11317375,
+   "window_coverage": 1.0635,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 31837.500000000004,
+    "us": 21.225,
+    "err_pct": -11.977576157929025
+   },
+   "B": {
+    "critical_path_cycles": 33501.3,
+    "us": 22.3342,
+    "err_pct": -7.3776010094896876
+   },
+   "C": {
+    "critical_path_cycles": 34091.3,
+    "us": 22.727533333333337,
+    "err_pct": -5.746404148340966
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 32,
+   "K": 4096,
+   "N": 4096,
+   "windows": 8,
+   "measured_us": 46.39192375,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 63102.30000000001,
+    "us": 42.068200000000004,
+    "err_pct": -9.319992361817054
+   },
+   "B": {
+    "critical_path_cycles": 66941.3,
+    "us": 44.62753333333333,
+    "err_pct": -3.8032275319616726
+   },
+   "C": {
+    "critical_path_cycles": 67531.3,
+    "us": 45.02086666666667,
+    "err_pct": -2.955378808436082
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 32,
+   "K": 4096,
+   "N": 4096,
+   "windows": 11,
+   "measured_us": 24.854375,
+   "window_coverage": 1.0312,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 32222.300000000003,
+    "us": 21.481533333333335,
+    "err_pct": -13.570414330139723
+   },
+   "B": {
+    "critical_path_cycles": 33565.3,
+    "us": 22.37686666666667,
+    "err_pct": -9.968097501278272
+   },
+   "C": {
+    "critical_path_cycles": 34155.3,
+    "us": 22.770200000000003,
+    "err_pct": -8.385545804310102
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 128,
+   "K": 4096,
+   "N": 4096,
+   "windows": 8,
+   "measured_us": 49.485371,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 64706.30000000001,
+    "us": 43.13753333333334,
+    "err_pct": -12.827705518599963
+   },
+   "B": {
+    "critical_path_cycles": 68582.2,
+    "us": 45.721466666666664,
+    "err_pct": -7.606095008024361
+   },
+   "C": {
+    "critical_path_cycles": 69172.2,
+    "us": 46.1148,
+    "err_pct": -6.811247307815471
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 128,
+   "K": 4096,
+   "N": 4096,
+   "windows": 11,
+   "measured_us": 30.41550775,
+   "window_coverage": 1.0312,
+   "w_calibration_case": true,
+   "A": {
+    "critical_path_cycles": 33922.3,
+    "us": 22.614866666666668,
+    "err_pct": -25.646920470473923
+   },
+   "B": {
+    "critical_path_cycles": 36698.6,
+    "us": 24.465733333333333,
+    "err_pct": -19.561647517348014
+   },
+   "C": {
+    "critical_path_cycles": 42887.5,
+    "us": 28.591666666666665,
+    "err_pct": -5.996418334766529
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 512,
+   "K": 4096,
+   "N": 4096,
+   "windows": 16,
+   "measured_us": 99.47190425,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 133538.5,
+    "us": 89.02566666666667,
+    "err_pct": -10.501696596738597
+   },
+   "B": {
+    "critical_path_cycles": 137493.0,
+    "us": 91.662,
+    "err_pct": -7.851366985366615
+   },
+   "C": {
+    "critical_path_cycles": 146892.4,
+    "us": 97.92826666666667,
+    "err_pct": -1.5518327461126469
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 512,
+   "K": 4096,
+   "N": 4096,
+   "windows": 16,
+   "measured_us": 96.54750975,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 133354.50000000003,
+    "us": 88.903,
+    "err_pct": -7.9178735627616685
+   },
+   "B": {
+    "critical_path_cycles": 135573.0,
+    "us": 90.382,
+    "err_pct": -6.385985268770744
+   },
+   "C": {
+    "critical_path_cycles": 144972.4,
+    "us": 96.64826666666667,
+    "err_pct": 0.10435993318478332
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 8,
+   "K": 4096,
+   "N": 28672,
+   "windows": 45,
+   "measured_us": 314.90276375,
+   "window_coverage": 1.0045,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 435772.20000000007,
+    "us": 290.51480000000004,
+    "err_pct": -7.744601368237425
+   },
+   "B": {
+    "critical_path_cycles": 440508.20000000007,
+    "us": 293.67213333333336,
+    "err_pct": -6.741963825227515
+   },
+   "C": {
+    "critical_path_cycles": 441098.2,
+    "us": 294.0654666666667,
+    "err_pct": -6.617057543475857
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 8,
+   "K": 4096,
+   "N": 28672,
+   "windows": 64,
+   "measured_us": 157.00238275,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 220572.2,
+    "us": 147.04813333333334,
+    "err_pct": -6.3401900291648055
+   },
+   "B": {
+    "critical_path_cycles": 222236.20000000004,
+    "us": 148.1574666666667,
+    "err_pct": -5.633619011640967
+   },
+   "C": {
+    "critical_path_cycles": 222826.2,
+    "us": 148.5508,
+    "err_pct": -5.3830920282641355
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 32,
+   "K": 4096,
+   "N": 28672,
+   "windows": 48,
+   "measured_us": 313.4711425,
+   "window_coverage": 1.0045,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 436156.29999999993,
+    "us": 290.7708666666666,
+    "err_pct": -7.241583914963834
+   },
+   "B": {
+    "critical_path_cycles": 440636.20000000007,
+    "us": 293.7574666666667,
+    "err_pct": -6.288832737875804
+   },
+   "C": {
+    "critical_path_cycles": 441226.2,
+    "us": 294.1508,
+    "err_pct": -6.163356009716258
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 32,
+   "K": 4096,
+   "N": 28672,
+   "windows": 64,
+   "measured_us": 159.5881445,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 220956.3,
+    "us": 147.3042,
+    "err_pct": -7.697278853943934
+   },
+   "B": {
+    "critical_path_cycles": 222620.2,
+    "us": 148.41346666666666,
+    "err_pct": -7.002197981776359
+   },
+   "C": {
+    "critical_path_cycles": 223210.2,
+    "us": 148.8068,
+    "err_pct": -6.7557302165387245
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 128,
+   "K": 4096,
+   "N": 28672,
+   "windows": 56,
+   "measured_us": 315.6256445,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 437757.8,
+    "us": 291.8385333333333,
+    "err_pct": -7.536495079273164
+   },
+   "B": {
+    "critical_path_cycles": 441628.20000000007,
+    "us": 294.41880000000003,
+    "err_pct": -6.718986517586334
+   },
+   "C": {
+    "critical_path_cycles": 442218.2,
+    "us": 294.81213333333335,
+    "err_pct": -6.594366310012134
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 128,
+   "K": 4096,
+   "N": 28672,
+   "windows": 75,
+   "measured_us": 187.2193555,
+   "window_coverage": 1.0045,
+   "w_calibration_case": true,
+   "A": {
+    "critical_path_cycles": 231612.8,
+    "us": 154.40853333333334,
+    "err_pct": -17.525336565249884
+   },
+   "B": {
+    "critical_path_cycles": 234386.9,
+    "us": 156.25793333333334,
+    "err_pct": -16.5375113507784
+   },
+   "C": {
+    "critical_path_cycles": 278576.5,
+    "us": 185.71766666666667,
+    "err_pct": -0.8021012727678856
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 512,
+   "K": 4096,
+   "N": 28672,
+   "windows": 112,
+   "measured_us": 641.88732425,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 926073.7,
+    "us": 617.3824666666667,
+    "err_pct": -3.8176260314792043
+   },
+   "B": {
+    "critical_path_cycles": 929651.6,
+    "us": 619.7677333333334,
+    "err_pct": -3.4460239485974986
+   },
+   "C": {
+    "critical_path_cycles": 995307.9999999999,
+    "us": 663.5386666666666,
+    "err_pct": 3.3730752421329724
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 512,
+   "K": 4096,
+   "N": 28672,
+   "windows": 128,
+   "measured_us": 653.78613275,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 925889.6999999998,
+    "us": 617.2597999999999,
+    "err_pct": -5.586893162808526
+   },
+   "B": {
+    "critical_path_cycles": 927477.2,
+    "us": 618.3181333333333,
+    "err_pct": -5.425015557836743
+   },
+   "C": {
+    "critical_path_cycles": 1002512.5,
+    "us": 668.3416666666667,
+    "err_pct": 2.226344853085549
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 8,
+   "K": 14336,
+   "N": 4096,
+   "windows": 23,
+   "measured_us": 157.52517575,
+   "window_coverage": 1.0268,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 218686.6,
+    "us": 145.79106666666667,
+    "err_pct": -7.449037290366789
+   },
+   "B": {
+    "critical_path_cycles": 223294.4,
+    "us": 148.86293333333333,
+    "err_pct": -5.498957468496368
+   },
+   "C": {
+    "critical_path_cycles": 223884.4,
+    "us": 149.25626666666668,
+    "err_pct": -5.249261931601634
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 8,
+   "K": 14336,
+   "N": 4096,
+   "windows": 32,
+   "measured_us": 79.6161035,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 111006.6,
+    "us": 74.0044,
+    "err_pct": -7.048452829646445
+   },
+   "B": {
+    "critical_path_cycles": 112670.40000000001,
+    "us": 75.1136,
+    "err_pct": -5.655267341738202
+   },
+   "C": {
+    "critical_path_cycles": 113260.39999999998,
+    "us": 75.50693333333332,
+    "err_pct": -5.161229934678568
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 32,
+   "K": 14336,
+   "N": 4096,
+   "windows": 28,
+   "measured_us": 158.18359375,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 219971.40000000002,
+    "us": 146.6476,
+    "err_pct": -7.292787751574259
+   },
+   "B": {
+    "critical_path_cycles": 223810.4,
+    "us": 149.20693333333332,
+    "err_pct": -5.674836564184882
+   },
+   "C": {
+    "critical_path_cycles": 224400.4,
+    "us": 149.60026666666667,
+    "err_pct": -5.426180351483723
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 32,
+   "K": 14336,
+   "N": 4096,
+   "windows": 32,
+   "measured_us": 81.84624025,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 112291.4,
+    "us": 74.86093333333334,
+    "err_pct": -8.534670493513186
+   },
+   "B": {
+    "critical_path_cycles": 113954.39999999998,
+    "us": 75.96959999999999,
+    "err_pct": -7.1800979886794565
+   },
+   "C": {
+    "critical_path_cycles": 114544.4,
+    "us": 76.36293333333333,
+    "err_pct": -6.69952205491402
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 128,
+   "K": 14336,
+   "N": 4096,
+   "windows": 28,
+   "measured_us": 164.34333,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 225175.39999999997,
+    "us": 150.11693333333332,
+    "err_pct": -8.656509921435019
+   },
+   "B": {
+    "critical_path_cycles": 229042.4,
+    "us": 152.69493333333332,
+    "err_pct": -7.087842668556544
+   },
+   "C": {
+    "critical_path_cycles": 229632.4,
+    "us": 153.08826666666667,
+    "err_pct": -6.848506315001246
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 128,
+   "K": 14336,
+   "N": 4096,
+   "windows": 38,
+   "measured_us": 95.62769525,
+   "window_coverage": 1.0179,
+   "w_calibration_case": true,
+   "A": {
+    "critical_path_cycles": 117591.4,
+    "us": 78.39426666666667,
+    "err_pct": -18.02137815648478
+   },
+   "B": {
+    "critical_path_cycles": 120374.8,
+    "us": 80.24986666666666,
+    "err_pct": -16.08093611702237
+   },
+   "C": {
+    "critical_path_cycles": 141319.6,
+    "us": 94.21306666666666,
+    "err_pct": -1.4793084572780613
+   }
+  },
+  {
+   "dtype": "bf16",
+   "M": 512,
+   "K": 14336,
+   "N": 4096,
+   "windows": 56,
+   "measured_us": 322.118164,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 463777.6,
+    "us": 309.18506666666667,
+    "err_pct": -4.015016468718391
+   },
+   "B": {
+    "critical_path_cycles": 467732.1,
+    "us": 311.8214,
+    "err_pct": -3.196579749535633
+   },
+   "C": {
+    "critical_path_cycles": 500572.4000000001,
+    "us": 333.71493333333336,
+    "err_pct": 3.6001600125019184
+   }
+  },
+  {
+   "dtype": "int8",
+   "M": 512,
+   "K": 14336,
+   "N": 4096,
+   "windows": 56,
+   "measured_us": 321.96107425,
+   "window_coverage": 1.0,
+   "w_calibration_case": false,
+   "A": {
+    "critical_path_cycles": 463593.60000000003,
+    "us": 309.0624,
+    "err_pct": -4.006283765839436
+   },
+   "B": {
+    "critical_path_cycles": 465812.0999999999,
+    "us": 310.54139999999995,
+    "err_pct": -3.5469114633195686
+   },
+   "C": {
+    "critical_path_cycles": 498652.4,
+    "us": 332.43493333333333,
+    "err_pct": 3.25314453237302
+   }
+  }
+ ]
+}

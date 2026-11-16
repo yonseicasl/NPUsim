@@ -715,3 +715,47 @@ written. The same yaml as one continuous stream on a fresh device (`dram_bw_prob
 751 at 32 MiB. The TPU's profiled copy op of the one-op programs takes 44.76 us for 33.55 MB (750 GB/s) -- but
 that is an END-TO-END op latency, a different timing scope from a DRAM-busy service rate. The roughly 1%
 agreement of these examples is not a statement about bandwidth accuracy in general, and nothing is retuned.
+
+### Window candidate on the projection cohort (2026-11-16; retrospective, not a holdout)
+
+`results/2026-11-16_projection_cohort/` -- `manifest.{csv,json}` (`projection_cohort.py`), `gate/`, `full/`
+(`projection_summary.py` -> `full/summary_exact.txt`; inputs, reports and before / after hashes of all 192 runs).
+The cold loop GEMMs of the four Llama projections in the 2026-11-04 profile run (non-square: 4096 x 6144,
+4096 x 28672, 14336 x 4096, and 4096 x 4096), M 8-512, bf16 and int8. 32 of the 40 grid cases are comparable; the
+8 with M = 1 compile to a program without a convolution-category op and are out of scope.
+**This run is where the per-window cost was estimated (its four int8 M = 128 cases) and where the window schedule
+was developed, so nothing here is independent evidence.** Each capture holds one invocation: the reference is a
+mean of 8 correlated events. Same knobs as before, nothing refitted: A = config as is, B = + window schedule,
+C = B + 590 cycles per window; `fused_output_consumer` traffic (compiler static accounting, exact for all 32).
+
+refsb, mean / MAPE in % from unrounded per-run values:
+
+| group | n | A | B | C | cases closer than A: B, C |
+|---|---|---|---|---|---|
+| w-calibration cases | 4 | -15.70 / 15.70 | -12.32 / 12.32 | -2.41 / 2.41 | 4, 4 |
+| **other cases** | 28 | -2.81 / 3.17 | -0.55 / 2.77 | +1.89 / 2.12 | 16, 16 |
+| other, bf16 | 16 | -2.16 / 2.69 | +0.47 / 3.00 | +2.45 / 2.61 | 6, 6 |
+| other, int8 | 12 | -3.67 / 3.82 | -1.91 / 2.47 | +1.15 / 1.47 | 10, 10 |
+| other, memory-bound | 20 | -1.40 / 1.91 | +1.30 / 1.81 | +1.91 / 2.11 | 8, 8 |
+| other, compute-bound | 8 | -6.32 / 6.32 | -5.17 / 5.17 | +1.84 / 2.17 | 8, 8 |
+| other, full windows | 21 | -3.05 / 3.30 | -0.97 / 3.00 | +2.02 / 2.15 | 13, 13 |
+| other, partial edge windows | 7 | -2.07 / 2.78 | +0.73 / 2.09 | +1.50 / 2.05 | 3, 3 |
+| other, windows over N | 14 | -3.03 / 3.23 | +0.02 / 2.97 | +1.97 / 2.43 | 7, 7 |
+| other, windows over K | 4 | -0.71 / 1.56 | +0.80 / 2.36 | +2.69 / 2.69 | 1, 1 |
+| other, windows over N and K | 10 | -3.33 / 3.74 | -1.89 / 2.65 | +1.47 / 1.47 | 8, 8 |
+
+- Outside the calibration cases the candidate lowers the MAPE (3.17 -> 2.12%) by fixing the eight compute-bound
+  cases (6.32 -> 2.17%, all eight closer); it does **not** help the twenty memory-bound ones (1.91 -> 2.11%), and
+  the whole group moves from under- to over-prediction (-2.81 -> +1.89%).
+- **12 of the 28 get worse, all memory-bound, 11 of them bf16**: +0.77 .. +3.86 points of absolute error; the
+  largest are the 4096-row bf16 cases with few windows (8 x 4096 x 4096 -1.28 -> +5.13, 32 x 4096 x 4096
+  -1.30 -> +5.07, 32 x 4096 x 6144 -0.28 -> +4.03, 8 x 4096 x 6144 -0.99 -> +4.05). In all of them B (the window
+  schedule alone) already overshoots and the 590 cycles add to it.
+- For bf16 as a group the candidate is a wash (2.69 -> 2.61%, 6 of 16 closer); for int8 it helps (3.82 -> 1.47%).
+- The balanced regime of this cohort consists only of the four calibration cases; it cannot be judged here.
+- Analytic DRAM (~9% fast): every case is short with A, so everything gets closer (other cases 8.25 -> 4.68%);
+  that says more about the DRAM rate than about the candidate.
+
+Reading, with the balance run: the candidate trades an under-prediction of compute-bound and balanced streaming
+for an over-prediction of memory-bound streaming. It stays opt-in; uniform 590 over-predicts cases such as
+bf16 512 x 14336 x 4096 (+3.68%) in the present model, cause not identified.
