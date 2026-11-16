@@ -15,6 +15,10 @@ fallback when no trace is found.
 
 Usage: python3 measure_tpu_v5e8.py [--out DIR] [--quick] [--keep-traces] [--only collectives,decode]
        (--only also takes the single-chip experiments: gemm, vector, smallk, loopk)
+In a notebook: either %run the saved file with those options, or paste the whole file into ONE cell (it then
+runs with the defaults; the kernel's own "-f ..." argument is ignored) -- for options from a cell, call
+main(["--only", "collectives"]) in the next cell. A failing case or experiment is reported (errors.json) and
+the rest still runs; collectives.csv is rewritten after every chip count.
 """
 import argparse
 import csv
@@ -27,6 +31,7 @@ import re
 import shutil
 import statistics
 import time
+import traceback
 
 try:
     import jax
@@ -438,7 +443,11 @@ def run(experiments, default_only, out_name, argv=None):
     ap.add_argument("--rotate-mb", type=float, default=512,
                     help="rotate distinct input buffers totalling this much (0: reuse one set, warm on-chip)")
     ap.add_argument("--device-match", default=r"TPU:0\b", help="regex for the trace process to read")
-    ARGS = ap.parse_args(argv)
+    # In a notebook cell sys.argv carries the kernel's own "-f <connection file>": ignore that, refuse the rest.
+    ARGS, extra = ap.parse_known_args(argv)
+    extra = [a for i, a in enumerate(extra) if a != "-f" and not (i and extra[i - 1] == "-f")]
+    if extra:
+        ap.error("unrecognized arguments: " + " ".join(extra))
     os.makedirs(ARGS.out, exist_ok=True)
     devs = jax.devices()
     env = dict(jax=jax.__version__, backend=jax.default_backend(), n_devices=len(devs),
@@ -447,20 +456,42 @@ def run(experiments, default_only, out_name, argv=None):
                date=time.strftime("%Y-%m-%d %H:%M:%S %Z"))
     json.dump(env, open(os.path.join(ARGS.out, "env.json"), "w"), indent=1)
     print(json.dumps(env))
-    for name in ARGS.only.split(","):
+    names = ARGS.only.split(",")
+    for name in names:
         if name not in experiments:
             raise SystemExit(f"unknown experiment {name!r}; choose from {', '.join(experiments)}")
+    failed = {}
+    for name in names:                            # one failing experiment does not lose the others' results
         t = time.time()
-        experiments[name]()
+        try:
+            experiments[name]()
+        except Exception:
+            failed[name] = traceback.format_exc()
+            print(f"== {name}: FAILED\n{failed[name]}")
+            json.dump(failed, open(os.path.join(ARGS.out, "errors.json"), "w"), indent=1)
+            continue
         print(f"== {name}: {time.time() - t:.0f} s")
-    print(f"results in {ARGS.out}")
+    print(f"results in {ARGS.out}" + (f"; FAILED: {', '.join(failed)} (errors.json)" if failed else ""))
+
+
+def need_chips(what, chips=2):
+    """Stop with what to do, instead of a JAX error far from the cause, when the session has no TPU slice."""
+    devs = jax.devices()
+    if jax.default_backend() != "tpu" and not ARGS.quick:
+        raise SystemExit(
+            f"{what}: JAX runs on '{jax.default_backend()}' ({len(devs)} device(s)), not on a TPU.\n"
+            "  Kaggle: Settings -> Accelerator -> 'TPU VM v5e-8' (wait for the session), then restart and re-run.\n"
+            "  If the accelerator is a TPU and JAX still reports cpu:  !pip install -q -U 'jax[tpu]' "
+            "-f https://storage.googleapis.com/jax-releases/libtpu_releases.html   then restart the kernel.\n"
+            "  (--quick runs a functional check on CPU.)")
+    if len(devs) < chips:
+        raise SystemExit(f"{what}: needs >= {chips} chips, this session has {len(devs)} ({[str(d) for d in devs]}); "
+                         "use measure_tpu_v5e1.py on one chip")
+    return devs
 
 
 def collectives():
-    devs = jax.devices()
-    if len(devs) < 2:
-        print("collectives: one device, skipped")
-        return
+    devs = need_chips("collectives")
     ops = {"psum": lambda x: jax.lax.psum(x, "x"),
            "all_gather": lambda x: jax.lax.all_gather(x, "x", tiled=True),
            "psum_scatter": lambda x: jax.lax.psum_scatter(x, "x", tiled=True),
@@ -475,16 +506,22 @@ def collectives():
             sets = [(rnd(5 + i, (n * elems,), NamedSharding(mesh, P("x"))),)
                     for i in range(nsets(2 * n * elems))]
             for name, op in ops.items():
-                f = jax.jit(shard_map(op, mesh=mesh, in_specs=P("x"), out_specs=P("x")))
-                r = bench(f, sets, f"coll_{name}_{n}chips_{lg}")
+                try:                              # one failing case (an op, a size) is recorded, the sweep goes on
+                    f = jax.jit(shard_map(op, mesh=mesh, in_specs=P("x"), out_specs=P("x")))
+                    r = bench(f, sets, f"coll_{name}_{n}chips_{lg}")
+                except Exception as e:
+                    rows.append(dict(op=name, chips=n, bytes_per_chip=elems * 2, error=f"{type(e).__name__}: {e}"[:300]))
+                    print(f"collective {name:12s} {n} chips {elems * 2:>10d} B/chip  FAILED {type(e).__name__}: {str(e)[:120]}")
+                    continue
                 rows.append(dict(op=name, chips=n, bytes_per_chip=elems * 2, sets=r["sets"],
                                  wall_us=round(r["wall_us"], 2), device_us=r["device_us"] and round(r["device_us"], 2)))
                 print(f"collective {name:12s} {n} chips {elems * 2:>10d} B/chip  {fmt(r)}")
             del sets
-    write("collectives.csv", rows)
+        write("collectives.csv", rows)            # after every chip count: a later crash keeps what was measured
 
 
 def decode_tp():
+    need_chips("decode (tensor parallel)")
     # tp 1 is the same-session single-chip reference for the tensor-parallel layers
     decode(tps=(1, len(jax.devices())) if ARGS.quick else (1, 2, 4, 8))
 

@@ -31,9 +31,15 @@ Eight chips (Kaggle `TPU v5e-8`, free 20 TPU h/week with queues of hours; refs/t
 file (a copy, kept identical by `test_parse_trace.py`):
 
 ```
-%%writefile /kaggle/working/measure_tpu_v5e8.py      (then the file's contents)
+import jax; print(jax.__version__, jax.default_backend(), len(jax.devices()))   # expect: tpu 8
+%%writefile /kaggle/working/measure_tpu_v5e8.py      (a cell of its own: this line first, then the file's contents)
 %run /kaggle/working/measure_tpu_v5e8.py              (collectives,decode -> /kaggle/working/tpu_v5e8/)
-%run /kaggle/working/measure_tpu_v5e8.py --only loopk # a single-chip experiment not measured yet
+!cd /kaggle/working && zip -qr tpu_v5e8.zip tpu_v5e8  (download from the Output panel)
+
+Or paste the whole file into ONE cell and run it (defaults; the kernel's "-f ..." argument is ignored), then
+`main(["--only", "collectives"])` in a further cell for other options. Without a TPU the script stops with what
+to change (accelerator, `jax[tpu]`); a failing case is recorded in the csv, a failing experiment in
+`errors.json`, and the rest still runs (`test_notebook_run.py`: CPU, 8 virtual devices).
 ```
 
 On a VM: `python3 measure_tpu_v5e8.py --out results/<date>` (installs `jax[tpu]` if missing). Change the shared

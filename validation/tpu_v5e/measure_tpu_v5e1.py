@@ -31,6 +31,7 @@ import shutil
 import statistics
 import sys
 import time
+import traceback
 
 try:
     import jax
@@ -792,7 +793,11 @@ def run(experiments, default_only, out_name, argv=None):
     ap.add_argument("--rotate-mb", type=float, default=512,
                     help="rotate distinct input buffers totalling this much (0: reuse one set, warm on-chip)")
     ap.add_argument("--device-match", default=r"TPU:0\b", help="regex for the trace process to read")
-    ARGS = ap.parse_args(argv)
+    # In a notebook cell sys.argv carries the kernel's own "-f <connection file>": ignore that, refuse the rest.
+    ARGS, extra = ap.parse_known_args(argv)
+    extra = [a for i, a in enumerate(extra) if a != "-f" and not (i and extra[i - 1] == "-f")]
+    if extra:
+        ap.error("unrecognized arguments: " + " ".join(extra))
     os.makedirs(ARGS.out, exist_ok=True)
     devs = jax.devices()
     env = dict(jax=jax.__version__, backend=jax.default_backend(), n_devices=len(devs),
@@ -801,13 +806,22 @@ def run(experiments, default_only, out_name, argv=None):
                date=time.strftime("%Y-%m-%d %H:%M:%S %Z"))
     json.dump(env, open(os.path.join(ARGS.out, "env.json"), "w"), indent=1)
     print(json.dumps(env))
-    for name in ARGS.only.split(","):
+    names = ARGS.only.split(",")
+    for name in names:
         if name not in experiments:
             raise SystemExit(f"unknown experiment {name!r}; choose from {', '.join(experiments)}")
+    failed = {}
+    for name in names:                            # one failing experiment does not lose the others' results
         t = time.time()
-        experiments[name]()
+        try:
+            experiments[name]()
+        except Exception:
+            failed[name] = traceback.format_exc()
+            print(f"== {name}: FAILED\n{failed[name]}")
+            json.dump(failed, open(os.path.join(ARGS.out, "errors.json"), "w"), indent=1)
+            continue
         print(f"== {name}: {time.time() - t:.0f} s")
-    print(f"results in {ARGS.out}")
+    print(f"results in {ARGS.out}" + (f"; FAILED: {', '.join(failed)} (errors.json)" if failed else ""))
 
 
 def main(argv=None):
