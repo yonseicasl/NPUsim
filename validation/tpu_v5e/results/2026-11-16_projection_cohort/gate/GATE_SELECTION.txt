@@ -1,0 +1,10 @@
+Four-case gate of the projection cohort, chosen 2026-11-16 BEFORE any candidate error of this cohort was computed,
+by coverage only (manifest.csv):
+  int8 128 x 14336 x 4096   w-calibration case; K > N; partial edge windows (1x1x38, 48x32, coverage 1.018)
+  bf16  32 x 4096 x 6144    K < N; full windows (12x1x1, 512x4); nominally memory-bound
+  bf16 512 x 14336 x 4096   K > N; full windows (1x1x56, 32x32); nominally compute-bound
+  int8   8 x 4096 x 6144    K < N; partial edge windows (2x1x7, 80x24, coverage 1.094); M = 8
+Covered: both dtypes, a calibration-overlap case, K < N and K > N, full and partial windows, windows over N and
+over K. NOT covered by four cases: N = 28672 (the largest), the square 4096 x 4096 projection (it is in the
+balance run), bf16 at M = 128, and M = 8 with bf16. Each profiled capture of this cohort holds ONE invocation
+(8 loop iterations), so the reference time is a mean of 8 events.

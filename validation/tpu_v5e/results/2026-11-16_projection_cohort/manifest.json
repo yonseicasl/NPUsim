@@ -1,0 +1,49 @@
+{
+ "run": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/validation/tpu_v5e/results/2026-11-04_colab_v5e1_profile",
+ "env": {
+  "jax": "0.11.2",
+  "python": "3.13.18",
+  "platform": "Linux-6.6.159+-x86_64-with-glibc2.39",
+  "device_kind": "TPU v5 lite",
+  "n_devices": 1,
+  "quick": false,
+  "rotate_mb": 512.0,
+  "sections": [
+   "stream_gemm",
+   "decode_stack",
+   "attention",
+   "hbm_read",
+   "odd_gemm",
+   "counters"
+  ],
+  "date": "2026-11-04 03:48:29 UTC",
+  "memory_stats": {
+   "num_allocs": 361,
+   "bytes_in_use": 88880640,
+   "peak_bytes_in_use": 9525505536,
+   "largest_alloc_size": 4294967296,
+   "bytes_limit": 16909336064,
+   "bytes_reserved": 49152,
+   "peak_bytes_reserved": 10223616,
+   "bytes_reservable_limit": 16355213312,
+   "largest_free_block_bytes": 16355164160
+  }
+ },
+ "source_files": {
+  "results.json": "505c507d4848ae4fea220d18fbbfec14194fb01b7783f9ecb9cd2e2e09d3ccc8",
+  "gemm.csv": "a6ff239ba783c98fe4f64a983077336d3193a73b517571c699523fa8fee12fb6",
+  "xla_windows.csv": "2268464051767f0a99e546b39962dbc76e4e82b2e34702048dd740d7c356e666",
+  "env.json": "ad31e9fafd454cf4aaf6ca4bbc8452fdc2f3a1bc08edefa9b59ba1254975054f"
+ },
+ "raw_archive": {
+  "2026-11-04_colab_v5e1_profile.zip": "fcc5a936b5c57e6503bcf169a67c7aa4f0c30dacaf8674483a7baf02a80f2c51"
+ },
+ "profiled_loop_iterations": 8,
+ "scopes": {
+  "conv_event_us": "mean duration of the loop's convolution-category device events (xplane.pb)",
+  "loop_slope_us": "bench wall slope (median wall(2n) - median wall(n)) / n, results.json",
+  "read_space1": "compiler static matrix-payload accounting of the fused op, not measured traffic"
+ },
+ "calibration": "RETROSPECTIVE cohort: window_switch_cycle 590 (0.393 us) was estimated on this run's four int8 M = 128 cases; the window schedule was developed on this run; R 752 GB/s and F 2 us of the closed-form analyses came from follow-up 2 / 3 (same shapes, other sessions) and are not used by the simulator",
+ "not_modelled": "the fused op's input add, output conversion and reduction, its 4-byte result"
+}

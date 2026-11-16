@@ -278,5 +278,6 @@ parameter is refitted.
 weight (default layout, no copy, no prefetch, in all five single-weight programs), and the fused op of the
 single-weight loop takes the same time as the banked one (within 0.4%) or 3.6-4.0% longer (bf16, K 4096). No
 streamed-vs-staged contrast exists, so the evidence gap above is unchanged. Two things it does establish: the
-banked event durations reproduce the 2026-11-12 measurement in a separate session (within 0.2%), and a weight
-reused by every loop iteration is still read at the streaming rate each time.
+banked event durations reproduce the 2026-11-12 measurement in a separate session (within 0.2%), and the
+single-weight program has a similar observed fused-op latency -- an observation about duration only; what is
+read from where is not measured, and the tail mechanism is unresolved.

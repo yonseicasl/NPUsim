@@ -1,0 +1,30 @@
+{
+ "before": {
+  "binary_sha256": "b6fc57e3e8fd647264292a1cf5cbb5813f1122b97aa54cc937197bbb374e124c",
+  "library_sha256": "c793857e605c815869832a395e54efd8c928029f3acccd9fd80931604123e105",
+  "configs": {
+   "tpu_v5e": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+   "tpu_v5e_int8w": "62e6dee9320c99afcb8b1067eb6105e6100cfb2f136074287c984b3b623c70dc"
+  },
+  "git_head": "09143ddf0c8a9b0c3ff84c9acfdb619638d4f7f6",
+  "git_dirty": [
+   "M validation/tpu_v5e/balance_npusim.py",
+   " M validation/tpu_v5e/test_balance_inputs.py"
+  ]
+ },
+ "after": {
+  "binary_sha256": "b6fc57e3e8fd647264292a1cf5cbb5813f1122b97aa54cc937197bbb374e124c",
+  "library_sha256": "c793857e605c815869832a395e54efd8c928029f3acccd9fd80931604123e105",
+  "configs": {
+   "tpu_v5e": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+   "tpu_v5e_int8w": "62e6dee9320c99afcb8b1067eb6105e6100cfb2f136074287c984b3b623c70dc"
+  },
+  "git_head": "09143ddf0c8a9b0c3ff84c9acfdb619638d4f7f6",
+  "git_dirty": [
+   "M validation/tpu_v5e/README.md",
+   " M validation/tpu_v5e/balance_npusim.py",
+   " M validation/tpu_v5e/results/2026-11-12_window_candidate/REVIEW.md",
+   " M validation/tpu_v5e/test_balance_inputs.py"
+  ]
+ }
+}

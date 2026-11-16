@@ -682,9 +682,9 @@ What the artifacts show:
   layout: no memory-space tag, no copy, no prefetch -- as in the banked program. Convolution operand types and
   window geometry are identical within each pair; the one difference in the HLO is the weight selection (the
   banked program has a `dynamic-slice` of the bank, the single one none).
-- **Reusing the weight does not make the fused op faster**: equal within 0.4% in three cases, and 1.7-1.8 us
-  (3.6-4.0%) SLOWER for bf16 at K = 4096. So the weight is evidently read again on every iteration at the same
-  rate; nothing is retained across iterations at 16-134 MB. The 1.7-1.8 us is unexplained.
+- **The single-weight program shows a similar fused-op latency**: equal within 0.4% in three cases, and 1.7-1.8 us
+  (3.6-4.0%) LONGER for bf16 at K = 4096 (unexplained). That is an observed duration only: it does not show what
+  is read from where (there are no traffic counters), and weight staging is not established either way.
 - **The banked times reproduce the 2026-11-12 balance run** from a separate session: -0.20%, 0.00%, 0.00%, 0.00%,
   0.00% on the five shared cases.
 
@@ -694,3 +694,24 @@ ESTABLISHED". The memory-bound bf16 over-prediction of the window-schedule candi
 open as before; this run neither supports nor weakens the on-chip weight-load tail, and no model parameter
 changes because of it. (After this run `hlo_facts` also records the `dynamic-slice` count, so the selection
 difference appears in the pair notes.)
+
+### Correction (2026-11-16): the DRAM service rate of NPUsim on refsb
+
+An earlier list of open items said "NPUsim 697-727 GB/s against the measured 750 GB/s". That figure was a
+miscount (payload bytes of one case divided by the DRAM time of another accounting) and is withdrawn. From the
+saved reports of the matched-traffic batch (`results/2026-11-12_window_candidate/full_fused_output/`):
+
+    rate = payload_bytes / (DRAM_busy_cycles / 1.5e9 Hz),   payload = weights + input matrix (M K 2 B), GB = 1e9 B
+
+| case | payload (MB) | DRAM busy (cycles) | rate (GB/s) |
+|---|---|---|---|
+| bf16 32 x 4096 x 4096 | 33.82 | 68330 | 742 |
+| bf16 32 x 8192 x 8192 | 134.74 | 272259 | 742 |
+| int8 32 x 4096 x 4096 | 17.04 | 34430 | 742 |
+| bf16 512 x 8192 x 8192 | 142.61 | 288150 | 742 |
+
+In these runs transactions x line size (8192 bits) equals the payload exactly (no padding), and the output is not
+written. The same yaml as one continuous stream on a fresh device (`dram_bw_probe`) gives 744 GB/s at 2 MiB and
+751 at 32 MiB. The TPU's profiled copy op of the one-op programs takes 44.76 us for 33.55 MB (750 GB/s) -- but
+that is an END-TO-END op latency, a different timing scope from a DRAM-busy service rate. The roughly 1%
+agreement of these examples is not a statement about bandwidth accuracy in general, and nothing is retuned.
