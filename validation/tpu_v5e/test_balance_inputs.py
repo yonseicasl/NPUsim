@@ -19,6 +19,18 @@ only = "bf16:32:4096,bf16:512:8192,int8:128:4096,int8:64:8192"
 subprocess.run([sys.executable, os.path.join(HERE, "balance_npusim.py"), run, out, "--only", only, "--generate-only"],
                check=True, capture_output=True)
 gen = os.path.join(out, "generated_analytic")
+
+
+def snapshot(root):
+    return {os.path.relpath(os.path.join(dp, f), root): open(os.path.join(dp, f), "rb").read()
+            for dp, _, fs in os.walk(root) for f in fs}
+
+
+before = snapshot(out)                                         # a repeat into the same directory changes nothing
+p = subprocess.run([sys.executable, os.path.join(HERE, "balance_npusim.py"), run, out, "--only", only, "--generate-only"],
+                   capture_output=True, text=True)
+assert p.returncode != 0 and "already holds results for 'analytic'" in p.stderr + p.stdout, p.stderr[-300:]
+assert snapshot(out) == before and before
 runs = sorted(os.listdir(gen))
 assert len(runs) == 12, runs                                   # 4 shapes x A, B, C
 for accel in runs:
