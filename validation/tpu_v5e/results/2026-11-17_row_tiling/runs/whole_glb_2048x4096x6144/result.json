@@ -1,0 +1,32 @@
+{
+ "kind": "whole_glb",
+ "M": 2048,
+ "K": 4096,
+ "N": 6144,
+ "row_tiles": 4,
+ "batch_rows": 2048,
+ "list_lines": 2048,
+ "exit": 0,
+ "wall_s": 840.3,
+ "mapping": [
+  "PE      = 1, 512, 1, 1, 1, 1, 1, 0, 0, 1, 1,",
+  "GLB     = 1, 4, 1, 1, 32, 1, 1, 0, 0, 1, 1,",
+  "DRAM    = 12, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1,"
+ ],
+ "critical_path_cycles": 793769.8,
+ "dram_busy_cycles": 170432.0,
+ "scalar_macs": 51539607552.0,
+ "expected_macs": 51539607552,
+ "dram_payload_bytes": {
+  "input": 16777216,
+  "weight": 50331648,
+  "output": 25165824
+ },
+ "expected_payload_bytes": {
+  "input": 16777216,
+  "weight": 50331648,
+  "output": 25165824
+ },
+ "residency": "activation_residency 1: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)",
+ "checks_ok": true
+}

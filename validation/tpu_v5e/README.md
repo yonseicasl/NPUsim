@@ -457,6 +457,10 @@ is in the measurement, not in the knob. (Superseded 2026-11-12: this paragraph w
 dtypes and a fixed part per loop iteration -- see "int8 weights: what the error is".) Before the knob the per-strip
 fill covered part of it.
 
+(2026-11-17: the "whole" runs quoted below moved input and weights more than once whenever the GEMM has
+>= 2 strips, and the 4-row-tile failure was an input-list limit -- see "Row tiling, M > 512: whole runs with exact
+traffic" at the end.)
+
 **Unresolved: row tiling in `compare_v5e.py` (found by Codex, 2026-11-11).** For M > 512 the script simulates
 one <= 512-row tile as its own run and sums the tiles. A direct run of the whole GEMM (`check_tiling.py`) gives
 1024 x 128 x 1024: tiled 6.63 us vs whole 5.45 us, **+21.7%** (`results/2026-11-11_codex_audit/whole_gemm_small.log`).
@@ -803,3 +807,55 @@ Prepared, not run: `measure_tpu_v5e1.py --only chainprobe` measures both structu
 shapes above, n = 1, 2, 4, 8, 16) and keeps the optimized HLO and the trace of every program with hashes; it fits
 no slope, refuses an `--out` that already holds its output, and refuses a non-TPU backend unless `--quick`
 (`test_chainprobe.py`, CPU, functional only).
+
+### Row tiling, M > 512: whole runs with exact traffic (2026-11-17; the row-tiled estimates stay flagged)
+
+`row_tile_repro.py` -> `results/2026-11-17_row_tiling/` (per run: config root, reports, stdout / stderr,
+`result.json`; `table.txt`, unrounded `table.json`). No TPU data is used and nothing is fitted or changed in the
+simulator, the configs or `compare_v5e.py`.
+
+1. **The "whole run fails at 4 row tiles" was not a timing-model failure.** `models/datasets/gemm/test.lst` has
+   1024 lines; the front-end reads one per batch row and runs off the list for batch > 1024: SIGSEGV in nebula's
+   `convolutional_t::load_data` after 2 s (`crash_list_1024/`: 1536 x 128 x 512, exit -11). With a list of M lines
+   per run the same mappings run, with exact MAC counts.
+2. **The whole run used so far is not a valid reference when the GEMM has >= 2 weight strips.** With the row
+   tiles as the DRAM-level batch factor (`check_tiling.py`), every (strip, row tile) iteration fetches its input
+   and its weights again: 1024^3 moves input x2 and weights x2, 2048^3 x4 and x4 (`whole_*`, payload read from the
+   reports). Only for N <= 512 (one strip) is its traffic exact. So "1024^3: tiled 13.54 vs whole 14.17 us,
+   -4.44%" above compared against a run with doubled traffic, and the +21.7% at 1024 x 128 x 1024 (two strips)
+   likewise.
+3. **Row tiles as the GLB-level batch factor move every tensor once** (`whole_glb_*`: input M x K x 2, weights
+   K x N x 2, output M x N x 2 bytes, MACs exact, for all nine shapes run) and coincide with the DRAM-level run where
+   that one is exact (N = 512). Against it, the sum `compare_v5e.py` uses (first tile + (mt - 1) inner tiles, here
+   with every strip simulated; each piece is its own run and reads the weights again, so weights x mt):
+
+| shape | row tiles | whole, GLB level | first + (mt - 1) x inner | split - whole | per extra row tile |
+|---|---|---|---|---|---|
+| 1024 x 128 x 512 | 2 | 3.37 us | 5.23 us | +55.0% | 2780 cycles |
+| 2048 x 128 x 512 | 4 | 4.90 us | 10.23 us | +108.8% | 2665 cycles |
+| 1024 x 1024 x 1024 | 2 | 12.20 us | 13.54 us | +11.0% | 2014 cycles |
+| 2048 x 2048 x 2048 | 4 | 88.93 us | 92.33 us | +3.8% | 1698 cycles |
+| 2048 x 4096 x 4096 | 4 | 353.06 us | 356.22 us | +0.9% | 1580 cycles |
+| 2048 x 4096 x 6144 | 4 | 529.18 us | 532.31 us | +0.6% | 1565 cycles |
+| 2048 x 14336 x 4096 | 4 | 1233.68 us | 1236.77 us | +0.3% | 1547 cycles |
+| 2048 x 4096 x 28672 | 4 | 2466.57 us | 2469.65 us | +0.1% | 1540 cycles |
+| 4096 x 4096 x 4096 | 8 | 705.29 us | 712.44 us | +1.0% | 1534 cycles |
+| 8192 x 8192 x 8192 | 16 | 5636.82 us | 5651.47 us | +0.3% | 1464 cycles |
+
+   Same conventions on both sides: `tpu_v5e.cfg` as is (isolated program: input from DRAM, output materialized to
+   DRAM), `program_setup_cycle` 0, layer setup once. The split is not a sum of independent tiles in the whole run:
+   each extra piece adds 1500 - 2800 cycles (1.0 - 1.9 us; its own pipeline fill and drain, and its own start of a
+   weight stream the whole run reads once -- at 2048^3 the pieces' DRAM busy sums to 93080 cycles against 46448).
+   That is +0.1 .. +1% for the six large measured shapes and +3.8% / +11% for 2048^3 / 1024^3; it dominates
+   only GEMMs of a few us.
+4. **Status of the 10 measured GEMMs with M > 512** (`2026-11-03_colab_v5e1_rot`): unchanged in every table, still
+   on the row-tiled estimate and still flagged by the script's warning. 777 x 1234 x 555 and 1000 x 1000 x 1000
+   are not covered by either whole construction (rows or columns do not divide into equal tiles / whole strips):
+   unsupported, flagged. For the other eight a GLB-level whole run now exists, but it is NOT adopted as the
+   reference: it puts all M rows of the input in the GLB at once, and nothing measured says whether the TPU keeps
+   the weight strip or the input resident across row tiles of an isolated program. (For orientation only, stored
+   TPU kernel times: 1024^3 15.83 us, 2048^3 91.55 us -- the whole run is further below both than the split is; no
+   construction is chosen by that.)
+
+Cost: 66 s - 61 min per run, <= 3.6 GB; the DRAM-level whole run of 2048^3 took 17 min and is not run for larger
+shapes (its traffic is known to be wrong there).
