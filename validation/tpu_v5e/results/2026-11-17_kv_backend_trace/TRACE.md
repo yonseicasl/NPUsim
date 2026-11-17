@@ -51,19 +51,24 @@ no-yaml behaviour bit-identical.
    time (it replaces the analytical device / link makespan and the row-activation term, which the device model
    covers); otherwise the present formula. K and V stay two sequential streams, the decoder half and all energy
    terms stay as they are; byte counts and link transactions are unchanged.
-3. Long streams: a KV half is up to 2 GiB. Proposal: simulate exactly up to 64 MiB; beyond, time(64 MiB) + (bytes -
-   64 MiB) x the steady slope between 32 and 64 MiB -- the rule of `kv_streams.py`, whose 64 MiB exact vs 16 / 32
-   extrapolation differed by 0.003%. The report states per stream whether it was exact or extrapolated.
+3. Long streams: a KV half is up to 2 GiB. Proposal: the rule `kv_streams.py` already uses, unchanged -- simulate
+   exactly up to 32 MiB; beyond, time(32 MiB) + (bytes - 32 MiB) x the slope between 16 and 32 MiB (AUDIT.md: at
+   64 MiB that predicts 89.254375 us vs 89.251875 us simulated, 0.0028%). The report states per stream whether it
+   was exact or extrapolated.
 4. Reports: `describe_timing_model` and the attention section name the backend of the KV read streams; the cache
    append stays analytical and is said to be.
 
 Expected traffic: unchanged (KV read bytes = B x L x 8 x 128 x 2 x 2; append as now).
-Expected timing, derived independently of the change from MOSAIC's `dram_bw_probe` on the same yaml (one fresh
-stream): 2 MiB 2.8175 us, 8 MiB 11.227 us, 16 MiB 22.375 us, 32 MiB 44.668 us -- against 2.56 / 10.24 / 20.48 /
-40.96 us analytical. E.g. B 1, L 2048: K = V = 4 MiB each.
+Expected timing: for orientation only, the fresh-stream times of MOSAIC's `dram_bw_probe` on the same yaml as
+saved in `results/2026-11-11_codex_audit/kv_refsb.csv.json`: 2 MiB 2.8175 us, 8 MiB 11.226875 us, 16 MiB 22.375 us,
+32 MiB 44.668125 us (744 .. 751 GB/s) -- against 2.56 / 10.24 / 20.48 / 40.96 us analytical. NPUsim's
+`ramulator_ns()` issues its own request pattern (64 DRAM transactions per request, `tpu_v5e.cfg` sets no
+`mosaic_*` DMA limit; its 1 MiB tile streams came out at 742 GB/s), so equality with `dram_bw_probe` is NOT
+assumed: the test compares the KV supply with `ramulator_ns()` for the same bytes, and the result is reported next
+to the `dram_bw_probe` / `kv_streams.py` time with the difference shown, not hidden.
 Tests proposed: (a) without a yaml the three cases above reproduce 7680 / 61440 / 983040 exactly; (b) with the yaml
-the K supply of a case equals the probe's time for the same bytes (exact sizes) and the extrapolation rule beyond
-64 MiB; (c) `kv_backend_probe.py`: K / V supply now differ with the yaml while bytes, MACs and the no-yaml run do
+the K supply of a case equals `ramulator_ns()` for the same bytes (exact sizes) and the extrapolation rule beyond
+32 MiB; (c) `kv_backend_probe.py`: K / V supply now differ with the yaml while bytes, MACs and the no-yaml run do
 not; (d) run_validation, stats_timeline, knobs-off identity.
 
 Not addressed by this change, and to be stated with any result: QK / AV at `attention_macs_per_cycle = 65536` and
