@@ -1,0 +1,27 @@
+B 1 L 2048 (8388608 KV bytes read):
+   DRAM timing model   unset: flat per-access (no row-buffer model)
+                       yaml : MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams; KV-cache/SFU operand streams analytical
+   projection DRAM busy 249.5 -> 267.9 cycles  (changes with the yaml)
+   k_supply_cycles        7680.0 -> 7680.0  (IDENTICAL)
+   v_supply_cycles        7680.0 -> 7680.0  (IDENTICAL)
+   kv_supply_dram_cycles  15360.0 -> 15360.0  (IDENTICAL)
+   attention_step_cycles  15759.2 -> 15759.2  (IDENTICAL)
+   KV bytes / KV supply DRAM time = 819.2 GB/s in both runs
+B 8 L 2048 (67108864 KV bytes read):
+   DRAM timing model   unset: flat per-access (no row-buffer model)
+                       yaml : MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams; KV-cache/SFU operand streams analytical
+   projection DRAM busy 264.5 -> 285.3 cycles  (changes with the yaml)
+   k_supply_cycles        61440.0 -> 61440.0  (IDENTICAL)
+   v_supply_cycles        61440.0 -> 61440.0  (IDENTICAL)
+   kv_supply_dram_cycles  122880.0 -> 122880.0  (IDENTICAL)
+   attention_step_cycles  125625.4 -> 125625.4  (IDENTICAL)
+   KV bytes / KV supply DRAM time = 819.2 GB/s in both runs
+B 32 L 8192 (1073741824 KV bytes read):
+   DRAM timing model   unset: flat per-access (no row-buffer model)
+                       yaml : MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams; KV-cache/SFU operand streams analytical
+   projection DRAM busy 320.8 -> 346.8 cycles  (changes with the yaml)
+   k_supply_cycles        983040.0 -> 983040.0  (IDENTICAL)
+   v_supply_cycles        983040.0 -> 983040.0  (IDENTICAL)
+   kv_supply_dram_cycles  1966080.0 -> 1966080.0  (IDENTICAL)
+   attention_step_cycles  2008327.0 -> 2008327.0  (IDENTICAL)
+   KV bytes / KV supply DRAM time = 819.2 GB/s in both runs
