@@ -760,3 +760,46 @@ refsb, mean / MAPE in % from unrounded per-run values:
 Reading, with the balance run: the candidate trades an under-prediction of compute-bound and balanced streaming
 for an over-prediction of memory-bound streaming. It stays opt-in; uniform 590 over-predicts cases such as
 bf16 512 x 14336 x 4096 (+3.68%) in the present model, cause not identified.
+
+### Chained GEMM per-kernel cost, 2.81 us vs 4.1 us: stored artifacts only (2026-11-17; UNRESOLVED)
+
+Two stored runs give different per-kernel costs for the same chained GEMM, n dependent `y = y @ W_i`, bf16:
+`smallk2` `oddchain` (2026-11-04) and `loopk` `unrolled` (2026-11-12). No new measurement; what the stored files say:
+
+| shape | `oddchain`: device us n 1, 8 | copy us n 1, 8 | (t8 - t1) / 7 = copy part + rest | `unrolled`: device us n 1, 4, 16 | copy us n 1, 4, 16 | per kernel n 4 -> 16 |
+|---|---|---|---|---|---|---|
+| 100 x 1000 x 1000 | 5.584, 25.235 | 3.149, 11.084 | 2.807 = 1.134 + 1.674 | 5.541, 17.647, 66.924 | 3.152, 0.682, 0.675 | 4.106 |
+| 128 x 1024 x 1024 | 6.051, 26.403 | 3.206, 10.556 | 2.907 = 1.050 + 1.857 | 6.001, 19.061, 72.288 | 3.208, 0.732, 0.733 | 4.436 |
+| 256 x 2048 x 2048 | 25.506, 106.824 | 11.518, 11.532 | 11.617 = 0.002 + 11.615 | 25.501, 66.098, 254.227 | 11.521, 1.803, 1.840 | 15.677 |
+
+What is the same: jax 0.11.2, "TPU v5 lite", bf16, distinct rotating argument sets, `device_us` = median module
+duration of the trace (copies included), `copy_us` = the module's copy-start / copy-done events. **The n = 1
+programs agree within 1% in time and copy time across the two days**, so the device and the timing scope
+reproduce.
+
+What differs:
+- **How the weights are passed.** `oddchain`: n separate K x K arguments. `unrolled`: one [n, K, K] argument,
+  sliced `ws[i]`.
+- **The copies.** `oddchain` n = 8 spends ~11 us in copies for all three shapes (10.6 - 11.5 us, whether a weight
+  is 2 MB or 8.4 MB); `unrolled` n >= 4 spends 0.7 - 1.8 us. For `loopk` the trace metadata is kept
+  (`2026-11-12_colab_v5e1_balance/trace_bytes.csv`, 100 x 1000): n = 1 copies the 2 000 000 B weight to memory
+  space 3 and the fusion reads it there; n = 4 and 16 copy 200 000 B (the input) and read 8 000 000 / 32 000 000 B
+  of weights from space 1, in 2 / 8 convolution fusions -- XLA fuses the chained matmuls in pairs. **For `smallk2`
+  no HLO and no trace was kept** (its archive has an empty `traces/`): what its n = 8 program copied, and whether
+  it fused pairs, cannot be reconstructed, and `loopk`'s artifacts do not describe it.
+- **The slope.** `oddchain`: two points, (t8 - t1) / 7. `unrolled`: least squares over n = 1, 4, 16 (4.096; 4.106
+  between n = 4 and 16). In both the n = 1 point runs a different schedule (weight staged by a 3.15 us copy) than
+  the larger programs, so a slope from n = 1 mixes two schedules; `oddchain` has no second multi-kernel point to
+  separate that. Its 2.81 us contains 1.13 us per kernel of added copy time.
+- 256 x 2048 x 2048 differs as well (11.6 vs 15.7 us per kernel) with no copy-time change between `oddchain`
+  n = 1 and 8, so the difference is not only a matter of copy time.
+
+Not established, and not claimed: which operands `oddchain` staged; that either number is "the" per-kernel cost of
+a chained GEMM (each is an average over programs of one structure and a few n); that their difference is a
+measured tail or a staging benefit. The "chained odd GEMM (35)" comparisons rest on the `oddchain` slopes and
+inherit this: they validate NPUsim against that program's schedule, which is not documented.
+
+Prepared, not run: `measure_tpu_v5e1.py --only chainprobe` measures both structures in one session (the three
+shapes above, n = 1, 2, 4, 8, 16) and keeps the optimized HLO and the trace of every program with hashes; it fits
+no slope, refuses an `--out` that already holds its output, and refuses a non-TPU backend unless `--quick`
+(`test_chainprobe.py`, CPU, functional only).
