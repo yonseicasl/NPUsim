@@ -281,3 +281,37 @@ streamed-vs-staged contrast exists, so the evidence gap above is unchanged. Two 
 banked event durations reproduce the 2026-11-12 measurement in a separate session (within 0.2%), and the
 single-weight program has a similar observed fused-op latency -- an observation about duration only; what is
 read from where is not measured, and the tail mechanism is unresolved.
+
+### Addendum 2026-11-17: the projection cohort (retrospective) and what an explicit-DMA probe would have to show
+
+**Projection cohort** (`results/2026-11-16_projection_cohort/`, README "Window candidate on the projection
+cohort"; reviewed by Codex, `codex_independent_review/`). 32 cold loop GEMMs of the 2026-11-04 profile run -- the
+run where the 590 cycles were estimated and the schedule developed, so not independent evidence; one invocation
+of 8 correlated events per case. refsb, cases outside the w calibration (28), MAPE A / B / C:
+3.17 / 2.77 / 2.12%. By regime: compute-bound (8) 6.32 / 5.17 / 2.17%, all eight closer with C; memory-bound (20)
+1.91 / 1.81 / 2.11% -- B alone slightly better than A, C worse than A. bf16 (16) 2.69 / 3.00 / 2.61%, 10 of 16
+worse with C; int8 (12) 3.82 / 2.47 / 1.47%. 12 of the 28 get worse with C (10 bf16, 2 int8), all memory-bound,
+by +0.77 .. +3.86 points; the per-case table is `full/summary_exact.txt`. The balanced regime of that cohort
+consists of the four calibration cases only, so the balanced-regime residual of 2026-11-12 is not tested by it.
+
+**Status, unchanged:** `offchip_window_count` and `window_switch_cycle` stay opt-in, default 0, used by no
+config. 590 is a fitted effective cost of this model, not an identified per-window hardware cost; it is not
+refitted on these errors, and no shape- or dtype-dependent switch is added. Open and visible: the memory-bound
+bf16 over-prediction (B's schedule already overshoots there) and the balanced-regime residual.
+
+**What an explicit-DMA probe would have to observe** (a note on evidence, no probe is implemented). The candidate
+makes two separable claims; each needs its own observable, none of which the present traces contain:
+1. *Delivery in windows.* Per window of the fused op: when its weight bytes start and stop arriving, and when
+   the compute on that window starts and stops. Needed to tell "one window ahead" (the model's look-ahead of 1)
+   from deeper prefetch or from none, and to see whether DRAM and link run cut-through. A per-op duration cannot
+   show this; it needs DMA-level timestamps or a counter of bytes moved over time.
+2. *A cost per window.* The same bytes and FLOPs delivered in a different number of windows, everything else
+   equal (dtype, layout, memory space, fusion, loop body), with the op duration linear in the window count.
+   Only then is the slope a per-window cost; today the window count changes only together with the shape.
+3. *The memory-bound tail.* For a stream-bound case: the time from the last weight byte arriving to the end of
+   the fused op. This is what B over-predicts for bf16 and what the tail probe could not isolate (the compiler
+   did not stage the reused weight).
+A hand-written microkernel that issues its own DMAs could give 1-3, but its result transfers to the XLA program
+only with a comparability argument: same weight layout and tiling (T(8,128)), same memory spaces, same window
+geometry and the same overlap of DMA and MXU work as the compiler's fusion. Without that it measures the
+microkernel. Until 1-3 exist for the compiled program or a comparable one, nothing here is adopted by default.
