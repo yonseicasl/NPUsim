@@ -8,6 +8,7 @@ kvcache_t::kvcache_t(section_config_t m_section_config) :
     index(0),
     kv_bytes_per_token(0),
     context_length(0),
+    batch(1),
     kv_compression_ratio(1.0),
     kv_decoder_bytes_per_cycle(0.0),
     kv_schedule("aggregate"),
@@ -38,6 +39,7 @@ kvcache_t::~kvcache_t() {
 void kvcache_t::init(section_config_t m_section_config) {
     m_section_config.get_setting("kv_bytes_per_token", &kv_bytes_per_token);
     m_section_config.get_setting("context_length", &context_length);
+    m_section_config.get_setting("batch", &batch);
     m_section_config.get_setting("kv_compression_ratio", &kv_compression_ratio);
     m_section_config.get_setting("kv_decoder_bytes_per_cycle", &kv_decoder_bytes_per_cycle);
     m_section_config.get_setting("kv_schedule", &kv_schedule);
@@ -107,6 +109,10 @@ void kvcache_t::init(section_config_t m_section_config) {
         std::cerr << "Error: [kvcache] context_length must be positive" << std::endl;
         exit(1);
     }
+    if(batch == 0) {
+        std::cerr << "Error: [kvcache] batch must be positive (sequences in the decode step)" << std::endl;
+        exit(1);
+    }
     if(kv_compression_ratio < 1.0) {
         std::cerr << "Error: [kvcache] kv_compression_ratio must be >= 1"
                   << " (1 = no compression)" << std::endl;
@@ -145,11 +151,11 @@ void kvcache_t::init(section_config_t m_section_config) {
     // the step is (context + 1) tokens. A declared capacity it does not fit is a config
     // error, not a silent overflow.
     if(kv_capacity_bytes > 0) {
-        const size_t occupancy = kv_bytes_per_token*(context_length + 1);
+        const size_t occupancy = occupancy_bytes();
         if(occupancy > kv_capacity_bytes) {
             std::cerr << "Error: [kvcache] cache occupancy after this step ("
-                      << occupancy << " B = " << kv_bytes_per_token << " B/token x "
-                      << (context_length + 1) << " tokens) exceeds kv_capacity_bytes = "
+                      << occupancy << " B = " << batch << " sequences x " << kv_bytes_per_token
+                      << " B/token x " << (context_length + 1) << " tokens) exceeds kv_capacity_bytes = "
                       << kv_capacity_bytes << std::endl;
             exit(1);
         }
@@ -168,7 +174,7 @@ void kvcache_t::reset() {
 }
 
 size_t kvcache_t::dense_read_bytes() const {
-    return kv_bytes_per_token*context_length;
+    return batch*kv_bytes_per_token*context_length;
 }
 
 bool kvcache_t::bypassed() const {
@@ -221,6 +227,8 @@ void kvcache_t::print_specification() {
               << " B/token/layer" << std::endl;
     std::cout << "Context length     :" << std::setw(18) << context_length
               << " tokens" << std::endl;
+    std::cout << "Batch              :" << std::setw(18) << batch
+              << " sequences" << std::endl;
     std::cout << "Compression        :" << std::setw(18) << std::setprecision(2)
               << std::fixed << kv_compression_ratio << "x"
               << (bypassed() ? "  (uncompressed)" : "") << std::endl;

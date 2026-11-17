@@ -130,6 +130,30 @@ public:
     void mosaic_stream(const cycles_snapshot_t &before, data_type_t type, size_t elements,
                        bool is_write, bool overlap, double sink_cycle);
     std::string mosaic_dram_config;
+    // [dram] mosaic_request_bytes / mosaic_max_inflight / mosaic_path_latency_ns: the DMA issuing the
+    // tile streams -- request size, outstanding-request limit, round-trip latency outside the DRAM.
+    // 0 (default) = the stream is pushed at full pressure with no added latency.
+    unsigned mosaic_request_bytes = 0;
+    unsigned mosaic_max_inflight = 0;
+    double mosaic_path_latency_ns = 0.0;
+    // Write-back streams: mosaic_write_request_bytes / mosaic_write_path_latency_ns (default: as reads),
+    // e.g. a DMA that stores one narrow output row per request.
+    unsigned mosaic_write_request_bytes = 0;
+    double mosaic_write_path_latency_ns = -1.0;
+    // A write-back, write-allocate cache between the DMA and the DRAM (e.g. an SoC L2):
+    // mosaic_line_bytes (partial-line writes read the line first) and mosaic_cache_bytes (dirty lines
+    // go back once a layer's data outgrows it). 0 (default) = no cache.
+    unsigned mosaic_line_bytes = 0;
+    size_t mosaic_cache_bytes = 0;
+    // mosaic_cache_ways: with it, output rows that fall in one set more often than it has ways
+    // evict each other's partly written lines (mosaic_output_conflict, set per layer).
+    unsigned mosaic_cache_ways = 0;
+    bool mosaic_output_conflict = false;
+    // mosaic_write_request_ns: the cache takes one partial-line write every this many ns at most
+    // (measured; 0 = no limit). Its own resource beside the DRAM: the layer's total is
+    // mosaic_write_port_cycle, which the critical path maxes with the summed DRAM streams.
+    double mosaic_write_request_ns = 0.0;
+    double mosaic_write_port_cycle = 0.0;
 
     double u_transfer_cycle;                        // Unit transfer cycle between the chip-level processor and the off-chip memory
     double u_transfer_energy;                       // Unit transfer energy between the chip-level processor and the off-chip memory

@@ -24,7 +24,7 @@ static void bench(size_t M, size_t K, size_t N) {
                       (elem_t*)A, (elem_t*)B, NULL, (elem_t*)C,
                       MAXD, MAXD, MAXD, MAXD,
                       MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY,
-                      NO_ACTIVATION, ACC_SCALE_IDENTITY, 0,
+                      NO_ACTIVATION, ACC_SCALE_IDENTITY, 0, false,
                       false, false,
                       false, false,
                       0,

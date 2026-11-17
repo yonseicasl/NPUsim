@@ -1,0 +1,316 @@
+# NPUsim vs Cloud TPU v5e 정합성 비교 보고서 (단일 칩, 2026-11-03/04)
+
+## 요약
+
+NPUsim의 `tpu_v5e.cfg`(공개 사양만으로 만든 구조 설정, 측정값에 맞춘 파라미터 없음)를 Colab TPU v5e-1에서 잰
+실측과 비교했다.
+
+| 항목 | 실측 | NPUsim 오차 | 비고 |
+|---|---|---|---|
+| decode GEMM (Llama-3-8B projection, M 1..128, 16개) | HBM 바운드, weight 690-750 GB/s | **MAPE 5.4%** (-2.3..-8.3%) | MOSAIC HBM2e: 4.4% (전체 뱅크 refresh), **3.2%** (뱅크별 refresh 숨김) |
+| compute-bound GEMM (M 512, 2048, 1024^3 이상) | 187-192 TFLOPS (사양 197) | -6..+12% | |
+| decode attention (B >= 8) | KV 바이트 / 약 745 GB/s | **MAPE 8.3%** (-6..-8%, 1개 -17.8%) | B = 1은 MAPE 17.6% |
+| decode 레이어 | = GEMM만 레이어 + attention (2.4% 이내) | projection GEMM 4개가 GEMM만 레이어의 -4..-11% | 원소 단위 연산 미모델 |
+| 작은/비정렬 GEMM (M 100..512, K=N 1000..2048) | | -35..+15% (평균 -0.5..-25%) | NPUsim이 512열 단위로 padding(+20-46% MAC/바이트), TPU는 128 단위; 작은 GEMM 고정 비용 (3.7) |
+| HBM 순차 읽기 | 732-757 GB/s (사양 819의 89-92%) | 분석 모델은 819 가정 | MOSAIC HBM2e 698 GB/s (85%), 뱅크별 refresh 숨김 751 GB/s (91.7%) |
+
+남은 차이의 주원인은 하나다: NPUsim의 분석 DRAM 모델이 HBM 사양 대역폭(819 GB/s)을 그대로 쓰는데 실측 실효
+대역폭은 89-92%다. decode GEMM과 attention의 일관된 -5..-8%가 이것이다.
+
+latency 너머(3.7): decode GEMM에서 NPUsim의 MAC 수와 HBM 바이트는 실제와 정확히 같고(1.000), 오차는 전부 유효 대역폭
+(NPUsim 761-799 vs 실측 711-757 GB/s)이다. 비정렬 GEMM에서는 NPUsim의 512열 단위 padding(작업 과다)과 대역폭 과대평가
+(고정 비용 누락)가 상쇄되어 latency가 우연히 맞는 경우가 있다. refresh(4.1): 뱅크별 refresh를 다른 bank 접근 뒤에 숨기는
+모델이 실측 HBM 효율을 재현한다(751 GB/s, decode GEMM MAPE 3.2%).
+
+## 1. 비교 대상
+
+**하드웨어**: Google Colab v5e-1 TPU (`TPU v5 lite`, 1칩), JAX 0.11.2. 측정 3회(2026-11-03 08:29, 12:27, 13:16 UTC).
+
+**NPUsim 설정** (`configs/accelerators/tpu_v5e.cfg`, tpu_v4.cfg에서 MXU 수, 클록, HBM만 바꿈):
+- TensorCore 1개 x MXU 4개(128 x 128 bf16), 1500 MHz (197 TFLOPS / (4 x 128^2 x 2))
+- HBM2e 16 GiB, 819 GB/s (`[dram]`: 1024 B 라인당 1.875 cycle)
+- GEMM 매핑: validation/palm의 방식(출력 열을 128열 weight strip으로 4개 MXU에 분배, 행은 512행 타일)
+- attention: `[kvcache] attention = 1`(K/V를 DRAM 모델 위 전용 스트림으로 읽고 QK/softmax/AV 계산), 이번에
+  `batch` 추가. 처리율은 구조값(MXU 4 x 128^2 MAC/cycle, softmax 0.005 cycle/score).
+- 선택: `NPUSIM_MOSAIC_DRAM=hbm2e_tpu_v5e.yaml`이면 GEMM 타일 스트림의 DRAM 시간을 MOSAIC Ramulator2 HBM2e로 계산.
+
+**워크로드**: Llama-3-8B decode (D 4096, 32 q-head, 8 kv-head, d 128, FFN 14336), bf16.
+
+## 2. 측정 방법
+
+`tpu_v5e1_stream_bench.py`(Colab 노트북): 측정마다 한 XLA 프로그램 안의 `fori_loop`을 n번, 2n번 돌려 반복당
+시간 = (t(2n) - t(n)) / n, 5회 중앙값. 매 반복이 서로 다른 피연산자 사본을 읽어(총 512 MB 이상) 칩 위 재사용이
+없다. 반복은 이전 결과 전체에 의존한다.
+
+측정 방식이 결과를 크게 좌우했다. 같은 decode GEMM 16개에 대한 NPUsim 오차:
+
+| 측정 방식 | 8x4096x4096 실측 | NPUsim MAPE (M <= 128) | 문제 |
+|---|---|---|---|
+| warm (같은 버퍼 반복, `measure_tpu.py`) | 11.7 us | 121.9% | XLA cross-program prefetch가 copy를 생략, weight가 칩 위에 남음 |
+| rot (버퍼 순환, 프로그램당 GEMM 1개) | 56.4 us (copy 44.8 + 연산 11.6) | 16.9% | 프로그램에 연산이 하나라 HBM -> VMEM copy와 연산이 직렬 |
+| **stream (한 프로그램 안 다중 weight)** | **47.4 us** | **5.4%** | 실제 decode와 같은 구조 |
+| NPUsim | 43.4 us | | |
+
+이 밖에 벤치를 고치며 확인한 함정(컴파일된 HLO로 확인): 결과의 원소 하나만 이어 쓰면 XLA가 slice를 연산 안으로
+밀어 넣을 수 있다; 쌓아 둔 큰 버퍼를 동적 slice로 꺼내면 HBM 복사본이 생긴다; KV를 (B, L, kv, d)로 두면 einsum용
+relayout copy가 생긴다(attention이 3.6배로 측정됨); 루프 결과와 무관한 읽기는 루프 밖으로 빠진다.
+
+재현성(2차 대비 3차, 중앙값 / 최대 차이): stream GEMM 0.9% / 5.8%, decode 레이어 0.7% / 5.1%, attention 0.3% / 28.8%,
+작은 GEMM 6.3% / 70.9%. 큰 최대값은 수 us짜리 경우(B 1 L 512 attention, M 100 K=N 1000-1024)다.
+
+## 3. 결과
+
+### 3.1 HBM 순차 읽기
+
+| 크기 | 64 MB | 256 MB | 1 GB | 4 GB |
+|---|---|---|---|---|
+| GB/s (사양 819 대비) | 732 (89.3%) | 749 (91.4%) | 755 (92.1%) | 757 (92.4%) |
+
+weight 스트리밍(690-750 GB/s), attention의 KV 읽기(733-797 GB/s)도 같은 속도다.
+
+### 3.2 decode GEMM (weight 스트리밍, 3차 실행)
+
+`compare_hbm.py` (`results/2026-11-03_colab_v5e1_followup3/compare_hbm.log`), us:
+
+| M | K | N | 실측 | NPUsim 819 GB/s | 오차 | NPUsim + MOSAIC HBM2e | 오차 |
+|---|---|---|---|---|---|---|---|
+| 1 | 4096 | 6144 | 69.6 | 64.9 | -6.8% | 71.3 | +2.4% |
+| 1 | 4096 | 4096 | 47.0 | 43.3 | -8.0% | 47.5 | +1.1% |
+| 1 | 4096 | 28672 | 313.8 | 302.3 | -3.7% | 332.7 | +6.0% |
+| 1 | 14336 | 4096 | 157.5 | 147.2 | -6.6% | 162.1 | +2.9% |
+| 8 | 4096 | 6144 | 69.3 | 65.1 | -6.1% | 71.5 | +3.3% |
+| 8 | 4096 | 4096 | 47.4 | 43.4 | -8.3% | 47.7 | +0.8% |
+| 8 | 4096 | 28672 | 313.3 | 303.1 | -3.3% | 333.6 | +6.5% |
+| 8 | 14336 | 4096 | 158.2 | 147.4 | -6.8% | 162.5 | +2.7% |
+| 32 | 4096 | 6144 | 69.0 | 65.9 | -4.5% | 72.4 | +5.0% |
+| 32 | 4096 | 4096 | 46.5 | 44.0 | -5.3% | 48.4 | +4.1% |
+| 32 | 4096 | 28672 | 313.1 | 306.0 | -2.3% | 336.6 | +7.5% |
+| 32 | 14336 | 4096 | 158.6 | 148.6 | -6.3% | 163.8 | +3.3% |
+| 128 | 4096 | 6144 | 72.4 | 69.6 | -3.9% | 76.4 | +5.4% |
+| 128 | 4096 | 4096 | 49.8 | 46.9 | -5.8% | 51.4 | +3.3% |
+| 128 | 4096 | 28672 | 310.6 | 319.8 | +2.9% | 351.1 | +13.0% |
+| 128 | 14336 | 4096 | 164.3 | 153.8 | -6.4% | 169.5 | +3.1% |
+| | | | | **MAPE** | **5.4%** | | **4.4%** |
+
+- 한 프로그램 안에서는 warm(같은 weight 반복)과 cold가 같다(비율 0.99-1.02). on-chip 재사용은 프로그램 경계를
+  넘는 prefetch에서만 생긴다.
+- int8 weight: bf16 대비 M 1-32에서 0.50-0.54배(HBM 바운드, 바이트가 절반), M 128에서 0.58-0.61배, M 512에서
+  0.96-1.02배. dequant 비용은 decode 크기에서 보이지 않는다. (NPUsim int8 설정과의 비교는 아직)
+
+### 3.3 compute-bound GEMM
+
+| 경우 | NPUsim 오차 |
+|---|---|
+| M 512, Llama projection 4개 (stream) | -2.1, -5.6, +5.0, -2.6% (MOSAIC HBM2e: -4..-12%) |
+| M 2048, 같은 4개 (`measure_tpu.py`, 연산 시간) | +1.0..+7.0% |
+| 정사각 1024^3 .. 8192^3 (같음) | -0.8, +12.0, +6.8, -0.0% |
+
+큰 GEMM은 187-192 TFLOPS(사양의 95-97%)에 이른다.
+
+### 3.4 decode attention (KV 스트리밍)
+
+`compare_attention.py` (`results/2026-11-03_colab_v5e1_followup3/compare_attention.log`), us:
+
+| B | L | KV MB | 실측 | NPUsim | roofline (819) | 오차 |
+|---|---|---|---|---|---|---|
+| 1 | 512 | 2 | 3.1 | 2.7 | 2.6 | -13.9% |
+| 1 | 2048 | 8 | 15.0 | 10.5 | 10.2 | -30.0% |
+| 1 | 8192 | 32 | 48.8 | 41.9 | 41.0 | -14.3% |
+| 1 | 32768 | 128 | 190.7 | 167.4 | 163.9 | -12.2% |
+| 8 | 512 | 16 | 25.6 | 21.0 | 20.5 | -17.8% |
+| 8 | 2048 | 64 | 89.0 | 83.8 | 81.9 | -5.9% |
+| 8 | 8192 | 256 | 365.6 | 334.8 | 327.8 | -8.4% |
+| 8 | 32768 | 1024 | 1440.7 | 1338.8 | 1311.0 | -7.1% |
+| 32 | 512 | 64 | 91.3 | 83.9 | 81.9 | -8.2% |
+| 32 | 2048 | 256 | 361.1 | 334.9 | 327.8 | -7.3% |
+| 32 | 8192 | 1024 | 1442.5 | 1338.9 | 1311.0 | -7.2% |
+| 32 | 32768 | 4096 | 5761.2 | 5354.9 | 5244.2 | -7.1% |
+| 128 | 512 | 256 | 364.4 | 335.4 | 327.8 | -8.0% |
+| 128 | 2048 | 1024 | 1449.7 | 1339.4 | 1311.0 | -7.6% |
+| 128 | 8192 | 4096 | 5764.6 | 5355.4 | 5244.2 | -7.1% |
+
+MAPE: B >= 8 8.3% (n=11), B = 1 17.6% (n=4). 실측은 B >= 8에서 KV roofline의 1.03-1.12배, 즉 attention은 실효
+HBM 속도의 KV 읽기다. NPUsim의 연산 처리율은 결과에 거의 영향이 없다(KV 읽기가 지배).
+
+### 3.5 decode 레이어 (Llama-3-8B 1 레이어, 3차 실행), us
+
+| B | L | 레이어 | GEMM만 레이어 | attention | (GEMM만 + attn) / 레이어 | GEMM 4개 실측 합 | NPUsim GEMM 4개 | NPUsim / GEMM만 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 512 | 625.3 | 620.3 | 3.1 | -0.3% | 588.0 | 557.6 | -10.1% |
+| 1 | 2048 | 643.3 | 620.7 | 15.0 | -1.2% | 588.0 | 557.6 | -10.2% |
+| 1 | 8192 | 675.9 | 620.2 | 48.8 | -1.0% | 588.0 | 557.6 | -10.1% |
+| 8 | 512 | 621.0 | 581.4 | 25.6 | -2.3% | 588.1 | 559.0 | -3.8% |
+| 8 | 2048 | 676.8 | 595.2 | 89.0 | +1.1% | 588.1 | 559.0 | -6.1% |
+| 8 | 8192 | 945.2 | 582.5 | 365.6 | +0.3% | 588.1 | 559.0 | -4.0% |
+| 32 | 512 | 684.4 | 609.7 | 91.3 | +2.4% | 587.2 | 564.5 | -7.4% |
+| 32 | 2048 | 966.4 | 605.5 | 361.1 | +0.0% | 587.2 | 564.5 | -6.8% |
+| 32 | 8192 | 2039.8 | 603.0 | 1442.5 | +0.3% | 587.2 | 564.5 | -6.4% |
+| 128 | 512 | 1031.2 | 654.1 | 364.4 | -1.2% | 597.1 | 590.0 | -9.8% |
+| 128 | 2048 | 2113.2 | 657.7 | 1449.7 | -0.3% | 597.1 | 590.0 | -10.3% |
+| 128 | 8192 | 6447.5 | 659.2 | 5764.6 | -0.4% | 597.1 | 590.0 | -10.5% |
+
+- 레이어 = GEMM만 레이어 + attention이 12개 조건 모두 2.4% 안에서 성립한다. norm, softmax 외 원소 단위 연산은 작다.
+- GEMM만 레이어는 GEMM 4개를 따로 잰 합보다 -1..+10% 길다(잔차 덧셈, gate/up 분리). NPUsim은 이 부분이 없다.
+- 따라서 NPUsim으로 레이어 시간을 낼 때: projection GEMM 4개 + attention 단계 (+ 원소 단위 연산, 미모델).
+
+### 3.6 작은/비정렬 GEMM (M 100, 128, 200, 256, 512 x K=N)
+
+| K=N | 1000 | 1024 | 1100 | 1152 | 1280 | 2000 | 2048 |
+|---|---|---|---|---|---|---|---|
+| NPUsim 오차 평균 | -25.3% | -23.2% | -0.5% | -2.4% | -11.5% | -14.3% | -13.7% |
+| 범위 | -35..-12% | -32..-13% | -12..+15% | -19..+11% | -20..-3% | -18..-9% | -18..-8% |
+
+1000과 1024의 실측이 같아 128 단위 padding은 맞다. 원인 후보: GEMM당 고정 비용(약 1-2 us)이 NPUsim에 없고, 출력
+열을 4 MXU에 128열 단위로 나누는 방식이 XLA보다 거칠다(1024 -> 1100에서 NPUsim 1.6배, 실측 1.27배). 수 us 규모라
+실행 간 잡음(중앙값 6%)도 크다.
+
+### 3.7 latency 너머: 연산 수, HBM 바이트, 유효 대역폭, MXU 활용률
+
+latency만 맞추면 서로 상쇄되는 오류를 놓친다. `compare_metrics.py`(log와 csv: `results/2026-11-03_colab_v5e1_followup3/
+compare_metrics.*`)가 측정한 GEMM 55개마다 NPUsim의 MAC 수(busy scalar-MAC)와 DRAM 바이트(트랜잭션 x 1 KB)를 실제
+작업량(2MKN FLOPs, 2(KN + MK + MN) 바이트; XProf hlo_stats로 확인)과 비교하고, 유효 HBM 대역폭(바이트 / 시간)과 MXU
+활용률(FLOP 처리율 / 197 TFLOP/s)을 양쪽에서 낸다.
+
+| 경우 | MAC 수 NPUsim/실제 | 바이트 NPUsim/실제 | 유효 HBM GB/s 실측 / NPUsim | MXU 활용률 실측 / NPUsim |
+|---|---|---|---|---|
+| decode GEMM M 1..128 (16개) | 1.000 | 1.000 | 711-757 (1개 783) / 761-799 | 0.4-49% / 0.4-50% |
+| compute-bound M 512 (4개) | 1.000 | 1.000 | - | 86-96% / 91-97% |
+| 비정렬 K=N 1100 / 1152 / 1280 | 1.46 / 1.33 / 1.20 | 1.35-1.43 / 1.26-1.31 / 1.16-1.19 | 391-526 / 514-690 | |
+| 정렬 K=N 1024 / 2048 | 1.000 | 1.000 | 415-662 / 491-728 | |
+
+1. decode GEMM: NPUsim의 연산 수와 트래픽은 정확하다. latency 오차 -3..-8%는 전부 유효 대역폭 차이다(NPUsim은 819 GB/s
+   사양에서 파이프라인 fill을 빼고 761-799를 낸다). HBM2e REFSB 설정(4.1)이 이것을 고친다.
+2. 비정렬 GEMM: NPUsim(이 검증의 매핑)은 출력 열을 4 MXU x 128 = 512열 단위로 채우고 K를 128로 채워 MAC와 바이트를
+   20-46% 더 센다. 실측 시간비 1100/1024 = 1.27은 128 단위 padding(1152^2/1024^2 = 1.266)과 같다: TPU는 128 단위로만
+   채운다. 동시에 작은 GEMM의 실측 유효 대역폭(380-660 GB/s)이 NPUsim(490-730)보다 낮다(GEMM당 고정 비용, 원인은
+   trace로 확인할 것). 두 오류가 상쇄되어 K=N 1100의 latency는 -4%로 맞아 보이지만, padding 차이가 없는 1024에서는
+   -27%다. 고칠 것: 매핑을 128열 단위로 MXU에 나누기, 작은 GEMM의 고정 비용.
+3. 측정 쪽 바이트와 FLOPs를 모든 케이스에서 XLA 수치로 확인하려면 trace가 필요하다: `tpu_v5e1_stream_bench`가 이제 모든
+   케이스를 trace하고 `xprof_stats.py`가 op별 표로 바꾼다(README "Per-op profile").
+
+### 3.8 모든 케이스 프로파일 (2026-11-04, `results/2026-11-04_colab_v5e1_profile/`)
+
+164개 케이스 전부의 trace를 XProf로 변환했다(`xprof_stats.py`, op 1845행).
+
+- trace의 op 시간은 같은 실행의 반복 측정 시간과 중앙값 -0.6% 차이다(작은 GEMM +1.7%). 프로파일러 부하는 무시할 수준.
+- GEMM 114개 전부에서 XLA의 HBM 바이트 = weight + 입력(1.0000), FLOPs = 2MKN x 1.0003-1.003. 측정 쪽 작업량이
+  shape 계산과 정확히 같으므로 3.7의 유효 대역폭과 MXU 활용률은 그대로 믿을 수 있다. (벤치가 출력을 fusion 안에서
+  합산하므로 출력은 HBM에 쓰이지 않는다. M = 1 int8 GEMV의 FLOPs 3배는 XLA cost model이 int8 -> bf16 변환을 센 것이다.)
+- 작은 GEMM: 반복마다 fusion 하나뿐이고 추가 copy는 없다. fusion 자체가 2-3 MB weight에서 410-450 GB/s로 돈다. HBM
+  속도를 실측 750 GB/s로 고정하면 남는 시간 t0 = t - 바이트/750은 약 1 us + 스트림과 겹치지 않는 연산이고, 그 비중이
+  크기와 함께 준다(K=N 1024에서 M 100 -> 256일 때 t0 2.0 -> 3.6 us, 4096^2에서 M 1 -> 128일 때 0.8 -> 3.4 us). 즉
+  커널당 고정 비용 약 1 us와 weight 타일 하나 정도의 파이프라인 fill/drain이다. NPUsim에 반영할 것: 커널당 고정 비용,
+  fill/drain 타일 크기, 128열 단위 MXU 분할(3.7).
+- 하드웨어 카운터: 후보 프로파일러 설정 다섯 가지 모두 받아들여졌지만 어느 trace에도 perf_counters 도구가 없고 표는
+  비어 있다. Colab TPU v5e의 프로파일은 op별 시간, XLA FLOPs와 바이트, 그로부터 계산한 대역폭과 병목 판정까지다.
+
+### 3.9 XLA 타일링, 128열 작업, 커널당 고정 비용 (`compare_windows.py`)
+
+XLA가 각 GEMM에 쓴 타일링(HLO의 matmul `window_config`, `xla_windows.py`)을 NPUsim에 반영했다. M <= 128, K 4096은
+K x 512열 window(NPUsim strip과 같음), M 512는 256열, K=N <= 1280은 **window 하나**(weight 전체를 VMEM에 올린 뒤 계산,
+파이프라인 없음 -- 작은 GEMM이 느린 이유), 14336 x 4096은 K를 512행 window 28개로 나눈다. 열은 128열 lane tile 단위다.
+
+| 설정 | decode (11) | compute (4) | 작은/비정렬 (35) | 전체 (50) |
+|---|---|---|---|---|
+| A 기존 매핑, strip 올림, 고정 비용 없음 | 4.8% | 3.5% | 13.1% | 10.5% |
+| B A + 커널당 0.22 us (`layer_setup_cycle = 330`) | 4.8% | 3.5% | 12.7% | 10.3% |
+| C window 하나 시뮬레이션, 열 블록만 MXU에 분할 | 10.8% | 75.1% | 14.0% | 18.2% |
+| **D 128열 단위 작업 (4 MXU) + XLA window 파이프라인 + 0.22 us** | **5.2%** | **6.4%** | **8.2%** | **7.4%** |
+
+D: 작업은 4-MXU 매핑을 ceil(N/128)/4 strip(분수)으로 확장해 128열 padding만 남기고, 단계별 총비용을 XLA window n개로
+나눠 "window 통째 로드 -> 계산, 다음 window 미리 로드"로 합성한다: t = 330 + D/n + (n-1) max(D/n, C/n) + C/n. 구조값만
+쓴다. MAC 수는 K=N 1100 / 1152 / 1280에서 1.46 / 1.33 / 1.20 -> 1.10 / 1.00 / 1.00배(1100은 K와 N을 1152로, MXU와 같은
+단위), 바이트는 XLA의 1.09배 이하. 정렬된 작은 GEMM(128 / 200 / 256 / 512 x 1024^2)은 -34 / -22 / -21 / -16% ->
+-14 / +1 / +5 / -12%. C가 실패한 이유: 2블록 window(M 512)를 MXU 2개에만 올려 연산이 두 배(+84%); XLA는 다른 차원으로
+4개 MXU를 모두 쓴다. 남은 것: 유효 HBM 속도(D도 749-798 vs 실측 716-755 GB/s, 4.1의 HBM2e REFSB가 해당), compute-bound
+-4..-9%(window 파이프라인이 NPUsim 자체 fill보다 잘 겹침), 수 us GEMM의 측정 잡음. 다음: window 파이프라인을 NPUsim
+코어의 선택 옵션으로(DRAM 계층 타일을 통째로 전달).
+
+## 4. MOSAIC HBM2e
+
+`configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}`(MOSAIC): HBM2e 2 stack = 16채널 x 2 pseudo channel, 3.2 Gbps,
+16 GiB, Ramulator 2.1 원본 HBM2, JEDEC 타이밍, 전체 뱅크 refresh. 공개 사양만 썼다.
+
+| 순차 읽기 | GB/s | 사양 대비 |
+|---|---|---|
+| HBM2e 설정 (전체 뱅크 refresh) | 698 | 85.2% |
+| 같은 설정, refresh 없음 | 748 | 91.3% |
+| 실측 | 732-757 | 89-92% |
+
+refresh 이외의 손실은 실측과 맞고, TPU는 refresh를 대부분 숨긴다. 이 설정으로 decode GEMM MAPE가 5.4% -> 4.4%가
+되지만 부호가 바뀐다(+1..+7%). compute-bound M 512는 MOSAIC 경로에서 -4..-12%로 더 빨라진다(원인 조사 필요).
+
+### 4.1 refresh를 숨기는 방식 (가설 검증, 2026-11-04)
+
+가설: 주소 매핑이 스트림을 여러 bank에 퍼뜨리고, 뱅크별 refresh(REFSB)로 한 bank가 refresh하는 동안 다른 bank에서
+데이터를 읽는다. refresh를 미뤘다가 나중에 처리하는 방식으로는 약 31 us(8 x tREFI)만 숨길 수 있는데, 4 GB를 5.7 ms
+동안 읽어도 92%가 유지되므로 미루기만으로는 설명되지 않는다.
+
+Ramulator의 뱅크별 refresh가 처음에 오히려 느렸던 이유: 컨트롤러가 우선순위 버퍼에 refresh가 하나라도 있으면 채널의
+모든 읽기/쓰기를 멈췄다(뱅크별 refresh가 전체 뱅크 refresh처럼, 더 나쁘게 동작). MOSAIC Ramulator2(`mosaic`
+`378827a`)에 두 가지를 추가했다 (기본값은 기존 동작):
+- GenericDDR `rw_beside_bank_refresh`: 뱅크별 refresh만 대기 중이면 다른 bank의 읽기/쓰기를 계속 처리 (REFSB 의미).
+- refresh 관리자 `IdleBankRefresh`: 대기 요청이 없는 bank에 REFpb를 낸다 (`policy` next: 순번, recent: 스트림이 방금
+  지나간 bank). 모든 bank가 바쁘면 최대 8회까지 미룬다.
+
+HBM2e 순차 읽기 (16 MB):
+
+| refresh | 기존 컨트롤러 | REFSB 의미 컨트롤러 |
+|---|---|---|
+| 전체 뱅크 | 697 GB/s (85.1%) | 697 (85.1%) |
+| 뱅크별, 순서대로 (PerBank) | 655 (80.0%) | 738 (90.1%) |
+| 뱅크별, HBM용 (HBM34PerBankRefresh) | 575 (70.2%) | 727 (88.7%) |
+| 뱅크별, idle bank (next / recent) | 669 / 667 (81.7%) | **749 / 751 (91.4 / 91.7%)** |
+| refresh 없음 | 747 (91.2%) | |
+| **TPU v5e 실측** | | **732-757 (89-92%)** |
+
+뱅크별 refresh + 다른 bank 계속 처리면 refresh가 거의 숨겨지고(순서대로도 90%), idle bank를 고르면 완전히 숨겨져
+실측 범위에 든다. 가설과 일치한다. 이 조합을 `hbm2e_tpu_v5e_refsb.{py,yaml}`(MOSAIC)로 두었다 (64 MB 순차 읽기
+751 GB/s). 기본 `hbm2e_tpu_v5e`는 JEDEC 전체 뱅크 refresh 그대로 둔다 (실측에 맞는 쪽을 기본으로 고르면 피팅).
+
+NPUsim decode GEMM (M <= 128, `compare_hbm.py --mosaic-dram .../hbm2e_tpu_v5e_refsb.yaml`, log
+`results/2026-11-03_colab_v5e1_followup3/compare_hbm_refsb.log`): **MAPE 3.2%** (-0.5..+6.2%, 128x4096x28672만
++11.7%). 분석 모델 5.4%, 전체 뱅크 refresh HBM2e 4.4%.
+
+이것은 시뮬레이션에서 가설이 성립함을 보인 것이고, TPU가 실제로 이렇게 하는지는 `tpu_v5e1_hbm_probe`(README)의
+접근 패턴 측정으로 판별한다: 휴지를 둔 burst가 연속 스트림보다 빠르면 미루기, 같으면 겹쳐 숨기기; stride sweep으로
+매핑을 추정해 같은 패턴을 Ramulator 후보 설정과 맞춘다.
+
+## 5. 결론
+
+1. decode의 두 주성분(projection GEMM, attention)은 NPUsim이 5-8% 안에서 맞춘다. 두 경우 모두 HBM 바운드이고,
+   오차는 NPUsim이 사양 대역폭을 쓰는 데서 온다.
+2. 레이어 시간은 GEMM + attention으로 분해되므로, NPUsim의 PaLM/decode 흐름에 attention 단계를 넣으면 레이어 단위
+   비교가 가능하다.
+3. TPU 측정에서는 측정 방식이 오차보다 크다(warm 122%, rot 17%, stream 5%). 한 프로그램 안에서 서로 다른 피연산자를
+   스트리밍해야 실제 decode를 잰다.
+
+## 6. 남은 과제
+
+1. HBM 효율: 뱅크별 refresh 숨김 모델(4.1)이 89-92%를 재현한다. TPU가 실제로 그렇게 하는지 HBM probe 측정으로 판별하고,
+   맞으면 `hbm2e_tpu_v5e_refsb`를 TPU v5e의 기본 DRAM으로 삼는다.
+2. compute-bound GEMM이 MOSAIC 경로에서 빨라지는 원인.
+3. 작은/비정렬 GEMM: GEMM당 고정 비용, MXU 열 분할 단위.
+4. 레이어의 원소 단위 연산(잔차, gate/up 분리).
+5. int8 weight: NPUsim tpu_v5e int8 설정과 비교.
+6. 8칩: tensor-parallel decode와 collective (Kaggle v5e-8, `kaggle_tpu_bench.ipynb`).
+7. TPU v4 PaLM 비교(validation/palm, NPUsim 41-60% 짧음)에 attention 단계 넣어 재평가.
+
+## 7. 재현
+
+```
+# 측정 (Colab v5e-1 TPU 런타임): tpu_v5e1_stream_bench.ipynb Run All -> zip을 results/<date>_.../에 풀기
+# NPUsim 비교 (MOSAIC 빌드, LD_LIBRARY_PATH=<npusim libs>):
+python3 validation/tpu_v5e/compare_hbm.py         # decode/compute GEMM: 819 GB/s vs MOSAIC HBM2e vs 실측
+python3 validation/tpu_v5e/compare_attention.py   # attention 단계 vs 실측
+python3 validation/tpu_v5e/colab_summary.py validation/tpu_v5e/results/2026-11-03_colab_v5e1_followup3
+# HBM2e 순차 읽기: hbm_stream_probe.cc (빌드 방법은 파일 머리말)
+```
+
+| 파일 | 내용 |
+|---|---|
+| `results/2026-11-03_colab_v5e1_followup{,2,3}/` (+ `.zip`) | stream 벤치 1-3차 (1차는 attention/HBM 읽기 무효, 2차는 HBM 읽기 무효) |
+| `results/2026-11-03_colab_v5e1_{warm,rot}.zip` | 병렬 세션의 `measure_tpu.py` 원본 (풀린 결과와 비교는 브랜치 `tpu-measure`) |
+| `compare_hbm.py`, `compare_attention.py`, `colab_summary.py` | 비교 스크립트 |
+| `tpu_v5e1_stream_bench.py`, `kaggle_tpu_bench.py` | 측정 벤치 (Colab 1칩, Kaggle 8칩) |
+| `README.md` | 실행별 상세 기록 |

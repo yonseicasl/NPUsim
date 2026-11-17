@@ -1,3 +1,316 @@
+# NPUsim vs Cloud TPU v5e
+
+Two records of the same work, merged 2026-11-11 (branch `tpu-measure` into `mosaic`); both are kept whole.
+
+- **Part A** (from `mosaic`): the stream bench (`tpu_v5e1_stream_bench.py`), HBM probe, XProf statistics, the
+  attention consumer, `compare_hbm.py` / `compare_metrics.py` / `compare_windows.py`; report in [REPORT.md](REPORT.md).
+- **Part B** (from `tpu-measure`): `measure_tpu_v5e1.py` / `measure_tpu_v5e8.py`, `compare_v5e.py`, `compare_stack.py`,
+  the small-kernel experiments, the simulator knobs added for the TPU, the audit (`AUDIT.md`).
+
+`configs/accelerators/tpu_v5e.cfg` is Part B's: besides `layer_setup_cycle = 330` (both branches) it sets
+`program_setup_cycle = 1035`, `interlayer_overlap = 1`, `activation_residency = 1`, `timeline_dram_tiles = 1`.
+**Part A's numbers and REPORT.md were produced before those four settings** (and before the timeline fix) and
+have not been re-run on the merged config; the current figures for the merged config are the last tables of Part B
+("Every set with `timeline_dram_tiles` on").
+
+---
+
+# Part A -- record from branch `mosaic`
+
+# TPU v5e-8 measurements (Kaggle)
+
+Consolidated comparison report (Korean): [REPORT.md](REPORT.md). This README keeps the per-run records.
+
+Measured ground truth for NPUsim's TPU modeling (refs/tpu/README.md): single-chip GEMMs, HBM bandwidth,
+8-chip collectives, and a tensor-parallel Llama-2-70B-shaped decode layer split into components. The
+PaLM decode comparison (validation/palm/) leaves 41-60% of the measured latency unattributed; the decode
+layer variants here measure where such time goes on real TPUs.
+
+## Run on Kaggle
+
+1. kaggle.com -> Create -> New Notebook. File -> Import Notebook -> upload `kaggle_tpu_bench.ipynb`
+   (or paste `kaggle_tpu_bench.py` into one cell).
+2. Settings (right panel) -> Accelerator -> **TPU v5e-8**. Internet is not needed.
+3. Run All (about 30-45 minutes; Kaggle allows 20 TPU hours per week and 9 hours per session).
+4. Output tab -> download `tpu_v5e_results.json` and the `trace/` directory.
+5. Put them on this server under `validation/tpu_v5e/results/` (e.g. `results/2026-11-xx/`).
+
+The first cell prints the JAX version and the devices; check that eight TPU v5 lite devices are listed.
+A failing measurement is recorded under `errors` in the JSON and the run continues.
+
+## What is measured
+
+| section | content | timing |
+|---|---|---|
+| gemm | M in 1..512 x (K, N) in {4096^2, 8192^2, 8192x28672, 28672x8192}, bf16 and int8 weights (dequantized in the kernel); square bf16 GEMMs 1024..8192 | slope of n vs 2n dependent iterations in one jitted `fori_loop` |
+| hbm | read-only stream over 1 MB .. 4 GB | same |
+| collective | all-reduce, all-gather, reduce-scatter over 8 chips, 4 KB .. 128 MB per chip | same, inside `shard_map` |
+| decode_layer | Llama-2-70B layer (E 8192, F 28672, 64 heads, 8 KV heads, d_head 128), TP 8, B 1..128, context 2048, bf16 and int8 weights; variants full / no_comm / no_attn / no_vector / gemm_only; one profiler trace (B 8, bf16) | per layer, n vs 2n layers |
+
+**Cold operands.** A loop that reads the same buffer every iteration measures on-chip reuse, not HBM:
+TPU v5e keeps an operand of up to ~128 MiB on chip across iterations (and across executions), so decode
+GEMMs with small weights ran 3-4x faster than HBM allows (Colab v5e-1, 2026-11-03). Every section above
+except the collectives therefore cycles iteration i through copy i % R of R distinct buffers (weights,
+KV cache, streamed array; a decode iteration runs layer i % R), R chosen so the copies total >= 512 MB
+(`copies` in each result; at most ~1 GB per chip). `TPU_BENCH_ROTATE_MB=<MB>` changes the total;
+`TPU_BENCH_ROTATE_MB=0` reuses one buffer (warm, the old behaviour) for comparison.
+
+`make_notebook.py` regenerates the notebook from the script. `TPU_BENCH_QUICK=1 TPU_BENCH_OUT=<dir>` with
+`JAX_PLATFORMS=cpu XLA_FLAGS=--xla_force_host_platform_device_count=8` runs a tiny CPU smoke test.
+
+# TPU v5e-1 follow-up (Colab)
+
+`tpu_v5e1_stream_bench.py` / `.ipynb` follows up the isolated Colab runs of `measure_tpu.py` (one GEMM or one decode
+layer per XLA program; `results/2026-11-03_colab_v5e1_*` on branch `tpu-measure`). With fresh buffers such a
+program copies an operand HBM -> on-chip memory and then runs the fusion, serially, so it overstates an HBM-bound
+GEMM; a decode step streams many different weights inside one program. Here everything runs inside one program
+(n vs 2n dependent iterations of a `fori_loop`, R distinct operand copies, >= 512 MB):
+
+| section | measures | answers |
+|---|---|---|
+| stream_gemm | Llama-3-8B projections (M 1..512) streaming distinct weights (cold) / one weight (warm), bf16 and int8 | HBM-bound GEMM time with copy/compute overlap; on-chip reuse factor; int8 dequant cost |
+| decode_stack | R distinct Llama-3-8B layers (weights + KV) in one loop, B 1..128, L 512..8192, full / GEMM-only | layer time without the one-op-program copy; non-GEMM share |
+| attention | decode attention alone over a rotated KV cache, B 1..128, L 512..32768 | KV-read efficiency vs roofline (open in validation/palm) |
+| hbm_read | read-only streams 64 MB .. 4 GB | sustained HBM read bandwidth (to check a MOSAIC HBM2e config) |
+| odd_gemm | M 100..512 x K=N 1000..2048 around multiples of 128 | padding / tiling granularity |
+
+For two cases (8x4096x4096 streamed and as a one-op program; decode B 8 L 2048) it also keeps the optimized HLO
+(`hlo/`), XLA's cost analysis and a profiler trace (`traces/`, for TensorBoard's profile plugin: trace viewer,
+op_profile, hlo_stats, roofline, memory_profile), and the run's HBM memory stats.
+
+Colab: Runtime -> Change runtime type -> v5e-1 TPU; upload the notebook (File -> Upload notebook) and Run All
+(~20-30 min). It downloads `tpu_v5e1_followup.zip`; unzip it under `results/<date>_colab_v5e1_followup/`, then
+
+```
+LD_LIBRARY_PATH=<npusim libs> python3 validation/tpu_v5e/compare_v5e.py results/<dir>     # tpu-measure branch
+python3 validation/tpu_v5e/colab_summary.py results/<dir> [--isolated results/2026-11-03_colab_v5e1_rot]
+```
+
+`gemm.csv` there is in measure_tpu.py's format (device_us = loop slope), so compare_v5e.py takes it as is and
+writes `compare_gemm.csv`, which colab_summary.py then uses for the NPUsim columns.
+
+## Raw Colab archives
+
+`results/2026-11-03_colab_v5e1_warm.zip` (one input buffer reused) and `results/2026-11-03_colab_v5e1_rot.zip`
+(rotated buffers) are the archives the two Colab v5e-1 runs of `measure_tpu.py` produced, unchanged
+(gemm/vector/decode CSVs, decode_ops.json, env.json; no traces kept). Branch `tpu-measure` has them unpacked
+under `results/2026-11-03_colab_v5e1_{warm,rot}/` with their comparisons.
+
+## Results: 2026-11-03 Colab v5e-1 follow-up (`results/2026-11-03_colab_v5e1_followup/`)
+
+TPU v5 lite, JAX 0.11.2, no errors (raw archive `results/2026-11-03_colab_v5e1_followup.zip`).
+`compare.log` / `compare_gemm.csv`: compare_v5e.py (branch tpu-measure) on this run's gemm.csv.
+
+- **Streamed decode GEMMs** (Llama-3-8B projections, M 1..128, weights read from HBM inside one program):
+  NPUsim -0.3..-8% (16 points, all under), e.g. 8x4096x4096 46.8 us measured vs 43.4. Weights stream at
+  690-750 GB/s (85-92% of 819), which accounts for the gap. The isolated runs' -22..-35% (rotated: serial
+  copy + fusion) and +74..+312% (warm: weight on chip) were measurement artifacts: streamed 8x4096x4096 is 46.8
+  us vs 56.4 rotated (copy 44.8 + fusion 11.6) and 11.7 warm. Inside one program warm = cold (ratio ~1.0).
+- **int8 weights**: 0.50-0.56x the bf16 time at M <= 32 (HBM-bound, half the bytes), 0.6x at M 128, ~1.0x at
+  M 512 (compute-bound); dequantization is free at decode sizes.
+- **Small / unaligned GEMMs** (odd_gemm, M 100..512, K = N 1000..2048): NPUsim -23..-36% at K=N 1000-1024,
+  -10..-20% at 2000-2048, -12..+7% at 1100-1280. 1000 and 1024 measure the same (padding to 128 is right, and
+  NPUsim agrees). The pattern points to a fixed per-GEMM cost (~1-2 us) NPUsim lacks and to its partition of
+  output columns over the 4 MXUs in 128-column strips being coarser than XLA's (1024 -> 1100: NPUsim 1.6x,
+  measured 1.27x). Not yet modeled.
+- **decode_stack GEMM-only** per layer: 580 us at B 1 (NPUsim's 4 GEMMs -3.9%), 637-676 us at B 8..128, ~50 us
+  above the sum of the four streamed GEMMs (588-606); NPUsim -10..-14% there. Remeasure with the fixed bench.
+- **Not valid in this run** (bench artifacts, found in the saved HLO; fixed, rerun pending): attention and the
+  full decode layer above ~128 MB of KV picked the cache out of a stacked array with a dynamic slice and
+  relaid (B, L, kv, d) for the einsum -- two extra HBM copies, 3.6x the KV roofline instead of ~1.3-1.5x; and
+  hbm_read summed a 1-D array (slow on TPU) and at 1-4 GB used one buffer, so XLA hoisted the read out of the
+  loop. The bench now keeps KV as (B, kv, L, d), unrolls up to 8 distinct buffers in the loop body instead of
+  slicing large ones, and reads >= 2 distinct 2-D arrays. Rerun only those sections with
+  `%env TPU_BENCH_SECTIONS=decode_stack,attention,hbm_read` in a cell above the first code cell.
+
+## Results: 2026-11-03 Colab v5e-1 follow-up, rerun (`results/2026-11-03_colab_v5e1_followup2/`)
+
+Same chip, the fixed bench (KV as (B, kv, L, d), distinct KV/layer buffers unrolled in the loop body), all
+sections; no errors (raw archive `results/2026-11-03_colab_v5e1_followup2.zip`).
+
+- **Reproducible**: the 80 streamed GEMMs match the first run within 1.3% (median; max 6.8%), NPUsim MAPE 5.0% ->
+  4.7%; the small odd GEMMs within 2.8% (median; a few us-scale cases up to 35%), NPUsim MAPE 16.1% -> 15.5%.
+- **Attention is a KV read at the sustained HBM rate**: 1.03-1.12x the KV roofline at 819 GB/s (733-797 GB/s) for
+  B >= 8, 1.16-1.7x at B 1 (short reads). The earlier 3.6x (stacked KV) and the isolated runs' 1.25-1.35x carried
+  the cache relayout copy that a (B, L, kv, d) layout forces.
+- **A decode layer is its GEMMs plus its attention**: full layer = GEMM-only layer + attention within 2.4% over
+  all 12 (B, L). NPUsim's four projection GEMMs are -3..-13% of the GEMM-only layer (-10.6% at B 1, -5..-6% at
+  B 8, -3..-6% at B 32, -11..-13% at B 128); the GEMM-only layer runs 1-12% over the four streamed GEMMs alone
+  (residual adds, the gate/up split).
+- **hbm_read is still not valid**: with the copies unrolled, each read no longer depended on the loop carry and
+  XLA hoisted the loop-invariant sums out of the loop (0 or absurd GB/s). Fixed: each read takes a max with the
+  carry; the compiled HLO now keeps every reduce inside the while body (it had none before). The Kaggle bench's
+  HBM section had the same flaws (1-D, stacked, one buffer at >= 512 MB) and is fixed the same way. Rerun with
+  `%env TPU_BENCH_SECTIONS=hbm_read` (a few minutes).
+
+## Results: 2026-11-03 Colab v5e-1, third run (`results/2026-11-03_colab_v5e1_followup3/`)
+
+`tpu_v5e1_stream_bench` with the hbm_read fix, all sections, no errors (raw archive
+`results/2026-11-03_colab_v5e1_followup3.zip`).
+
+- **Sustained HBM read: 732-757 GB/s** (64 MB 732, 256 MB 749, 1 GB 755, 4 GB 757), 89-92% of the 819 GB/s spec.
+  The same rate shows up in every HBM-bound measurement: streamed decode weights 690-750 GB/s, attention's KV
+  read 733-797 GB/s. This is the target for a MOSAIC HBM2e config (2 stacks x 409.6 GB/s) to reproduce.
+- **Reproducible against the second run** (median / max |difference|): streamed GEMMs 0.9% / 5.8%, decode
+  layers 0.7% / 5.1%, attention 0.3% / 28.8%, small odd GEMMs 6.3% / 70.9% -- the large maxima are us-scale
+  cases (B 1 L 512 attention, M 100 K=N 1000-1024 GEMMs).
+
+### What the three Colab runs establish for NPUsim (TPU v5e, one chip)
+
+| quantity | measured | NPUsim |
+|---|---|---|
+| decode-shaped GEMMs, weights streamed (M 1..128) | HBM-bound at 690-750 GB/s | -0.3..-8% (MAPE ~5%), assumes 819 GB/s |
+| compute-bound GEMMs | 187-192 of 197 TFLOPS | -1..+12% |
+| int8 weights at M <= 32 | half the bf16 time | not compared yet (tpu_v5e int8 config) |
+| decode attention, B >= 8 | KV bytes / ~745 GB/s (1.03-1.12x roofline) | -6..-8% (MAPE 8.3%, `compare_attention.py`) |
+| decode layer | GEMM-only layer + attention (within 2.4%) | 4 projection GEMMs -3..-13% of the GEMM-only layer |
+| small / unaligned GEMMs | | -10..-36% at K=N 1000-1024 / 2000-2048: fixed per-GEMM cost, MXU strip partition |
+
+## NPUsim attention vs measured (`compare_attention.py`, `results/2026-11-03_colab_v5e1_followup3/compare_attention.log`)
+
+NPUsim's attention consumer (`[kvcache] attention = 1`: K and V supply as a dedicated stream on the `[dram]` model,
+QK / softmax / AV at declared rates, appended after the projection layer) now takes `batch` (sequences in the
+decode step, default 1: read, append, MACs, softmax and occupancy scale with it). `compare_attention.py` runs it on
+`tpu_v5e.cfg` with the measured geometry (Llama-3-8B: 32 q-heads, 8 kv-heads, d 128, bf16; two_pass, streaming
+1 MiB tiles) for the 15 measured (B, L) and compares the report's "Attention step":
+
+- B >= 8: -6..-8% (B 8 / L 512, 16 MB of KV: -17.8%), MAPE 8.3% (n=11). B = 1: -12..-30%, MAPE 17.6% (n=4).
+- The step is KV-read bound; its compute rates are structural (4 x 128^2 MAC/cycle; softmax 0.005 cycles/score,
+  ~5 VPU ops over 8 x 128 lanes) and barely matter. The steady -7% is the same HBM efficiency gap as the GEMMs
+  (819 GB/s assumed, ~760 sustained).
+
+## MOSAIC HBM2e for TPU v5e (`configs/architecture/dram/hbm2e_tpu_v5e.{py,yaml}` in the MOSAIC tree)
+
+A Ramulator 2.1 config built from public specs only: 2 HBM2e stacks = 16 channels x 2 pseudo channels (64-bit),
+4 Gb per pseudo channel (16 GiB), 3.2 Gbps (819.2 GB/s); Ramulator 2.1's native HBM2 standard (32 B per RD in 2
+tCK); HBM2_2400Mbps core timings converted to 625 ps clocks, secondary timings from the standard's JEDEC tables;
+channels interleaved per 32 B, bank groups on the lowest column bits; open rows, FR-FCFS, all-bank refresh.
+MOSAIC's existing 2.0-format HBM2 configs map to HBM2_R20, whose 16 B transaction against nBL = 4 tCK caps it at a
+quarter of the pin rate -- the 23% seen earlier; that model is left alone (other engines' configs use it).
+
+Sequential reads (`hbm_stream_probe.cc`, 64 MB; independent of request size 32 B .. 1 KB):
+
+| refresh | GB/s | of 819.2 |
+|---|---|---|
+| all-bank (the config) | 698 | 85.2% |
+| per-bank (PerBank / HBM34PerBankRefresh) | 655 / 575 | 80.0% / 70.2% |
+| none | 748 | 91.3% |
+| **TPU v5e measured** (hbm_read) | **732-757** | **89-92%** |
+
+The non-refresh losses (~9%: row switches, bank-group/CAS timing) match the measurement; the TPU hides most of its
+refresh, which neither of Ramulator's per-bank managers does for a stream. The config keeps JEDEC all-bank refresh
+rather than picking the variant that matches.
+
+NPUsim decode GEMMs on it (`compare_hbm.py`, log `results/2026-11-03_colab_v5e1_followup3/compare_hbm.log`;
+`NPUSIM_MOSAIC_DRAM` = this config): M <= 128 MAPE 5.4% (analytical 819 GB/s, -2..-8%) -> 4.4% (+1..+7%, one
++13%), the sign now set by the refresh gap. Compute-bound M = 512 moves from -2..-6% to -4..-12%: the MOSAIC path
+replaces more of the analytical DRAM-side cost than the HBM time alone -- to look into.
+
+## HBM probe: address mapping and refresh (`tpu_v5e1_hbm_probe.py` / `.ipynb`, Colab v5e-1)
+
+How does the TPU keep 89-92% of HBM peak on long streams? Pallas kernels issue explicit HBM -> VMEM DMAs (4
+in flight, ~512 KB each) over a 2 GB array laid out as (G, S, 8, 128) f32 -- 4 KB tiles, the HBM layout unit -- so
+the access pattern is exactly the one written:
+
+| section | pattern | tells |
+|---|---|---|
+| seq_duration | sequential stream kept up ~1 / 10 / 200 ms | efficiency decays with duration -> refresh only postponed |
+| stride | one 4 KB tile every S tiles, S = 1 .. 16384 | bandwidth dips = strides aliasing channels / banks (the mapping) |
+| chunk | 4 .. 128 KB chunks at a 1 MB stride | channel interleave granularity |
+| burst | 4 / 16 / 64 MB bursts with ~20 us HBM idle (VPU-only work) vs back-to-back | bursts faster -> refresh postponed into idle time; equal -> hidden under other banks |
+| xla_stride | the stride sweep with plain XLA slicing | fallback if Pallas fails |
+
+Colab: v5e-1 TPU runtime, upload the notebook, Run All (~15-25 min; `%env TPU_BENCH_SECTIONS=...` in a cell above
+the first code cell picks sections); it downloads `tpu_v5e1_hbm_probe.zip`. The patterns are then replayed on
+MOSAIC's HBM2e candidates (`hbm2e_tpu_v5e` all-bank refresh, `hbm2e_tpu_v5e_refsb` per-bank refresh hidden;
+REPORT.md section 4.1) to see which mapping and refresh scheme reproduce them. CPU smoke test:
+`TPU_BENCH_QUICK=1` (Pallas interpret mode).
+
+## Per-op profile: FLOPs, bytes, utilization, bound-by (`xprof_stats.py`)
+
+Latency alone says how far NPUsim is off, not where. The saved `jax.profiler` traces (xplane.pb) also carry, per HLO
+op, XLA's FLOPs and bytes accessed and the measured time, from which XProf derives FLOP rate, HBM / VMEM bandwidth,
+operational intensity and the bound resource. `xprof_stats.py RESULTS` converts every `RESULTS/traces/<case>/` with
+XProf's hlo_stats, roofline_model and op_profile tools into `RESULTS/xprof/{hlo_stats,roofline,programs}.csv`
+(one row per op and case) and prints the top ops (needs `pip install xprof`).
+
+`tpu_v5e1_stream_bench.py` now traces **every** case (`TPU_BENCH_TRACE=all`, default; `some` keeps the few
+representative ones, `none` none), so each GEMM, decode layer, attention and HBM read comes with its per-op table.
+What it validates in NPUsim: bytes accessed -> the DRAM traffic count (operand re-reads), FLOP rate / MXU
+utilization -> PE utilization, tiling and fill/drain, HBM bandwidth -> the DRAM model.
+
+First result, the three traces of the third run (`results/2026-11-03_colab_v5e1_followup3/xprof/`):
+
+| case | op | bound by | bandwidth | FLOP rate |
+|---|---|---|---|---|
+| 8x4096x4096 streamed (one program, many weights) | matmul fusion | HBM | HBM 679 GB/s | 5.8 TFLOP/s |
+| 8x4096x4096 as a one-op program | copy-done (HBM -> VMEM) | VMEM write | 699 GB/s | - |
+| | matmul fusion | VMEM read | VMEM 2697 GB/s, HBM 10 GB/s | 23 TFLOP/s |
+| decode layer B 8 L 2048 | FFN / projection fusions | HBM | HBM 685-697 GB/s | 3-6 TFLOP/s |
+
+This confirms in numbers what the latencies implied: the one-op program stages the weight into VMEM and multiplies
+from there, while the streamed GEMM and the decode layer read weights from HBM at the sustained rate.
+
+Hardware counters: XProf's perf_counters and utilization_viewer tools exist but are empty with the default profiler
+options. The bench's `counters` section traces one GEMM under candidate `advanced_configuration` options
+(undocumented; names from XProf and Cloud TPU profiler options); `xprof_stats.py RESULTS --list-tools --case counters`
+shows which, if any, fills them.
+
+## Results: 2026-11-04 Colab v5e-1, every case profiled (`results/2026-11-04_colab_v5e1_profile/`)
+
+`tpu_v5e1_stream_bench` with `TPU_BENCH_TRACE=all`: 164 traces and cost analyses, no errors. The raw archive
+`results/2026-11-04_colab_v5e1_profile.zip` holds the traces and HLO (unpacked `traces/`, `hlo/` are not committed;
+unzip to rerun); `xprof/{hlo_stats,roofline,programs}.csv` are `xprof_stats.py`'s per-op tables (1845 op rows).
+
+- **The per-op times are the loop times**: the profiled GEMM fusions take -0.6% (median) of the loop-slope time
+  measured in the same run (+1.7% for the small GEMMs), so tracing does not perturb them.
+- **Measured work = the shape's work**: on all 114 GEMM programs XLA's HBM bytes equal weights + input exactly
+  (1.0000; the bench reduces the output inside the fusion, so it is never written) and XLA's FLOPs are 2MKN x
+  1.0003-1.003 (the reduction). Exception: M = 1 int8 GEMVs count 3x, the int8 -> bf16 converts in XLA's cost model,
+  not MXU work.
+- **Small GEMMs: one fusion, no extra copies**; the fusion itself runs at ~410-450 GB/s for 2-3 MB of weights (650 at
+  34 MB, 750 at 235 MB). With the HBM rate fixed at the measured 750 GB/s, the remainder t0 = t - bytes/750 is ~1 us
+  plus a share of the compute that does not overlap the stream, which shrinks with size: t0 2.0 -> 3.6 us as M goes
+  100 -> 256 at K=N 1024 (compute 1.1 -> 2.7 us), 0.8 -> 3.4 us as M goes 1 -> 128 at 4096^2 (compute 0.2 -> 22 us).
+  That is a fixed per-kernel cost of ~1 us and a pipeline fill / drain of about one weight tile.
+- **Hardware counters are not available**: all five candidate profiler options were accepted, but no trace has
+  XProf's perf_counters tool and its perf_counters / utilization_viewer tables are empty (`xprof_stats.py RESULTS
+  --case counters --counters`). On Colab's TPU v5e the profile stops at per-op time, XLA's FLOPs and bytes, and
+  the bandwidth / bound-by derived from them.
+
+## XLA's tiling, 128-column work and the per-kernel cost (`xla_windows.py`, `compare_windows.py`)
+
+`xla_windows.py RESULTS` reads each GEMM's matmul `window_config` from the run's optimized HLO
+(`results/2026-11-04_colab_v5e1_profile/xla_windows.csv`): windows per dimension, a window's K rows and 128-column
+lane tiles, buffering_level 2. M <= 128 at K 4096 uses K x 512-column windows (NPUsim's strip); M 512 uses 256
+columns; K=N <= 1280 is ONE window (the whole weight in VMEM, no pipeline -- why small GEMMs run slow);
+14336 x 4096 splits K into 28 windows of 512 rows. Columns go by lane tiles: 1100 is 9 blocks, unpadded.
+
+`compare_windows.py` (log/csv in the profile run's directory), the run's 50 cold bf16 GEMMs:
+
+| setup | decode (11) | compute (4) | small / unaligned (35) | all (50) |
+|---|---|---|---|---|
+| A palm mapping, strips rounded up, no setup | 4.8% | 3.5% | 13.1% | 10.5% |
+| B A + layer_setup_cycle 330 (0.22 us, tpu_v5e.cfg) | 4.8% | 3.5% | 12.7% | 10.3% |
+| C one XLA window simulated, its column blocks alone on the MXUs | 10.8% | 75.1% | 14.0% | 18.2% |
+| **D 128-column work on 4 MXUs + XLA's window pipeline + 330** | **5.2%** | **6.4%** | **8.2%** | **7.4%** |
+
+D: the work is validation/palm's 4-MXU mapping extended to ceil(N/128)/4 strips (fractional: only 128-column
+padding); its per-stage totals are split over XLA's n windows and run XLA's way -- a window is DMAed whole before its
+compute, the next fetched meanwhile: t = 330 + D/n + (n-1) max(D/n, C/n) + C/n (D = DRAM busy, C = the slowest
+on-chip stage). Structural, not fitted. NPUsim's MAC count at K=N 1100 / 1152 / 1280 goes 1.46 / 1.33 / 1.20 ->
+1.10 / 1.00 / 1.00 x real (1100 pads K and N to 1152, as the MXU does), bytes to <= 1.09 x XLA's; aligned small GEMMs
+128 / 200 / 256 / 512 x 1024^2 go -34 / -22 / -21 / -16% -> -14 / +1 / +5 / -12%.
+C failed instructively: a 2-block window (M 512) on 2 of 4 MXUs doubles the compute (+84%); XLA keeps all four MXUs
+busy over another dimension. Left: the effective HBM rate (D still streams at 749-798 vs 716-755 GB/s measured --
+the MOSAIC HBM2e REFSB config addresses it, REPORT 4.1); compute-bound now -4..-9% (the window pipeline overlaps
+better than NPUsim's own fill); single-run noise of the us-scale GEMMs (100x1024 measured 3.6 here, 4.9-5.4 in the
+other runs). Next: the window pipeline as a native NPUsim option (DRAM-level tiles delivered whole).
+
+---
+
+# Part B -- record from branch `tpu-measure`
+
 # NPUsim vs Cloud TPU v5e (measured)
 
 The PaLM comparison (`validation/palm/`) leaves NPUsim 41-60% under the published TPU v4 decode latency,

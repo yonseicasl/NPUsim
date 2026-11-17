@@ -112,6 +112,100 @@ schedule max 12%, critical path max 20%)는 이 수준의 회귀 방지선이다
 행 수로 모델링하려면 행 수를 바꾼 RTL 점이 더 필요하다. M=1 decode GEMV는 RTL 점이 없어
 검증 범위 밖이다.
 
+## Cold-L2 RTL 재측정과 DRAM 경로 (2026-11-02)
+
+위 golden(`gemm_sweep.c`)은 6점이 같은 A/B/C를 재사용해 첫 점 이후 트래픽 일부가 512 KB L2에
+맞고, 6점이 모두 연산 바운드라 DRAM 모델을 검증하지 않는다. `gemm_sweep_cold.c`는 점마다 한 번도
+접근하지 않은 버퍼를 써서(bare-metal crt는 .bss를 지우지 않는다) 모든 DMA 읽기가 L2 miss로 SimDRAM
+(DRAMSim2 DDR3-1333, `+dramsim`)에 가게 하고, K = 16인 메모리 바운드 2점을 더했다. RTL은
+GemminiRocketConfig Verilator(코어·버스 500 MHz, L2 ↔ SimDRAM AXI 64 bit)를 Ubuntu 24.04 컨테이너에서
+돌렸다(`rtl_cycles_cold.txt`, `golden_rtl_cycles_cold.csv`).
+
+NPUsim은 `compare_cold.py`로 세 설정을 비교한다: A `gemmini_rtl`, B `gemmini_rtl_mem`(500 MHz, 64-bit
+메모리 포트), C = B + MOSAIC Ramulator2 `ddr3_1333_simdram.yaml`(SimDRAM과 같은 DDR3, 순차 스트림
+10.4 GB/s; NPUsim을 MOSAIC_ROOT로 빌드).
+
+| M x K x N | RTL warm | RTL cold | A | B | C |
+|---|---|---|---|---|---|
+| 64x64x64 | 3,810 | 4,148 | +2.5% | +5.6% | +11.0% |
+| 128x128x128 | 10,530 | 12,412 | +0.8% | +1.9% | +3.7% |
+| 256x256x256 | 69,653 | 74,327 | +5.8% | +6.0% | +6.3% |
+| 16x512x512 | 32,506 | 49,892 | -41.4% | -28.9% | -28.9% |
+| 512x512x64 | 74,413 | 76,610 | -3.6% | -3.4% | -3.4% |
+| 16x16x16384 | - | 112,929 | -53.8% | -39.3% | -1.4% |
+| 16x16x65536 | - | 789,328 | -74.7% | -66.4% | -8.6% |
+
+- L2가 비면 RTL이 3~54% 느려진다(16x512x512 +53%): 기존 golden은 L2 효과를 포함한다.
+- 연산 바운드 4점은 세 설정 모두 ±6%. 메모리 바운드 점은 RTL 실효 대역폭이 4.6 B/cycle(512 KB),
+  2.7 B/cycle(2 MB, 데이터가 L2보다 커서 dirty C의 write-back이 겹친다)로 64-bit 포트(8 B/cycle)와
+  DDR3보다 낮다.
+- DMA 왕복 지연 측정(`dma_latency.c`, `rtl_dma_latency.txt`, 500 MHz): 한 줄 mvin(64 B 라인) L2 miss
+  60 cycle / hit 33, 한 행 mvout(16 B) miss 57 / hit 30, fence만 2. 읽기는 동시 요청 16 x 64 B / 58
+  cycle = 17 B/cycle > 포트 8 B/cycle이라 동시 요청 상한에 걸리지 않는다. 쓰기는 출력 행이 16 B라 요청이
+  작아 16 x 16 B / 55 cycle = 4.7 B/cycle이 상한이다.
+- 겹침 측정(`gemm_sweep_cold_perf.c`, `rtl_perf_counters_cold.txt`; Gemmini 성능 카운터, load/store/execute
+  Venn 영역과 각 유닛 활동). RTL도 이중 버퍼링을 한다: `tiled_matmul_auto`가 WS에서 scratchpad와
+  accumulator를 반으로 나누고, 하드웨어 `LoopMatmul`이 타일 루프 2개를 동시에 처리한다(reservation
+  station load 8 / execute 16 / store 4). 실제로 16x16x16384에서 execute 단독 cycle은 2, load와 store가
+  함께 활동하는 cycle이 67%(+ 셋 다 28%)로 연산은 DMA 뒤에 숨는다. 시간을 정하는 것은 겹침이 아니라
+  DMA 처리량이다: STORE_ACTIVE 97%, C 256 KB를 약 2.4 B/cycle로 쓴다. 16x512x512은 읽기가 부하 상태에서
+  약 5.4 B/cycle이다. (`RDMA_BYTES` 카운터는 beat마다 전송 크기를 더해 약 4배로 집계된다.)
+- NPUsim의 MOSAIC DRAM 스트림에 DMA를 넣었다: `[dram] mosaic_request_bytes / mosaic_max_inflight /
+  mosaic_path_latency_ns`(읽기), `mosaic_write_request_bytes / mosaic_write_path_latency_ns`(쓰기, 기본은
+  읽기 값). 기본 0이면 이전과 같다. `gemmini_rtl_mem.cfg`는 측정값을 쓴다: 읽기 64 B / 16 / 80 ns
+  (118 ns 왕복 - DDR3 37.5 ns), 쓰기 16 B / 110 ns. 16x16x16384 -39.3% -> -30.9%, 16x16x65536
+  -66.4% -> -62.0%.
+- L2(InclusiveCache: 512 KB, 64 B 라인, write-back, write-allocate)의 DRAM 트래픽: `[dram] mosaic_line_bytes`
+  (라인보다 작은 쓰기는 라인을 먼저 읽는다: 16 B 출력 행이 cold 라인마다 64 B 읽기를 낳는다)와
+  `mosaic_cache_kb`(레이어 데이터가 캐시보다 크면 쓴 바이트의 (사용량 - 캐시)/사용량이 dirty write-back으로
+  DRAM에 간다). `gemmini_rtl_mem.cfg`는 64 B / 512 KB. C(표의 마지막 열)는 둘을 모두 반영한 값이다:
+  16x16x16384 -18.8%, 16x16x65536 -55.1%, MAPE 21.6% -> 18.1%. 연산 바운드 점은 +3~11%.
+- 남은 원인은 아래 메모리 경로 측정으로 확정했다.
+
+### 메모리 경로 마이크로벤치 (`mem_path.c`, 결과 `rtl_mem_path.txt`)
+
+연산 없이 cold 버퍼에 mvin/mvout 스트림만 발행하고 fence까지 잰다 (B/cycle, 500 MHz).
+
+| 스트림 | 크기 | B/cycle |
+|---|---|---|
+| 읽기 (64 B 행) | 64 KB / 256 KB / 1 MB / 4 MB | 7.72 / 7.23 / 6.10 / 5.84 |
+| 읽기 warm (L2 hit) | 256 KB | 13.1 |
+| 읽기 64 B 행, 512 B 간격 열 strip 순 (16x512x512의 B) | 256 KB | 5.81 |
+| 쓰기 16 B 행, 연속 | 256 KB / 1 MB | 1.73 / 1.74 |
+| 쓰기 16 B 행, 16 KB 간격 (16x16x16384의 C) | 256 KB | 2.02 |
+| 쓰기 16 B 행, 64 KB 간격 (16x16x65536의 C) | 256 KB | **0.55** |
+| 읽기 + 쓰기 섞기 (1 KB씩 번갈아) | 128 KB / 512 KB / 2 MB | 4.38 / 4.65 / 4.88 |
+
+- 읽기는 64비트 포트 상한(8 B/cycle)의 73~97%이고 Ramulator2 DDR3(포트 상한 8)와 가깝다. DRAM 모델은
+  주원인이 아니다.
+- 쓰기는 DRAM이 아니라 L2의 부분 쓰기 처리가 제한한다. 라인마다 RFO가 4배인 16 KB 간격이 연속보다 빠르다
+  (같은 라인의 16 B 쓰기 4개가 한 MSHR에서 직렬화된다). 16 B 요청당 약 8~9 cycle.
+- 16x16x16384 RTL 112,929 cycles = 섞기 512 KB(B 256 KB + C 256 KB) 112,720 cycles. 이 점은 메모리 경로로
+  전부 설명된다.
+- 64 KB 간격 쓰기가 3.7배 느린 것은 L2 set 충돌이다. L2는 8-way, set+bank 인덱스가 주소 비트 6~15라
+  64 KB 간격의 C 16개 행이 한 set의 8 way를 다툰다. 16x16x65536 RTL 789,328이 섞기 2 MB 429,405보다
+  1.8배 느린 비선형이 이것이다.
+- NPUsim 반영 (표의 C 열, MAPE 18.1% -> 9.0%):
+  1. 쓰기 경로 처리율: `[dram] mosaic_write_request_ns`(L2가 부분 쓰기를 받는 최소 간격). 섞기 2 MB
+     스트림에서 잰 6.55 cycle = 13.1 ns. DRAM이 아닌 별개 자원이라 critical path의 DRAM link 축에서
+     타입별 DRAM 스트림 합과 max로 결합한다(`stats_t::write_port_cycle_dram`). Gemmini의 load/store
+     DMA가 분리돼 읽기와 쓰기가 겹치기 때문이다. 16x16x16384 -18.8% -> -1.4%.
+  2. set 충돌: `[dram] mosaic_cache_ways`(8). 레이어의 출력 행 간격(`output_size`)과 타일 행 수로, 한
+     set에 way 수보다 많은 행이 몰리는지 레이어마다 판정한다. 몰리면 부분 쓰기마다 라인 RFO와 dirty
+     write-back을 DRAM에 더한다. 16x16x65536 -55.1% -> -8.6%. 다른 5점은 충돌이 없다.
+- 남은 최대 오차: 16x512x512 -28.9%. B(256 KB) 읽기에 묶인 점이다(LOAD_ACTIVE 49,686 / 50,795 cycles).
+  - RTL: 같은 패턴의 읽기 벤치(64 B 행, 512 B 간격) 45,094 cycles(5.81 B/cycle)로 연속 읽기(7.16)보다
+    23% 느리다. GEMM 49,892 = 이 45.1K + A 읽기, C 쓰기, 타일 fill 약 4.8K.
+  - 원인은 golden의 DRAMSim2 설정이다: ADDRESS_MAPPING_SCHEME=scheme2(하위부터 rank, bank, column,
+    row)라 bank = 라인 주소의 하위 3비트이고, 512 B(8 라인) 간격은 전부 한 bank에 간다. 여기에
+    TOTAL_ROW_ACCESSES=4가 4번마다 row를 닫아 한 bank의 ACT/PRE가 직렬화된다. 연속 라인은 8 bank를 돈다.
+  - NPUsim: B를 64비트 포트 속도(8 B/cycle, multi-chip 단계 34,816)로 읽는다. Ramulator2 DDR3
+    (RoBaRaCoCh: column이 하위 비트)는 512 B 간격이 같은 row의 hit라 느려지지 않는다(`bw3` 실험: 연속과
+    strip 모두 20.8 B/cycle). 또 NPUsim은 타일을 연속 주소 한 덩어리로 Ramulator에 넣는다.
+  - 고치려면 둘 다 필요하다: (a) MOSAIC Ramulator2에 scheme2와 같은 RoCoBaRaCh 매퍼를 추가하고
+    `ddr3_1333_simdram.yaml`을 그 매퍼 + ClosedCAP(cap 4)로, (b) NPUsim `mosaic_stream`이 타일을 행
+    단위(행 바이트, 레이어 행 간격)로 Ramulator에 넣기.
+
 ## 인프라 트러블슈팅 기록 (재현자 참고)
 
 1. **머신의 산발적 데이터 손상**: 대용량 HTTPS 다운로드 바이트 플립(동일 크기·
