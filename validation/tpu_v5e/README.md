@@ -747,7 +747,8 @@ refsb, mean / MAPE in % from unrounded per-run values:
 - Outside the calibration cases the candidate lowers the MAPE (3.17 -> 2.12%) by fixing the eight compute-bound
   cases (6.32 -> 2.17%, all eight closer); it does **not** help the twenty memory-bound ones (1.91 -> 2.11%), and
   the whole group moves from under- to over-prediction (-2.81 -> +1.89%).
-- **12 of the 28 get worse, all memory-bound, 11 of them bf16**: +0.77 .. +3.86 points of absolute error; the
+- **12 of the 28 get worse, all memory-bound, 10 of them bf16 and 2 int8** (8 x 14336 x 4096 and
+  8 x 4096 x 28672): +0.77 .. +3.86 points of absolute error; the
   largest are the 4096-row bf16 cases with few windows (8 x 4096 x 4096 -1.28 -> +5.13, 32 x 4096 x 4096
   -1.30 -> +5.07, 32 x 4096 x 6144 -0.28 -> +4.03, 8 x 4096 x 6144 -0.99 -> +4.05). In all of them B (the window
   schedule alone) already overshoots and the 590 cycles add to it.
