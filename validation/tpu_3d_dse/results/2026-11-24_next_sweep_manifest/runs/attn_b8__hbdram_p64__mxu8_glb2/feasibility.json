@@ -1,0 +1,12 @@
+{
+ "point": "attn_b8__hbdram_p64__mxu8_glb2",
+ "feasibility": {
+  "dram_capacity": true,
+  "kv_stream_exact": true
+ },
+ "mapping_products_KBC": [
+  1024,
+  8,
+  128
+ ]
+}

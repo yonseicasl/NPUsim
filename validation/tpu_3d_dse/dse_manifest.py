@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
-"""Next joint sweep, GENERATE ONLY: the screening grid of memory x TPU points with their derived quantities and
-the accelerator configs of the non-baseline TPU points. Nothing is simulated.
+"""Next joint sweep, GENERATE ONLY: the screening grid of memory x TPU points with their derived quantities, the
+accelerator configs of the non-baseline TPU points, and every run directory with its mapping regenerated for the
+point's MXU count and a feasibility record. Nothing is simulated.
+
+TARGET ARCHITECTURE (user, 2026-11-23/24): ONE DRAM die bonded directly on the xPU logic die -- 1-high. Channels,
+banks and DQ are organisation WITHIN that one die; a channel count is not a number of stacked dies. Capacity is
+what the selected organisation gives and is never multiplied by a layer count. Whether a given organisation fits
+above the logic footprint is NOT established by any preset (no die area is known here): footprint_checked = no.
+COMPUTE BASELINE of every point in this grid: tpu_v5e (the configuration compared with hardware). The unmeasured
+configs/accelerators/tpu_v7.cfg is a separate configuration and is not part of this grid.
 
 Memory points are EXISTING MOSAIC yaml; their coupled quantities are derived, not chosen independently
 (dse_pilot.memory_facts): total DQ = channels x DQ per channel, capacity = channels x organisation, nominal
@@ -24,6 +32,7 @@ Usage: python3 dse_manifest.py MOSAIC_ROOT OUT_DIR
 """
 import csv
 import json
+import math
 import os
 import re
 import sys
@@ -74,9 +83,10 @@ def main():
     os.makedirs(os.path.join(out, "accelerators"), exist_ok=True)
     base = open(os.path.join(dp.ca.ROOT, "configs", "accelerators", f"{dp.ca.ACCEL}.cfg")).read()
     mem = {n: dict(dp.memory_facts(root, os.path.join(root, y)), family=fam, axis=axis) for n, y, fam, axis in MEM}
-    tpu = {}
+    tpu, cfgs = {}, {}
     for name in dict.fromkeys(t for _, t in GRID):
         cfg, tpu[name] = tpu_cfg(base, name)
+        cfgs[name] = cfg
         if name != "mxu4":
             open(os.path.join(out, "accelerators", f"tpu_v5e_{name}.cfg"), "w").write(cfg)
             tpu[name]["config"] = f"accelerators/tpu_v5e_{name}.cfg"
@@ -88,8 +98,29 @@ def main():
     for m, t in GRID:
         f, c = mem[m], tpu[t]
         w = dp.WORKLOADS["gemm_m512"]
+        feas = {}
+        for wn, wk in dp.WORKLOADS.items():
+            d, name = dp.generate(out, f"{wn}__{m}__{t}", wk, os.path.join(root, f["yaml"]),
+                                  cfg=cfgs[t], mxus=c["mxus"])
+            mp = [[int(x) for x in l.split("=")[1].split(",")[:5]] for l in
+                  open(os.path.join(d, "configs", "mappings", dp.ca.ACCEL, name, "ws.map")) if re.match(r"\s*\w+\s*=", l)]
+            prod = [math.prod(r[i] for r in mp) for i in (0, 1, 4)]
+            if wk["kind"] == "gemm":
+                live = dp.live_set(wk)
+                glb = dict(Input=c["input_size_kb"] * 1024, Weight=c["weight_size_kb"] * 1024, Output=c["output_size_kb"] * 1024)
+                tensors = wk["M"] * wk["K"] * dp.ACT + wk["K"] * wk["N"] * dp.ACT
+                ok = dict(mapping=prod == [wk["N"], wk["M"], wk["K"]], vmem_share=all(live[k] <= glb[k] for k in live),
+                          whole_strips=wk["N"] % (c["mxus"] * dp.palm.DIM) == 0, dram_capacity=tensors <= f["capacity_bytes"])
+            else:
+                tensors = wk["B"] * wk["L"] * 2 * dp.ca.KVH * dp.ca.DH * dp.ca.KV_BYTES
+                ok = dict(dram_capacity=tensors <= f["capacity_bytes"], kv_stream_exact=tensors // 2 <= 32 * dp.MIB)
+            feas[wn] = ok
+            json.dump(dict(point=f"{wn}__{m}__{t}", feasibility=ok, mapping_products_KBC=prod),
+                      open(os.path.join(d, "feasibility.json"), "w"), indent=1)
         rows.append(dict(
-            point=f"{m}__{t}", memory=m, family=f["family"], axis=f["axis"], yaml=f["yaml"], impl=f["impl"],
+            point=f"{m}__{t}", architecture="DRAM-on-logic, 1-high" if f["impl"] == "HBDRAM" else "HBM beside the die (baseline only)",
+            compute_baseline="tpu_v5e", footprint_checked="no", memory=m, family=f["family"], axis=f["axis"], yaml=f["yaml"], impl=f["impl"],
+            feasible_all_workloads=all(all(v.values()) for v in feas.values()), feasibility=json.dumps(feas),
             channels=f["channels"], dq_per_channel=f["dq_per_channel"], total_dq=f["total_dq"], rate_mbps_per_dq=f["rate_mbps_per_dq"],
             capacity_gib=f["capacity_bytes"] / dp.GIB, nominal_interface_gbps=round(f["nominal_interface_gbps"], 1),
             transaction_bytes=f["transaction_bytes"], tck_ns=f["tck_ns"],
@@ -107,12 +138,18 @@ def main():
         wr = csv.DictWriter(fh, list(rows[0]))
         wr.writeheader()
         wr.writerows(rows)
-    json.dump(dict(memories=mem, tpu_points=tpu, workloads=dp.WORKLOADS, grid=rows,
+    json.dump(dict(architecture=dict(target="one DRAM die bonded directly on the xPU logic die (1-high)",
+                                     capacity_rule="derived from the performance organisation; never multiplied by a layer count",
+                                     footprint="not checked: no die area is known; an 8 GiB preset does not show the die fits above the logic",
+                                     out_of_scope=["HBM stack / channel expansion", "2 / 4 / 8-high stacks"],
+                                     compute_baseline="tpu_v5e for every point; tpu_v7.cfg (unmeasured) is separate and not in this grid"),
+                   memories=mem, tpu_points=tpu, workloads=dp.WORKLOADS, grid=rows,
                    not_generated=["256 x 256 arrays (new geometry and mappings)", "HBM stack / channel expansion (needs a new yaml and "
                                   "a statement of what is scaled; architecture question open)", "stack depth as a performance axis "
                                   "(not in the performance yaml)", "DVFS / mixed clocks (cycle-domain conversion not verified)"]),
               open(os.path.join(out, "manifest.json"), "w"), indent=1)
     print(f"{len(rows)} points x {len(dp.WORKLOADS)} workloads = {len(rows) * len(dp.WORKLOADS)} simulations if run; nothing simulated")
+    print("infeasible by the generated records: " + (", ".join(r["point"] for r in rows if not r["feasible_all_workloads"]) or "none"))
     for r in rows:
         print(f"  {r['point']:32s} {r['channels']:3d} ch x {r['dq_per_channel']:5d} DQ = {r['total_dq']:6d} DQ, {r['capacity_gib']:4.0f} GiB, "
               f"{r['nominal_interface_gbps']:7.1f} GB/s nominal, tx {r['transaction_bytes']:4d} B | {r['mxus']} MXUs, GLB weight {r['glb_weight_kb']} KB | {r['tpu_resource']}")

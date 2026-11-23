@@ -40,7 +40,7 @@ palm = ca.palm
 sha = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()
 MIB, GIB = 1 << 20, 1 << 30
 ACT = 2                                              # bf16 bytes
-STRIP_COLS = palm.MXUS * palm.DIM                    # output columns per DRAM iteration
+ACC = 4                                              # fp32 accumulator bytes (the GLB output partition)
 MEMORIES = {"hbm2e_refsb": ("configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml",
                             "HBM2e stacks beside the die; the model compared with TPU v5e hardware (baseline)"),
             "hbdram_example": ("configs/architecture/dram/thermal_sweep/hb3d_example.yaml",
@@ -98,8 +98,16 @@ def frozen(yamls):
     return f
 
 
-def generate(out, point, w, yaml):
-    """The run directory of one point; returns (dir, network name)."""
+def live_set(w):
+    """Bytes one MXU's VMEM share ([separate], declared PER MXU in the accelerator cfg) must hold for a GEMM: the
+    whole activation (each MXU reads all K inputs), one 128-column weight tile, one tile of fp32 accumulators.
+    Independent of the MXU count. Arithmetic on declared sizes -- the simulator does not enforce capacity."""
+    return dict(Input=w["M"] * w["K"] * ACT, Weight=w["K"] * palm.DIM * ACT, Output=w["M"] * palm.DIM * ACC)
+
+
+def generate(out, point, w, yaml, cfg=None, mxus=None):
+    """The run directory of one point; returns (dir, network name). cfg / mxus: another TPU point's accelerator
+    text and MXU count -- the mapping is REGENERATED for it (strips of mxus x 128 columns), not reused."""
     d = os.path.join(out, "runs", point)
     if os.path.exists(d):
         raise SystemExit(f"{d} exists; nothing was changed -- use a fresh OUT_DIR")
@@ -108,7 +116,7 @@ def generate(out, point, w, yaml):
         os.makedirs(os.path.join(cfgroot, sub))
     os.makedirs(os.path.join(rundir, "weights"))
     os.symlink(os.path.join(ca.ROOT, "models", "datasets"), os.path.join(rundir, "datasets"))
-    cfg = open(os.path.join(ca.ROOT, "configs", "accelerators", f"{ca.ACCEL}.cfg")).read()
+    cfg = cfg or open(os.path.join(ca.ROOT, "configs", "accelerators", f"{ca.ACCEL}.cfg")).read()
     assert "offchip_window_count" not in cfg and "window_switch_cycle" not in cfg     # default 0: not a v5e fit
     if w["kind"] == "gemm":
         name, dims = f"gemm_{w['M']}x{w['K']}x{w['N']}", (w["M"], w["K"], w["N"])
@@ -119,8 +127,14 @@ def generate(out, point, w, yaml):
         name, dims = f"attn_b{w['B']}_l{w['L']}", (w["B"], 128, 512)           # the dummy projection of the gate
         cfg += ca.KVCACHE.format(qh=ca.QH, kvh=ca.KVH, dh=ca.DH, kvb=ca.KV_BYTES, L=w["L"], B=w["B"])
     open(os.path.join(cfgroot, "accelerators", f"{ca.ACCEL}.cfg"), "w").write(cfg)
-    palm.gemm_files(cfgroot, rundir, name, ca.ACCEL, *dims)
-    json.dump(dict(point=point, workload=w, dram_yaml=yaml, network=name), open(os.path.join(d, "point.json"), "w"), indent=1)
+    base_mxus = palm.MXUS
+    palm.MXUS = mxus or base_mxus                 # gemm_files reads it: CHIPS_Y and the strip width
+    try:
+        palm.gemm_files(cfgroot, rundir, name, ca.ACCEL, *dims)
+    finally:
+        palm.MXUS = base_mxus
+    json.dump(dict(point=point, workload=w, dram_yaml=yaml, network=name, mxus=mxus or base_mxus),
+              open(os.path.join(d, "point.json"), "w"), indent=1)
     return d, name
 
 
@@ -170,7 +184,7 @@ def parse(d, name, w):
         M, K, N = w["M"], w["K"], w["N"]
         r.update(metric="GEMM critical path", latency_cycles=r["layer_critical_path_cycles"],
                  expected_payload_bytes=dict(input=M * K * ACT, weight=K * N * ACT, output=0), expected_macs=M * K * N,
-                 live_set_bytes=dict(Input=M * K * ACT, Weight=K * STRIP_COLS * ACT, Output=M * STRIP_COLS * ACT),
+                 live_set_bytes=live_set(w),
                  approximation="tile streams: a tile is charged its share of a >= 1 MiB sequential stream on a fresh "
                                "device (amortized start); contiguous, uncontended")
         r["mapping_ok"] = r["mapping_products_KBC"] == [N, M, K]
@@ -264,7 +278,7 @@ def main():
         if w["kind"] == "gemm":
             checks.append((f"{p}: MACs = M x K x N, DRAM payload = input + weights once, no output; mapping products = N, M, K",
                            r["scalar_macs"] == r["expected_macs"] and r["dram_payload_bytes"] == r["expected_payload_bytes"] and r["mapping_ok"]))
-            checks.append((f"{p}: live tensors fit the declared GLB (input, one weight strip, one output strip)",
+            checks.append((f"{p}: live tensors fit one MXU's declared VMEM share (activation, weight tile, accumulators)",
                            all(r["live_set_bytes"][k] <= r["glb_declared_bytes"][k] for k in ("Input", "Weight", "Output"))))
         else:
             checks.append((f"{p}: reported KV read / append bytes = geometry; K / V read backend-derived and exact",

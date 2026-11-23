@@ -1,0 +1,11 @@
+{
+ "point": "attn_b8__hbdram_p64__mxu4",
+ "workload": {
+  "kind": "attention",
+  "B": 8,
+  "L": 2048
+ },
+ "dram_yaml": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/cloud/cloud_4TBps.yaml",
+ "network": "attn_b8_l2048",
+ "mxus": 4
+}

@@ -1,0 +1,37 @@
+# 1-high DRAM-on-logic thermal scenario for MOSAIC's tests/thermal_dram_sweep.py -- PREPARED, NOT RUN.
+#
+# Target architecture (user, 2026-11-23/24): ONE DRAM die bonded directly on the xPU logic die. MOSAIC's own
+# examples (configs/architecture/dram/thermal_sweep/dram_models.yaml) start at 2 stacked dies; their outputs are
+# NOT results for this structure and must not be reused for it.
+#
+# Usage, from the MOSAIC root (needs the HotSpot binary, see tests/thermal_dram_sweep.py):
+#   python tests/thermal_dram_sweep.py --dram-models <this file> --output-dir <a fresh directory>
+#
+# What every number below is:
+#   num_memory_layer 1      the specified structure.
+#   geometry                the script's documented DEFAULTS, written out so the scenario does not change if the
+#                           defaults do: hybrid-bonded D2D 1.3 um, memory die 40 um, BEOL 5 um, total stack 750 um
+#                           (the rest is dummy filler). No measured or vendor geometry is behind them.
+#   dram_power 1.33 W/core  ASSUMPTION, not a derived value: the repository's examples scale power linearly with
+#                           stack depth from a 4-layer 5.33 W/core baseline (5.33 / 4). A single die that serves the
+#                           same traffic alone need not draw a quarter of that: I/O power follows the bytes moved,
+#                           not the die count. A justified DRAM power model (core + hybrid-bond I/O at the sweep's
+#                           actual GB/s) must replace this before any thermal feasibility is claimed.
+#   config_path             the performance yaml of the DSE pilot's example profile; it does not affect HotSpot.
+# Not covered by this file, and to be stated with any output:
+#   - the script's base chip (configs/architecture/chip/npu_tpu_128x128.yaml) is MOSAIC's 16-core flat-MAC
+#     TPU-style chip, a different engine and floorplan from the four-MXU NPUsim tpu_v5e model of the DSE; logic
+#     power comes from MOSAIC's assumptions, not from NPUsim (whose energy is unpriced);
+#   - no die footprint is known, so whether an 8 GiB single die fits above the logic die is not checked
+#     (memory_die_size defaults to the logic die_size);
+#   - capacity comes from the performance organisation, never from num_memory_layer.
+dram_models:
+  - name: hb3d_1layer
+    config_path: configs/architecture/dram/thermal_sweep/hb3d_example.yaml
+    topology: 3d
+    num_memory_layer: 1
+    dram_power: 1.33
+    d2d_bonding_style: hb
+    memory_die_thickness: 40.0e-6
+    beol_thickness: 5.0e-6
+    total_stack_height: 750.0e-6
