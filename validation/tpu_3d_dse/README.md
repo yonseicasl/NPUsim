@@ -1,5 +1,13 @@
 # TPU x 3D-stacked DRAM: design-space exploration brief (first phase, 2026-11-23)
 
+> **SCOPE AS OF 2026-11-24 (user): the memory is FIXED; the exploration is of the TPU LOGIC, for DECODE LATENCY.**
+> Target: four DRAM dies bonded directly on one logic die, 2 x 2 side by side, one vertical tier. Per die 256
+> channels, 4 banks per channel, 6 GB, 8 TB/s theoretical-maximum bandwidth, 14 x 11 mm; in aggregate 1024
+> channels, 24 GB, 32 TB/s; logic die 33 x 26 mm. See **"Fixed target and logic screening"** at the end
+> (`target/`). Everything between here and that section is the earlier, generic model study: the six-run pilot
+> stays valid as such but is NOT the target design, and the memory-channel sweep manifests are obsolete
+> exploratory material that will not be run.
+
 Branch `tpu-3d-dse` (on the reviewed KV revision `kv-integration` 2ab9084). The TPU-fidelity phase is closed
 here: no further measurement-comparison cohorts, probes or fitted-window experiments. Its unresolved limits
 (below) travel with every number of this exploration.
@@ -148,3 +156,64 @@ scope, against the published rooflines -- a sanity check, not fidelity:
 
 MAC counts and DRAM payload are exact in all three. Open: no MOSAIC yaml of this HBM (the analytical model is
 used), fp8 mode, the real MXU microarchitecture, and whether the v5e setup times apply.
+
+## Fixed target and logic screening (2026-11-24)
+
+**Fixed inputs** -- `target/target_profile.json`, units as the user stated them; not search axes:
+
+| | per DRAM die | aggregate (4 dies, 2 x 2, one tier) |
+|---|---|---|
+| channels | 256 | 1024 |
+| banks | 4 per channel = 1024 | 4096 |
+| capacity | 6 GB | 24 GB |
+| bandwidth, theoretical maximum | 8 TB/s | 32 TB/s |
+| footprint | 14 x 11 mm = 154 mm^2 | 616 mm^2, envelope 28 x 22 mm |
+
+Logic die 33 x 26 mm = 858 mm^2. Objective: decode latency first (batch-1 token latency as the first screen), over
+prefill and over throughput; no model, precision or context is selected. Not given, and not invented: DQ width and
+signalling rate per channel, row / column organisation, timings and refresh, read / write sharing, die coordinates
+and gaps, which logic attaches to which die, process node, area / power / cooling budgets.
+
+**Derived** (`target/target_profile.py` -> `target/2026-11-24_consistency/`): per channel 187.5 Mb and 31.25 GB/s
+(250 Gb/s) nominal; per bank 46.875 Mb; 0.312 Gb/mm^2; a whole die read at the nominal peak in 0.75 ms. The 2 x 2
+envelope fits the logic footprint with 5 x 4 mm of slack before any gap or keep-out (71.8% of the logic area) --
+a geometric statement only. The stated aggregates equal 4 x the per-die values. 512 DQ at 500 Mbps would give
+8.192 TB/s per die (2.4% above the stated 8) -- a consistent candidate, not a fact.
+
+**Can the performance model represent it? Partly.**
+
+| aspect | representable now | note |
+|---|---|---|
+| 256 / 1024 channels | yes | runtime probe on stand-in yaml: runs; sequential read 7661 GB/s (256 ch x 512 DQ x 500 Mbps, 8.192 TB/s nominal) and 30897 GB/s (1024 ch) |
+| 4 banks per channel | NO | every HBDRAM preset has one bank per channel |
+| 6 GB per die | NO | 187.5 Mb per channel is not a power-of-two organisation, and no preset or tRFC / tREFI entry exists for it; NOT rounded |
+| target timings | NO | unknown; the repository's 500 / 400 Mbps presets are not the target's |
+| four interface domains | NO | NPUsim has one `[dram]` endpoint and one staging link |
+
+So no run can be labelled "the target memory". Until the organisation is added to MOSAIC's DRAM model, the only
+memory scenarios are the validated HBM2e reference and an IDEALIZED aggregate endpoint (one 1024-channel stand-in:
+right interface rate to 2.4%, wrong capacity, no locality or contention between dies).
+
+**Decision variables (logic side):** MXU count and array shape; VMEM allocation, partition, banking, ports and
+bandwidth; the on-chip feed from the DRAM interface to the MXUs; DMA request size and concurrency; mapping and
+dataflow. Clock stays fixed until a power / thermal and clock-domain model exists. MXUs, SRAM, feed and interface
+logic share one logic-area budget and no area model exists: every resource-changing point is exploratory.
+
+**Screening manifest, generated and not run** (`target/logic_manifest.py` -> `target/2026-11-24_logic_manifest/`):
+5 logic points (MXUs 4 / 8 / 16, feed 1 / 4 / 32 KB per cycle) x 2 memory scenarios x 4 workload scenarios
+(batch-1 matrix-vector 4096 x 4096 and 4096 x 14336, a batch-8 sensitivity, a batch-1 KV attention step) = 40
+points, with accelerator configs and the first-order rates each configuration implies. Compute baseline
+`tpu_v5e`; `tpu_v7.cfg` is separate and unmeasured.
+
+What the configuration itself already says (arithmetic on declared rates, not a result): a batch-1 matrix-vector
+product is all weight supply -- its compute bound is 0.17 us against 41 us of weight stream on HBM2e (a scratch
+run of the existing model gives 41.8 us, DRAM-bound, compute busy 0.9%). With a 32 TB/s memory the limiter moves
+on chip: `tpu_v5e.cfg`'s staging link carries 1 KB per cycle (1.54 TB/s) and each MXU takes one 128-element row
+(256 B) per cycle, 1.54 TB/s for four. Widening the feed alone changes nothing (21.8 us); 8 / 16 MXUs give 10.9 /
+5.5 us; reaching the memory's nominal peak would take about 21 x the weight-ingest rate of four MXUs. Whether a
+real TPU's weight path is limited like the model's has never been tested -- the hardware comparison never
+exceeded the HBM's 750 GB/s.
+
+**Superseded:** the one-die description (2026-11-23); `results/2026-11-2{3,4}_next_sweep_manifest/` (memory
+pin-count / channel grid: obsolete, not to be run); `thermal_1high/dram_models_1high.yaml` predates the four-die
+footprint -- its memory die defaults to the full logic die and must be given the real placement before use.

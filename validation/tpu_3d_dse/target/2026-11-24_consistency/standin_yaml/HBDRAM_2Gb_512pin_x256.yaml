@@ -1,0 +1,43 @@
+# Example 3D DRAM (hybrid-bonded) Ramulator2 config for the thermal sweep.
+#
+# This file feeds the *performance* simulator (mosaicsim). The thermal-only 3D
+# stack knobs (number of stacked DRAM dies, DRAM power) live in
+# dram_models.yaml next to this file.
+#
+# Edit freely -- the key knobs are:
+#   MemorySystem.DRAM.impl:            HBDRAM (3D hybrid-bonded) | HBM3 | HBM2 | HBM
+#   MemorySystem.DRAM.org.preset:      density / DQ-pin / row-col organization; the
+#     full preset table is in simulator/src/dram/ramulator2/src/dram/impl/HB-DRAM.cpp
+#     (e.g. HBDRAM_4Gb_1024pin, HBDRAM_8Gb_2048pin, HBDRAM_16Gb_1024pin_512col, ...)
+#   MemorySystem.DRAM.org.channel:     number of channels
+#   MemorySystem.DRAM.timing.preset:   HBDRAM_500Mbps | HBDRAM_400Mbps
+#   MemorySystem.AddrMapper.channel_lowest_bit: channel-interleaving bit position
+Frontend:
+  impl: HBFrontend
+  clock_ratio: 1
+
+MemorySystem:
+  impl: GenericDRAM
+  clock_ratio: 1
+
+  DRAM:
+    impl: HBDRAM
+    org:
+      preset: HBDRAM_2Gb_512pin
+      channel: 256
+    timing:
+      preset: HBDRAM_500Mbps
+
+  Controller:
+    impl: Generic
+    Scheduler:
+      impl: FRFCFS
+    RefreshManager:
+      impl: AllBank
+    RowPolicy:
+      impl: OpenRowPolicy
+    plugins:
+
+  AddrMapper:
+    impl: OneLevelInterleave
+    channel_lowest_bit: 5

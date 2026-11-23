@@ -1,0 +1,154 @@
+{
+ "per_die": {
+  "channels": 256,
+  "banks": 1024,
+  "capacity_bytes": 6000000000.0,
+  "nominal_peak_bytes_per_s": 8000000000000.0,
+  "footprint_mm2": 154,
+  "capacity_bits_per_channel": 187500000.0,
+  "capacity_bits_per_bank": 46875000.0,
+  "nominal_bytes_per_s_per_channel": 31250000000.0,
+  "nominal_bits_per_s_per_channel": 250000000000.0,
+  "bit_density_Gb_per_mm2": 0.3116883116883117,
+  "seconds_to_read_whole_die_at_nominal": 0.00075
+ },
+ "aggregate": {
+  "channels": 1024,
+  "banks": 4096,
+  "capacity_bytes": 24000000000.0,
+  "nominal_peak_bytes_per_s": 32000000000000.0,
+  "dram_footprint_mm2": 616
+ },
+ "geometry": {
+  "logic_footprint_mm2": 858,
+  "envelope_2x2_mm": [
+   28,
+   22
+  ],
+  "envelope_fits_logic": true,
+  "slack_mm": [
+   5,
+   4
+  ],
+  "dram_over_logic_area_ratio": 0.717948717948718,
+  "note": "geometric envelope without gaps or keep-outs; says nothing about bonding, routing or thermal feasibility"
+ },
+ "interface_candidates_not_facts": [
+  {
+   "dq": 256,
+   "rate_mbps": 976.5625,
+   "note": ""
+  },
+  {
+   "dq": 500,
+   "rate_mbps": 500.0,
+   "note": ""
+  },
+  {
+   "dq": 512,
+   "rate_mbps": 488.28125,
+   "note": "512 DQ at the repository's HBDRAM_500Mbps timing gives 8.192 TB/s per die, 2.4% above the stated 8"
+  },
+  {
+   "dq": 1024,
+   "rate_mbps": 244.140625,
+   "note": ""
+  }
+ ],
+ "checks": [
+  {
+   "check": "aggregate channels as stated = dies x per die",
+   "ok": true
+  },
+  {
+   "check": "aggregate capacity as stated = dies x per die",
+   "ok": true
+  },
+  {
+   "check": "aggregate nominal bandwidth as stated = dies x per die",
+   "ok": true
+  },
+  {
+   "check": "2 x 2 envelope fits the logic footprint (no gaps assumed)",
+   "ok": true
+  }
+ ],
+ "representability": {
+  "channels": {
+   "target": 256,
+   "representable": true,
+   "how": "runtime probe below"
+  },
+  "banks_per_channel": {
+   "target": 4,
+   "representable": false,
+   "model_has": [
+    1
+   ],
+   "note": "every HBDRAM preset has one bank per channel (stated in the spec's docstring); 4 banks need a new preset"
+  },
+  "capacity_per_channel": {
+   "target_megabits_decimal": 187.5,
+   "preset_densities_megabits": [
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+    8192,
+    16384,
+    32768
+   ],
+   "representable": false,
+   "note": "187.5 Mb (decimal) per channel: with a power-of-two DQ the rows x columns per bank are not an integer; read as GiB it is 192 Mib = 3 x 2^26 bits, which needs a non-power-of-two row count and a density the model has no tRFC / tREFI entry for. NOT rounded to a preset here."
+  },
+  "timings": {
+   "representable": false,
+   "note": "target timings / refresh unknown; HBDRAM_500Mbps / 400Mbps are the repository's, not the target's"
+  },
+  "four_domains": {
+   "representable": false,
+   "note": "NPUsim has one [dram] endpoint and one staging link; four interface domains with local and cross-domain routes are not modeled. A single 1024-channel endpoint is an IDEALIZED aggregate-supply scenario only."
+  }
+ },
+ "standin_runtime_probes": [
+  {
+   "standin": "standin_yaml/HBDRAM_2Gb_512pin_x256.yaml",
+   "why": "one die's channel count at 512 DQ x 500 Mbps (capacity 64 GB: NOT the target)",
+   "runs": true,
+   "runtime_channels": 256,
+   "transaction_bytes": 64,
+   "tck_ns": 2.0,
+   "nominal_bytes_per_s": 8192000000000.0,
+   "sequential_read_GB_per_s_64MiB_64tx_requests": 7660.83
+  },
+  {
+   "standin": "standin_yaml/HBDRAM_2Gb_512pin_x1024.yaml",
+   "why": "idealized single endpoint of all four dies (capacity 256 GB: NOT the target)",
+   "runs": true,
+   "runtime_channels": 1024,
+   "transaction_bytes": 64,
+   "tck_ns": 2.0,
+   "nominal_bytes_per_s": 32768000000000.0,
+   "sequential_read_GB_per_s_64MiB_64tx_requests": 30897.27
+  },
+  {
+   "standin": "standin_yaml/HBDRAM_1Gb_256pin_x256.yaml",
+   "why": "one die's channel count at 256 DQ (4.1 TB/s nominal: NOT the target rate)",
+   "runs": true,
+   "runtime_channels": 256,
+   "transaction_bytes": 32,
+   "tck_ns": 2.0,
+   "nominal_bytes_per_s": 4096000000000.0,
+   "sequential_read_GB_per_s_64MiB_64tx_requests": 3948.51
+  }
+ ],
+ "decode_bound_example": {
+  "note": "arithmetic only, no model selected: a batch-1 decode token of a model whose weights fill W bytes reads W once; at the AGGREGATE THEORETICAL MAXIMUM that takes W / 32 TB/s. It is a lower bound on supply time, not a latency.",
+  "examples": {
+   "8 GB of weights": "0.250 ms",
+   "16 GB of weights": "0.500 ms",
+   "24 GB of weights": "0.750 ms"
+  }
+ }
+}
