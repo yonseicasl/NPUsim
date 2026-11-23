@@ -1,4 +1,8 @@
 # 1-high DRAM-on-logic thermal scenario for MOSAIC's tests/thermal_dram_sweep.py -- PREPARED, NOT RUN.
+# 2026-11-24: the target is now FOUR DRAM dies of 14 x 11 mm, 2 x 2 side by side on a 33 x 26 mm logic die (one
+# tier). This entry predates that: it leaves memory_die_size at its default (the full logic die). Before any use,
+# set die_size / memory_die_size from the real placement (the 2 x 2 envelope is 28 x 22 mm before gaps) and say
+# that one slab stands in for four dies; coordinates and gaps are not known yet.
 #
 # Target architecture (user, 2026-11-23/24): ONE DRAM die bonded directly on the xPU logic die. MOSAIC's own
 # examples (configs/architecture/dram/thermal_sweep/dram_models.yaml) start at 2 stacked dies; their outputs are
