@@ -1,0 +1,3 @@
+Warning: network layer 1 is excluded from accelerator timing (only convolution/connected are supported)
+Warning: network layer 2 is excluded from accelerator timing (only convolution/connected are supported)
+WARNING: partial timing result; 2 non-convolution/connected layers were excluded.

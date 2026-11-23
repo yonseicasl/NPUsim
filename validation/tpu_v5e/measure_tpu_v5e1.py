@@ -9,6 +9,8 @@ multi-chip experiments are in measure_tpu_v5e8.py, which imports this file for i
                    ffn_*, norms)
   smallk.csv       (--only smallk, not in the default set) fixed per-kernel time: K sweeps at small M, N,
                    the smallest elementwise kernel, chains of n matmuls in one program; fits in smallk_fit.csv
+  chainprobe.csv   (--only chainprobe, not in the default set) the two chained-GEMM programs of smallk's
+                   oddchain and loopk's unrolled in one session, HLO and traces kept; refuses an --out with output
   loopk.csv        (--only loopk, not in the default set) per-iteration cost of a while loop: n dependent
                    matmuls as a fori_loop over stacked weights vs unrolled; fits in loopk_fit.csv
   env.json         devices, versions
@@ -780,6 +782,80 @@ def tailprobe():
               open(os.path.join(ARGS.out, "tailprobe_meta.json"), "w"), indent=1)
 
 
+def chainprobe_refuse_existing(out):
+    """Nothing of an earlier chainprobe run is removed or overwritten: stop if `out` already holds any."""
+    old = [p for pat in ("chainprobe*.csv", "chainprobe*.json", os.path.join("hlo", "chainprobe_*"),
+                         os.path.join("traces", "chainprobe_*")) for p in glob.glob(os.path.join(out, pat))]
+    if old:
+        raise SystemExit(f"chainprobe: {out} already holds chainprobe output ({len(old)} entries, e.g. "
+                         f"{os.path.relpath(sorted(old)[0], out)}); nothing was changed -- use a fresh --out")
+
+
+def chainprobe():
+    """Optional remeasurement (not in the default --only) of the two chained-GEMM programs whose stored per-kernel
+    costs disagree (100 x 1000 x 1000: smallk2 `oddchain` (t8 - t1) / 7 = 2.81 us, loopk `unrolled` 4.1 us), in ONE
+    session with the optimized HLO and the trace of every program kept. n dependent y = y @ W_i, bf16, distinct
+    K x K weights, the three shapes both stored runs share, n = 1, 2, 4, 8, 16:
+      args     the n weights as n separate arguments          (smallk's oddchain)
+      stacked  one [n, K, K] argument, ws[i] sliced, unrolled (loopk's unrolled)
+    chainprobe.csv, per program: wall_us; device_us (median module duration of the trace); ops (per-op mean us of
+    the trace, JSON) and copy_us (its copy-start / copy-done part); hlo_facts (the compiler's static choices);
+    sha256 of the HLO text and of every trace file. No slope is fitted here and nothing is inferred about
+    staging. Needs a TPU; --quick on another backend is a functional check only (its times mean nothing)."""
+    chainprobe_refuse_existing(ARGS.out)          # also checked in main() before env.json is written
+    if jax.default_backend() != "tpu" and not ARGS.quick:
+        raise SystemExit("chainprobe: no TPU (backend " + jax.default_backend() + "); --quick runs a functional check")
+    ARGS.keep_traces = True
+    dev = jax.devices()[0]
+    put = lambda k, s, scale=1.0: jax.device_put((rnd(k, s).astype(F32) * scale).astype(BF16), dev)
+    shapes = [(8, 128)] if ARGS.quick else [(100, 1000), (128, 1024), (256, 2048)]
+    ns = (1, 2) if ARGS.quick else (1, 2, 4, 8, 16)
+    os.makedirs(os.path.join(ARGS.out, "hlo"), exist_ok=True)
+
+    def args_chain(x, *ws):
+        for w in ws:
+            x = x @ w
+        return x
+
+    def stacked_chain(x, ws):
+        for i in range(ws.shape[0]):
+            x = x @ ws[i]
+        return x
+
+    rows = []
+    for M, K in shapes:
+        for n in ns:
+            count = nsets(2 * (M * K + n * K * K))
+            for kind, fn in (("args", args_chain), ("stacked", stacked_chain)):
+                # weights scaled by 1/sqrt(K) keep the chained values in range; distinct sets rotate as elsewhere
+                if kind == "args":
+                    sets = [(put(9000 * i + 1, (M, K)), *[put(9000 * i + j + 2, (K, K), K ** -0.5) for j in range(n)])
+                            for i in range(count)]
+                else:
+                    sets = [(put(9000 * i + 1, (M, K)), put(9000 * i + 2, (n, K, K), K ** -0.5)) for i in range(count)]
+                tag, f = f"chainprobe_{kind}_{M}x{K}_n{n}", jax.jit(fn)
+                text = f.lower(*sets[0]).compile().as_text()
+                open(os.path.join(ARGS.out, "hlo", tag + ".txt"), "w").write(text)
+                r = bench(f, sets, tag)
+                d = os.path.join(ARGS.out, "traces", tag)
+                files = sorted(p for p in glob.glob(os.path.join(d, "**", "*"), recursive=True) if os.path.isfile(p))
+                rows.append(dict(
+                    kind=kind, M=M, K=K, N=K, n=n, weight_bytes=2 * n * K * K, sets=r["sets"], iters=r["iters"],
+                    backend=jax.default_backend(), wall_us=round(r["wall_us"], 3),
+                    device_us=r["device_us"] and round(r["device_us"], 3),
+                    ops=r["ops"] and json.dumps({k: round(v, 3) for k, v in r["ops"].items()}),
+                    copy_us=r["ops"] and round(sum(v for k, v in r["ops"].items() if "copy-" in k), 3),
+                    hlo_facts=json.dumps(hlo_facts(text)), hlo_sha256=hashlib.sha256(text.encode()).hexdigest(),
+                    trace_sha256=json.dumps({os.path.relpath(p, d): hashlib.sha256(open(p, "rb").read()).hexdigest()
+                                             for p in files})))
+                print(f"chainprobe {kind:7s} {M:4d} x {K:5d} n={n:2d}  {fmt(r)}  copy {rows[-1]['copy_us']}")
+                write("chainprobe.csv", rows)     # rewritten per program: a later failure keeps the earlier rows
+    json.dump(dict(script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(),
+                   argv=sys.argv, quick=ARGS.quick, backend=jax.default_backend(), jax=jax.__version__,
+                   scope="per program: raw wall, median module duration, per-op means; no slope, no staging claim"),
+              open(os.path.join(ARGS.out, "chainprobe.json"), "w"), indent=1)
+
+
 def run(experiments, default_only, out_name, argv=None):
     """Parse the common options, write env.json and run the selected experiments (name -> function)."""
     global ARGS
@@ -832,8 +908,10 @@ def main(argv=None):
     known = pre.parse_known_args(argv)[0]
     if "tailprobe" in known.only.split(","):
         tailprobe_refuse_existing(known.out)
+    if "chainprobe" in known.only.split(","):
+        chainprobe_refuse_existing(known.out)
     run({"gemm": gemm, "vector": vector, "decode": decode, "smallk": smallk, "loopk": loopk, "balance": balance,
-         "tailprobe": tailprobe},
+         "tailprobe": tailprobe, "chainprobe": chainprobe},
         "gemm,vector,decode", "tpu_v5e1", argv)
 
 

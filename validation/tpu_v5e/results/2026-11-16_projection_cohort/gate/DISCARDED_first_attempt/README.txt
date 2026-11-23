@@ -1,0 +1,1 @@
+The first attempt of the gate ran to the end but the driver discarded its results: its frozen check also compared the list of modified git files, and README.md / REVIEW.md were edited (documentation only) while it ran. Binary, library, driver and configs were unchanged (FROZEN.sha256 check passed). No timing of this attempt is used.

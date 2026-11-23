@@ -1,0 +1,27 @@
+{'kind': 'whole', 'M': 2048, 'K': 2048, 'N': 2048, 'row_tiles': 4, 'batch_rows': 2048, 'list_lines': 2048, 'exit': 0, 'wall_s': 1011.0, 'critical_path_cycles': 141541.3, 'dram_busy_cycles': 139712.0, 'scalar_macs': 8589934592.0, 'expected_macs': 8589934592, 'dram_payload_bytes': {'input': 33554432, 'weight': 33554432, 'output': 8388608}, 'expected_payload_bytes': {'input': 8388608, 'weight': 8388608, 'output': 8388608}, 'residency': 'activation_residency 1: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)', 'checks_ok': False}
+{'kind': 'whole_glb', 'M': 2048, 'K': 2048, 'N': 2048, 'row_tiles': 4, 'batch_rows': 2048, 'list_lines': 2048, 'exit': 0, 'wall_s': 259.8, 'critical_path_cycles': 133398.7, 'dram_busy_cycles': 46448.0, 'scalar_macs': 8589934592.0, 'expected_macs': 8589934592, 'dram_payload_bytes': {'input': 8388608, 'weight': 8388608, 'output': 8388608}, 'expected_payload_bytes': {'input': 8388608, 'weight': 8388608, 'output': 8388608}, 'residency': 'activation_residency 1: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)', 'checks_ok': True}
+{'kind': 'first', 'M': 2048, 'K': 2048, 'N': 2048, 'row_tiles': 4, 'batch_rows': 512, 'list_lines': 512, 'exit': 0, 'wall_s': 259.5, 'critical_path_cycles': 34681.6, 'dram_busy_cycles': 23270.0, 'scalar_macs': 2147483648.0, 'expected_macs': 2147483648, 'dram_payload_bytes': {'input': 2097152, 'weight': 8388608, 'output': 2097152}, 'expected_payload_bytes': {'input': 2097152, 'weight': 8388608, 'output': 2097152}, 'residency': 'activation_residency 1: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)', 'checks_ok': True}
+{'kind': 'inner', 'M': 2048, 'K': 2048, 'N': 2048, 'row_tiles': 4, 'batch_rows': 512, 'list_lines': 512, 'exit': 0, 'wall_s': 261.3, 'critical_path_cycles': 34603.6, 'dram_busy_cycles': 23270.0, 'scalar_macs': 2147483648.0, 'expected_macs': 2147483648, 'dram_payload_bytes': {'input': 2097152, 'weight': 8388608, 'output': 2097152}, 'expected_payload_bytes': {'input': 2097152, 'weight': 8388608, 'output': 2097152}, 'residency': 'activation_residency 1: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)', 'checks_ok': True}
+	Command being timed: "timeout 7000 python3 row_tile_repro.py results/2026-11-17_row_tiling/runs 2048,2048,2048 --kinds whole,whole_glb,first,inner -j 4 --timeout 6500"
+	User time (seconds): 1791.82
+	System time (seconds): 1.87
+	Percent of CPU this job got: 177%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 16:51.09
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 1317896
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1260617
+	Voluntary context switches: 469
+	Involuntary context switches: 4172
+	Swaps: 0
+	File system inputs: 0
+	File system outputs: 936
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

@@ -1,0 +1,473 @@
+{
+  "status": "PASS",
+  "limits": "Reused trace_bytes protobuf wire/stat decoding only; reconstructed event intervals/aggregation separately. Report times have 0.1-cycle print precision; no TPU rerun or new simulator runs.",
+  "manifest_cases": 40,
+  "supported": 32,
+  "unsupported": 8,
+  "conv_events": 256,
+  "runs": 24,
+  "metrics": [
+    {
+      "dram": "analytic_fusedout",
+      "cases": [
+        {
+          "case": "int8:8:4096:6144",
+          "calibration": false,
+          "errors": {
+            "A": -10.184755565942893,
+            "B": -7.163723093115215,
+            "C": -6.04964773905039
+          }
+        },
+        {
+          "case": "bf16:32:4096:6144",
+          "calibration": false,
+          "errors": {
+            "A": -8.438567871765235,
+            "B": -4.706294502513419,
+            "C": -4.13275663517515
+          }
+        },
+        {
+          "case": "int8:128:14336:4096",
+          "calibration": true,
+          "errors": {
+            "A": -18.02137815648478,
+            "B": -16.08093611702237,
+            "C": -1.4793084572780502
+          }
+        },
+        {
+          "case": "bf16:512:14336:4096",
+          "calibration": false,
+          "errors": {
+            "A": -4.015016468718391,
+            "B": -3.196579749535633,
+            "C": 3.6001600125019184
+          }
+        }
+      ],
+      "noncal_mape": {
+        "A": 7.5461133021421745,
+        "B": 5.0221991150547565,
+        "C": 4.5941881289091535
+      }
+    },
+    {
+      "dram": "hbm2e_tpu_v5e_refsb_fusedout",
+      "cases": [
+        {
+          "case": "int8:8:4096:6144",
+          "calibration": false,
+          "errors": {
+            "A": -3.4126880238782853,
+            "B": -0.3916555510506181,
+            "C": 0.7224198030142182
+          }
+        },
+        {
+          "case": "bf16:32:4096:6144",
+          "calibration": false,
+          "errors": {
+            "A": -0.27906821570203855,
+            "B": 3.453107943741762,
+            "C": 4.026645811080032
+          }
+        },
+        {
+          "case": "int8:128:14336:4096",
+          "calibration": true,
+          "errors": {
+            "A": -11.797518721439648,
+            "B": -9.866418466603522,
+            "C": -1.3155483670755364
+          }
+        },
+        {
+          "case": "bf16:512:14336:4096",
+          "calibration": false,
+          "errors": {
+            "A": -4.009904473026449,
+            "B": -3.1147257294479425,
+            "C": 3.681993336250766
+          }
+        }
+      ],
+      "noncal_mape": {
+        "A": 2.5672202375355906,
+        "B": 2.319829741413441,
+        "C": 2.8103529834483383
+      }
+    }
+  ],
+  "trace_audit": [
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x4096x6144_bf16_cold"
+    },
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x4096x6144_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 68.785752,
+      "read": 50397184,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_8x4096x6144_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 35.3058105,
+      "read": 25231360,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_8x4096x6144_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 68.5801855,
+      "read": 50593792,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x4096x6144_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 35.1959765,
+      "read": 25427968,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x4096x6144_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 71.693545,
+      "read": 51380224,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x4096x6144_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 42.589375,
+      "read": 26214400,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x4096x6144_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 144.6936035,
+      "read": 54525952,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x4096x6144_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 142.5475195,
+      "read": 29360128,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x4096x6144_int8_cold"
+    },
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x4096x4096_bf16_cold"
+    },
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x4096x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 46.09611325,
+      "read": 33619968,
+      "write": 4,
+      "other": 0,
+      "tag": "stream_gemm_8x4096x4096_bf16"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 24.11317375,
+      "read": 16842752,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_8x4096x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 46.39192375,
+      "read": 33816576,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x4096x4096_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 24.854375,
+      "read": 17039360,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x4096x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 49.485371,
+      "read": 34603008,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x4096x4096_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 30.41550775,
+      "read": 17825792,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x4096x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 99.47190425,
+      "read": 37748736,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x4096x4096_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 96.54750975,
+      "read": 20971520,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x4096x4096_int8_cold"
+    },
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x4096x28672_bf16_cold"
+    },
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x4096x28672_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 314.90276375,
+      "read": 234946560,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_8x4096x28672_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 157.00238275,
+      "read": 117506048,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_8x4096x28672_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 313.4711425,
+      "read": 235143168,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x4096x28672_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 159.5881445,
+      "read": 117702656,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x4096x28672_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 315.6256445,
+      "read": 235929600,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x4096x28672_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 187.2193555,
+      "read": 118489088,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x4096x28672_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 641.88732425,
+      "read": 239075328,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x4096x28672_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 653.78613275,
+      "read": 121634816,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x4096x28672_int8_cold"
+    },
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x14336x4096_bf16_cold"
+    },
+    {
+      "ids": 0,
+      "conv": 0,
+      "modules": 1,
+      "tag": "gemm_1x14336x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 157.52517575,
+      "read": 117669888,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_8x14336x4096_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 79.6161035,
+      "read": 58949632,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_8x14336x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 158.18359375,
+      "read": 118358016,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x14336x4096_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 81.84624025,
+      "read": 59637760,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_32x14336x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 164.34333,
+      "read": 121110528,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x14336x4096_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 95.62769525,
+      "read": 62390272,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_128x14336x4096_int8_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 322.118164,
+      "read": 132120576,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x14336x4096_bf16_cold"
+    },
+    {
+      "ids": 1,
+      "conv": 8,
+      "modules": 1,
+      "us": 321.96107425,
+      "read": 73400320,
+      "write": 4,
+      "other": 0,
+      "tag": "gemm_512x14336x4096_int8_cold"
+    }
+  ]
+}

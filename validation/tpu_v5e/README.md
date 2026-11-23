@@ -770,6 +770,10 @@ is in the measurement, not in the knob. (Superseded 2026-11-12: this paragraph w
 dtypes and a fixed part per loop iteration -- see "int8 weights: what the error is".) Before the knob the per-strip
 fill covered part of it.
 
+(2026-11-17: the "whole" runs quoted below moved input and weights more than once whenever the GEMM has
+>= 2 strips, and the 4-row-tile failure was an input-list limit -- see "Row tiling, M > 512: whole runs with exact
+traffic" at the end.)
+
 **Unresolved: row tiling in `compare_v5e.py` (found by Codex, 2026-11-11).** For M > 512 the script simulates
 one <= 512-row tile as its own run and sums the tiles. A direct run of the whole GEMM (`check_tiling.py`) gives
 1024 x 128 x 1024: tiled 6.63 us vs whole 5.45 us, **+21.7%** (`results/2026-11-11_codex_audit/whole_gemm_small.log`).
@@ -995,9 +999,9 @@ What the artifacts show:
   layout: no memory-space tag, no copy, no prefetch -- as in the banked program. Convolution operand types and
   window geometry are identical within each pair; the one difference in the HLO is the weight selection (the
   banked program has a `dynamic-slice` of the bank, the single one none).
-- **Reusing the weight does not make the fused op faster**: equal within 0.4% in three cases, and 1.7-1.8 us
-  (3.6-4.0%) SLOWER for bf16 at K = 4096. So the weight is evidently read again on every iteration at the same
-  rate; nothing is retained across iterations at 16-134 MB. The 1.7-1.8 us is unexplained.
+- **The single-weight program shows a similar fused-op latency**: equal within 0.4% in three cases, and 1.7-1.8 us
+  (3.6-4.0%) LONGER for bf16 at K = 4096 (unexplained). That is an observed duration only: it does not show what
+  is read from where (there are no traffic counters), and weight staging is not established either way.
 - **The banked times reproduce the 2026-11-12 balance run** from a separate session: -0.20%, 0.00%, 0.00%, 0.00%,
   0.00% on the five shared cases.
 
@@ -1007,3 +1011,164 @@ ESTABLISHED". The memory-bound bf16 over-prediction of the window-schedule candi
 open as before; this run neither supports nor weakens the on-chip weight-load tail, and no model parameter
 changes because of it. (After this run `hlo_facts` also records the `dynamic-slice` count, so the selection
 difference appears in the pair notes.)
+
+### Correction (2026-11-16): the DRAM service rate of NPUsim on refsb
+
+An earlier list of open items said "NPUsim 697-727 GB/s against the measured 750 GB/s". That figure was a
+miscount (payload bytes of one case divided by the DRAM time of another accounting) and is withdrawn. From the
+saved reports of the matched-traffic batch (`results/2026-11-12_window_candidate/full_fused_output/`):
+
+    rate = payload_bytes / (DRAM_busy_cycles / 1.5e9 Hz),   payload = weights + input matrix (M K 2 B), GB = 1e9 B
+
+| case | payload (MB) | DRAM busy (cycles) | rate (GB/s) |
+|---|---|---|---|
+| bf16 32 x 4096 x 4096 | 33.82 | 68330 | 742 |
+| bf16 32 x 8192 x 8192 | 134.74 | 272259 | 742 |
+| int8 32 x 4096 x 4096 | 17.04 | 34430 | 742 |
+| bf16 512 x 8192 x 8192 | 142.61 | 288150 | 742 |
+
+In these runs transactions x line size (8192 bits) equals the payload exactly (no padding), and the output is not
+written. The same yaml as one continuous stream on a fresh device (`dram_bw_probe`) gives 744 GB/s at 2 MiB and
+751 at 32 MiB. The TPU's profiled copy op of the one-op programs takes 44.76 us for 33.55 MB (750 GB/s) -- but
+that is an END-TO-END op latency, a different timing scope from a DRAM-busy service rate. The roughly 1%
+agreement of these examples is not a statement about bandwidth accuracy in general, and nothing is retuned.
+
+### Window candidate on the projection cohort (2026-11-16; retrospective, not a holdout)
+
+`results/2026-11-16_projection_cohort/` -- `manifest.{csv,json}` (`projection_cohort.py`), `gate/`, `full/`
+(`projection_summary.py` -> `full/summary_exact.txt`; inputs, reports and before / after hashes of all 192 runs).
+The cold loop GEMMs of the four Llama projections in the 2026-11-04 profile run (non-square: 4096 x 6144,
+4096 x 28672, 14336 x 4096, and 4096 x 4096), M 8-512, bf16 and int8. 32 of the 40 grid cases are comparable; the
+8 with M = 1 compile to a program without a convolution-category op and are out of scope.
+**This run is where the per-window cost was estimated (its four int8 M = 128 cases) and where the window schedule
+was developed, so nothing here is independent evidence.** Each capture holds one invocation: the reference is a
+mean of 8 correlated events. Same knobs as before, nothing refitted: A = config as is, B = + window schedule,
+C = B + 590 cycles per window; `fused_output_consumer` traffic (compiler static accounting, exact for all 32).
+
+refsb, mean / MAPE in % from unrounded per-run values:
+
+| group | n | A | B | C | cases closer than A: B, C |
+|---|---|---|---|---|---|
+| w-calibration cases | 4 | -15.70 / 15.70 | -12.32 / 12.32 | -2.41 / 2.41 | 4, 4 |
+| **other cases** | 28 | -2.81 / 3.17 | -0.55 / 2.77 | +1.89 / 2.12 | 16, 16 |
+| other, bf16 | 16 | -2.16 / 2.69 | +0.47 / 3.00 | +2.45 / 2.61 | 6, 6 |
+| other, int8 | 12 | -3.67 / 3.82 | -1.91 / 2.47 | +1.15 / 1.47 | 10, 10 |
+| other, memory-bound | 20 | -1.40 / 1.91 | +1.30 / 1.81 | +1.91 / 2.11 | 8, 8 |
+| other, compute-bound | 8 | -6.32 / 6.32 | -5.17 / 5.17 | +1.84 / 2.17 | 8, 8 |
+| other, full windows | 21 | -3.05 / 3.30 | -0.97 / 3.00 | +2.02 / 2.15 | 13, 13 |
+| other, partial edge windows | 7 | -2.07 / 2.78 | +0.73 / 2.09 | +1.50 / 2.05 | 3, 3 |
+| other, windows over N | 14 | -3.03 / 3.23 | +0.02 / 2.97 | +1.97 / 2.43 | 7, 7 |
+| other, windows over K | 4 | -0.71 / 1.56 | +0.80 / 2.36 | +2.69 / 2.69 | 1, 1 |
+| other, windows over N and K | 10 | -3.33 / 3.74 | -1.89 / 2.65 | +1.47 / 1.47 | 8, 8 |
+
+- Outside the calibration cases the candidate lowers the MAPE (3.17 -> 2.12%) by fixing the eight compute-bound
+  cases (6.32 -> 2.17%, all eight closer); it does **not** help the twenty memory-bound ones (1.91 -> 2.11%), and
+  the whole group moves from under- to over-prediction (-2.81 -> +1.89%).
+- **12 of the 28 get worse, all memory-bound, 10 of them bf16 and 2 int8** (8 x 14336 x 4096 and
+  8 x 4096 x 28672): +0.77 .. +3.86 points of absolute error; the
+  largest are the 4096-row bf16 cases with few windows (8 x 4096 x 4096 -1.28 -> +5.13, 32 x 4096 x 4096
+  -1.30 -> +5.07, 32 x 4096 x 6144 -0.28 -> +4.03, 8 x 4096 x 6144 -0.99 -> +4.05). In all of them B (the window
+  schedule alone) already overshoots and the 590 cycles add to it.
+- For bf16 as a group the candidate is a wash (2.69 -> 2.61%, 6 of 16 closer); for int8 it helps (3.82 -> 1.47%).
+- The balanced regime of this cohort consists only of the four calibration cases; it cannot be judged here.
+- Analytic DRAM (~9% fast): every case is short with A, so everything gets closer (other cases 8.25 -> 4.68%);
+  that says more about the DRAM rate than about the candidate.
+
+Reading, with the balance run: the candidate trades an under-prediction of compute-bound and balanced streaming
+for an over-prediction of memory-bound streaming. It stays opt-in; uniform 590 over-predicts cases such as
+bf16 512 x 14336 x 4096 (+3.68%) in the present model, cause not identified.
+
+### Chained GEMM per-kernel cost, 2.81 us vs 4.1 us: stored artifacts only (2026-11-17; UNRESOLVED)
+
+Two stored runs give different per-kernel costs for the same chained GEMM, n dependent `y = y @ W_i`, bf16:
+`smallk2` `oddchain` (2026-11-04) and `loopk` `unrolled` (2026-11-12). No new measurement; what the stored files say:
+
+| shape | `oddchain`: device us n 1, 8 | copy us n 1, 8 | (t8 - t1) / 7 = copy part + rest | `unrolled`: device us n 1, 4, 16 | copy us n 1, 4, 16 | per kernel n 4 -> 16 |
+|---|---|---|---|---|---|---|
+| 100 x 1000 x 1000 | 5.584, 25.235 | 3.149, 11.084 | 2.807 = 1.134 + 1.674 | 5.541, 17.647, 66.924 | 3.152, 0.682, 0.675 | 4.106 |
+| 128 x 1024 x 1024 | 6.051, 26.403 | 3.206, 10.556 | 2.907 = 1.050 + 1.857 | 6.001, 19.061, 72.288 | 3.208, 0.732, 0.733 | 4.436 |
+| 256 x 2048 x 2048 | 25.506, 106.824 | 11.518, 11.532 | 11.617 = 0.002 + 11.615 | 25.501, 66.098, 254.227 | 11.521, 1.803, 1.840 | 15.677 |
+
+What is the same: jax 0.11.2, "TPU v5 lite", bf16, distinct rotating argument sets, `device_us` = median module
+duration of the trace (copies included), `copy_us` = the module's copy-start / copy-done events. **The n = 1
+programs agree within 1% in time and copy time across the two days**, so the device and the timing scope
+reproduce.
+
+What differs:
+- **How the weights are passed.** `oddchain`: n separate K x K arguments. `unrolled`: one [n, K, K] argument,
+  sliced `ws[i]`.
+- **The copies.** `oddchain` n = 8 spends ~11 us in copies for all three shapes (10.6 - 11.5 us, whether a weight
+  is 2 MB or 8.4 MB); `unrolled` n >= 4 spends 0.7 - 1.8 us. For `loopk` the trace metadata is kept
+  (`2026-11-12_colab_v5e1_balance/trace_bytes.csv`, 100 x 1000): n = 1 copies the 2 000 000 B weight to memory
+  space 3 and the fusion reads it there; n = 4 and 16 copy 200 000 B (the input) and read 8 000 000 / 32 000 000 B
+  of weights from space 1, in 2 / 8 convolution fusions -- XLA fuses the chained matmuls in pairs. **For `smallk2`
+  no HLO and no trace was kept** (its archive has an empty `traces/`): what its n = 8 program copied, and whether
+  it fused pairs, cannot be reconstructed, and `loopk`'s artifacts do not describe it.
+- **The slope.** `oddchain`: two points, (t8 - t1) / 7. `unrolled`: least squares over n = 1, 4, 16 (4.096; 4.106
+  between n = 4 and 16). In both the n = 1 point runs a different schedule (weight staged by a 3.15 us copy) than
+  the larger programs, so a slope from n = 1 mixes two schedules; `oddchain` has no second multi-kernel point to
+  separate that. Its 2.81 us contains 1.13 us per kernel of added copy time.
+- 256 x 2048 x 2048 differs as well (11.6 vs 15.7 us per kernel) with no copy-time change between `oddchain`
+  n = 1 and 8, so the difference is not only a matter of copy time.
+
+Not established, and not claimed: which operands `oddchain` staged; that either number is "the" per-kernel cost of
+a chained GEMM (each is an average over programs of one structure and a few n); that their difference is a
+measured tail or a staging benefit. The "chained odd GEMM (35)" comparisons rest on the `oddchain` slopes and
+inherit this: they validate NPUsim against that program's schedule, which is not documented.
+
+Prepared, not run: `measure_tpu_v5e1.py --only chainprobe` measures both structures in one session (the three
+shapes above, n = 1, 2, 4, 8, 16) and keeps the optimized HLO and the trace of every program with hashes; it fits
+no slope, refuses an `--out` that already holds its output, and refuses a non-TPU backend unless `--quick`
+(`test_chainprobe.py`, CPU, functional only).
+
+### Row tiling, M > 512: whole runs with exact traffic (2026-11-17; the row-tiled estimates stay flagged)
+
+`row_tile_repro.py` -> `results/2026-11-17_row_tiling/` (per run: config root, reports, stdout / stderr,
+`result.json`; `table.txt`, unrounded `table.json`). No TPU data is used and nothing is fitted or changed in the
+simulator, the configs or `compare_v5e.py`.
+
+1. **The "whole run fails at 4 row tiles" was not a timing-model failure.** `models/datasets/gemm/test.lst` has
+   1024 lines; the front-end reads one per batch row and runs off the list for batch > 1024: SIGSEGV in nebula's
+   `convolutional_t::load_data` after 2 s (`crash_list_1024/`: 1536 x 128 x 512, exit -11). With a list of M lines
+   per run the same mappings run, with exact MAC counts.
+2. **The whole run used so far is not a valid reference when the GEMM has >= 2 weight strips.** With the row
+   tiles as the DRAM-level batch factor (`check_tiling.py`), every (strip, row tile) iteration fetches its input
+   and its weights again: 1024^3 moves input x2 and weights x2, 2048^3 x4 and x4 (`whole_*`, payload read from the
+   reports). Only for N <= 512 (one strip) is its traffic exact. So "1024^3: tiled 13.54 vs whole 14.17 us,
+   -4.44%" above compared against a run with doubled traffic, and the +21.7% at 1024 x 128 x 1024 (two strips)
+   likewise.
+3. **Row tiles as the GLB-level batch factor move every tensor once** (`whole_glb_*`: input M x K x 2, weights
+   K x N x 2, output M x N x 2 bytes, MACs exact, for all nine shapes run) and coincide with the DRAM-level run where
+   that one is exact (N = 512). Against it, the sum `compare_v5e.py` uses (first tile + (mt - 1) inner tiles, here
+   with every strip simulated; each piece is its own run and reads the weights again, so weights x mt):
+
+| shape | row tiles | whole, GLB level | first + (mt - 1) x inner | split - whole | per extra row tile |
+|---|---|---|---|---|---|
+| 1024 x 128 x 512 | 2 | 3.37 us | 5.23 us | +55.0% | 2780 cycles |
+| 2048 x 128 x 512 | 4 | 4.90 us | 10.23 us | +108.8% | 2665 cycles |
+| 1024 x 1024 x 1024 | 2 | 12.20 us | 13.54 us | +11.0% | 2014 cycles |
+| 2048 x 2048 x 2048 | 4 | 88.93 us | 92.33 us | +3.8% | 1698 cycles |
+| 2048 x 4096 x 4096 | 4 | 353.06 us | 356.22 us | +0.9% | 1580 cycles |
+| 2048 x 4096 x 6144 | 4 | 529.18 us | 532.31 us | +0.6% | 1565 cycles |
+| 2048 x 14336 x 4096 | 4 | 1233.68 us | 1236.77 us | +0.3% | 1547 cycles |
+| 2048 x 4096 x 28672 | 4 | 2466.57 us | 2469.65 us | +0.1% | 1540 cycles |
+| 4096 x 4096 x 4096 | 8 | 705.29 us | 712.44 us | +1.0% | 1534 cycles |
+| 8192 x 8192 x 8192 | 16 | 5636.82 us | 5651.47 us | +0.3% | 1464 cycles |
+
+   Same conventions on both sides: `tpu_v5e.cfg` as is (isolated program: input from DRAM, output materialized to
+   DRAM), `program_setup_cycle` 0, layer setup once. The split is not a sum of independent tiles in the whole run:
+   each extra piece adds 1500 - 2800 cycles (1.0 - 1.9 us; its own pipeline fill and drain, and its own start of a
+   weight stream the whole run reads once -- at 2048^3 the pieces' DRAM busy sums to 93080 cycles against 46448).
+   That is +0.1 .. +1% for the six large measured shapes and +3.8% / +11% for 2048^3 / 1024^3; it dominates
+   only GEMMs of a few us.
+4. **Status of the 10 measured GEMMs with M > 512** (`2026-11-03_colab_v5e1_rot`): unchanged in every table, still
+   on the row-tiled estimate and still flagged by the script's warning. 777 x 1234 x 555 and 1000 x 1000 x 1000
+   are not covered by either whole construction (rows or columns do not divide into equal tiles / whole strips):
+   unsupported, flagged. For the other eight a GLB-level whole run now exists, but it is NOT adopted as the
+   reference: it puts all M rows of the input in the GLB at once, and nothing measured says whether the TPU keeps
+   the weight strip or the input resident across row tiles of an isolated program. (For orientation only, stored
+   TPU kernel times: 1024^3 15.83 us, 2048^3 91.55 us -- the whole run is further below both than the split is; no
+   construction is chosen by that.)
+
+Cost: 66 s - 61 min per run, <= 3.6 GB; the DRAM-level whole run of 2048^3 took 17 min and is not run for larger
+shapes (its traffic is known to be wrong there).

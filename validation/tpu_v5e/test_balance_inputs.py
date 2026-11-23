@@ -19,6 +19,18 @@ only = "bf16:32:4096,bf16:512:8192,int8:128:4096,int8:64:8192"
 subprocess.run([sys.executable, os.path.join(HERE, "balance_npusim.py"), run, out, "--only", only, "--generate-only"],
                check=True, capture_output=True)
 gen = os.path.join(out, "generated_analytic")
+
+
+def snapshot(root):
+    return {os.path.relpath(os.path.join(dp, f), root): open(os.path.join(dp, f), "rb").read()
+            for dp, _, fs in os.walk(root) for f in fs}
+
+
+before = snapshot(out)                                         # a repeat into the same directory changes nothing
+p = subprocess.run([sys.executable, os.path.join(HERE, "balance_npusim.py"), run, out, "--only", only, "--generate-only"],
+                   capture_output=True, text=True)
+assert p.returncode != 0 and "already holds results for 'analytic'" in p.stderr + p.stdout, p.stderr[-300:]
+assert snapshot(out) == before and before
 runs = sorted(os.listdir(gen))
 assert len(runs) == 12, runs                                   # 4 shapes x A, B, C
 for accel in runs:
@@ -45,6 +57,24 @@ for accel in sorted(os.listdir(gen)):
     assert "fused_output_consumer = 1" in cfg and "activation_residency = 0" in cfg, accel
     assert "activation_residency = 2" not in cfg, accel
 shutil.rmtree(out)
+
+# --manifest: non-square cases, own names, network / mapping dims = (M, K, N); balance mode above is unchanged
+man = os.path.join(HERE, "results", "2026-11-16_projection_cohort", "manifest.csv")
+prof = os.environ.get("NPUSIM_PROFILE_RUN")                    # the 2026-11-04 profile run (branch mosaic's results)
+if prof and os.path.isdir(prof):
+    out = tempfile.mkdtemp()
+    subprocess.run([sys.executable, os.path.join(HERE, "balance_npusim.py"), prof, out, "--manifest", man, "--only",
+                    "bf16:32:4096:6144,int8:128:14336:4096", "--generate-only", "--activations", "fused_output"],
+                   check=True, capture_output=True)
+    gen = os.path.join(out, "generated_analytic_fusedout")
+    assert sorted(os.listdir(gen)) == sorted(f"prj_{c}_{v}" for c in ("bf16_32x4096x6144", "int8_128x14336x4096") for v in "abc")
+    for accel in os.listdir(gen):
+        dt, M, K, N, v = re.fullmatch(r"prj_(bf16|int8)_(\d+)x(\d+)x(\d+)_([abc])", accel).groups()
+        net = open(os.path.join(gen, accel, "network.cfg")).read()
+        g = lambda key: int(re.search(rf"(?m)^{key}=(\d+)", net).group(1))
+        assert (g("batch"), g("height") * g("width"), g("output")) == (int(M), int(K), int(N)), (accel, net)
+        assert f"# {N}, {M}, 1, 1, {K}," in open(os.path.join(gen, accel, "mappings", accel, "ws.map")).read(), accel
+    shutil.rmtree(out)
 
 # the old bug, reproduced: two shapes written under one name -> the first run's network is the second shape
 tmp, cfgroot, rundir = b.palm.workdir(("tpu_v5e",))

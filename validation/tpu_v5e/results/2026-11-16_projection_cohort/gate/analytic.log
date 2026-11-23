@@ -1,0 +1,13 @@
+NPUsim: 12 whole-GEMM runs on 12 threads ...
+dtype    M     K     N   n | measured |     A us    err |     B us    err |     C us    err
+int8     8  4096  6144  14 |    35.31 |    31.71 -10.2% |    32.78  -7.2% |    33.17  -6.0%
+bf16    32  4096  6144  12 |    68.58 |    62.79  -8.4% |    65.35  -4.7% |    65.75  -4.1%
+int8   128 14336  4096  38 |    95.63 |    78.39 -18.0% |    80.25 -16.1% |    94.21  -1.5%
+bf16   512 14336  4096  56 |   322.12 |   309.19  -4.0% |   311.82  -3.2% |   333.71  +3.6%
+all                  n= 4 mean / MAPE: A -10.2 / 10.2%  B  -7.8 /  7.8%  C  -2.0 /  3.8%
+bf16                 n= 2 mean / MAPE: A  -6.2 /  6.2%  B  -4.0 /  4.0%  C  -0.3 /  3.9%
+int8                 n= 2 mean / MAPE: A -14.1 / 14.1%  B -11.6 / 11.6%  C  -3.8 /  3.8%
+full windows         n= 2 mean / MAPE: A  -6.2 /  6.2%  B  -4.0 /  4.0%  C  -0.3 /  3.9%
+partial edge windows n= 2 mean / MAPE: A -14.1 / 14.1%  B -11.6 / 11.6%  C  -3.8 /  3.8%
+w-calibration cases  n= 1 mean / MAPE: A -18.0 / 18.0%  B -16.1 / 16.1%  C  -1.5 /  1.5%
+other cases          n= 3 mean / MAPE: A  -7.5 /  7.5%  B  -5.0 /  5.0%  C  -2.2 /  4.6%

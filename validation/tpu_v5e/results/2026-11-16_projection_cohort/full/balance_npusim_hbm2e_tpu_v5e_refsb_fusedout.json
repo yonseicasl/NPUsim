@@ -1,0 +1,93 @@
+{
+ "frozen_before": {
+  "binary_sha256": "b6fc57e3e8fd647264292a1cf5cbb5813f1122b97aa54cc937197bbb374e124c",
+  "library_sha256": "c793857e605c815869832a395e54efd8c928029f3acccd9fd80931604123e105",
+  "backend_libraries": {
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/library/libnpusim.so": "c793857e605c815869832a395e54efd8c928029f3acccd9fd80931604123e105",
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/ext/nebula/library/libnebula.so": "5b7b5b08ec6b84a0926544f60ae210d88a41000794eb0be1bdff8b4314f5f9d6",
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/lib/libramulator.so": "f4309d9e952e233565e558adc39b2b692b58fde7a4f8341fccf10a7fb342ad86"
+  },
+  "configs": {
+   "tpu_v5e": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+   "tpu_v5e_int8w": "62e6dee9320c99afcb8b1067eb6105e6100cfb2f136074287c984b3b623c70dc"
+  },
+  "driver_sha256": "b4a4931a781fd1b3ded48c433b916a936d4f0817e5e049e1f21cc6a0478b6043",
+  "helper_sources": {
+   "validation/tpu_v5e/compare_v5e.py": "9f245dc60639cf44bc3b22e151f816b521ae7397c66102f69aec73f7436c21ad",
+   "validation/tpu_v5e/balance_analyze.py": "d4b93b7cabea03242267e48835645fede2f734393ee574e990cfeb57ee719893",
+   "validation/tpu_v5e/int8_decompose.py": "16a68f17a78e507114ac0310a011b9ccadfc83d39441f5dd5994b1432456d6c7",
+   "validation/palm/palm_decode.py": "508db3a3fd552f1d6e2826c9728c9af24453ee02eee1a45aa38c382f96a620c4"
+  },
+  "dram_yaml": {
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c"
+  },
+  "inputs": {
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-16_projection_cohort/manifest.csv": "3fd6d8c172fd091d9cb9cb855e8304920fc92b745086db181f65a668c49ac516"
+  },
+  "git_head": "bbf1b9bb204cf161081422bbb7c56d393e41cf20",
+  "git_dirty": []
+ },
+ "frozen_after": {
+  "binary_sha256": "b6fc57e3e8fd647264292a1cf5cbb5813f1122b97aa54cc937197bbb374e124c",
+  "library_sha256": "c793857e605c815869832a395e54efd8c928029f3acccd9fd80931604123e105",
+  "backend_libraries": {
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/library/libnpusim.so": "c793857e605c815869832a395e54efd8c928029f3acccd9fd80931604123e105",
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/ext/nebula/library/libnebula.so": "5b7b5b08ec6b84a0926544f60ae210d88a41000794eb0be1bdff8b4314f5f9d6",
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/lib/libramulator.so": "f4309d9e952e233565e558adc39b2b692b58fde7a4f8341fccf10a7fb342ad86"
+  },
+  "configs": {
+   "tpu_v5e": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+   "tpu_v5e_int8w": "62e6dee9320c99afcb8b1067eb6105e6100cfb2f136074287c984b3b623c70dc"
+  },
+  "driver_sha256": "b4a4931a781fd1b3ded48c433b916a936d4f0817e5e049e1f21cc6a0478b6043",
+  "helper_sources": {
+   "validation/tpu_v5e/compare_v5e.py": "9f245dc60639cf44bc3b22e151f816b521ae7397c66102f69aec73f7436c21ad",
+   "validation/tpu_v5e/balance_analyze.py": "d4b93b7cabea03242267e48835645fede2f734393ee574e990cfeb57ee719893",
+   "validation/tpu_v5e/int8_decompose.py": "16a68f17a78e507114ac0310a011b9ccadfc83d39441f5dd5994b1432456d6c7",
+   "validation/palm/palm_decode.py": "508db3a3fd552f1d6e2826c9728c9af24453ee02eee1a45aa38c382f96a620c4"
+  },
+  "dram_yaml": {
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c"
+  },
+  "inputs": {
+   "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-16_projection_cohort/manifest.csv": "3fd6d8c172fd091d9cb9cb855e8304920fc92b745086db181f65a668c49ac516"
+  },
+  "git_head": "bbf1b9bb204cf161081422bbb7c56d393e41cf20",
+  "git_dirty": []
+ },
+ "dram": {
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c"
+ },
+ "manifest_sha256": "3fd6d8c172fd091d9cb9cb855e8304920fc92b745086db181f65a668c49ac516",
+ "manifest": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/.claude/worktrees/tpu-measure/validation/tpu_v5e/results/2026-11-16_projection_cohort/manifest.csv",
+ "evaluation": "RETROSPECTIVE: see the manifest's calibration note; w-calibration cases reported apart",
+ "reference": "mean convolution-event duration of each case's profiled invocation(s) (measured_modules)",
+ "measurement": {
+  "run": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/validation/tpu_v5e/results/2026-11-04_colab_v5e1_profile",
+  "jax": "0.11.2",
+  "device": "TPU v5 lite",
+  "date": "2026-11-04 03:48:29 UTC",
+  "scope": "streaming loop, fused op per iteration (device trace)"
+ },
+ "mapping": "whole GEMM, 512-column strips as DRAM iterations, one <= 512-row tile",
+ "window_model": "count-based equal-share: offchip_window_count = HLO window count; geometry and partial edge windows not represented",
+ "variants": {
+  "A": "config as is",
+  "B": "offchip_window_count",
+  "C": "B + window_switch_cycle 590"
+ },
+ "window_switch_cycle": {
+  "value": 590,
+  "clock_hz": 1500000000.0,
+  "us": 0.3933333333333333,
+  "status": "empirically fitted effective cost, not a measured hardware constant; mechanism unidentified",
+  "source": "2026-11-04 profile run, 4 int8 M = 128 cases (0.393 us), with R 752 GB/s and F 2 us fitted on earlier stream data; fixed before the 2026-11-12 balance run; one value for both dtypes",
+  "regime": "XLA streaming loop on TPU v5e (JAX 0.11.2); not for staged / isolated one-op programs or shapes without an HLO"
+ },
+ "activations": "fused_output",
+ "assumptions": [
+  "program_setup_cycle = 0 (in-program)",
+  "NOT simulated in either mode: the fused op's input add, output conversion and reduction, and its 4-byte result",
+  "fused_output_consumer = 1: input read from DRAM, output matrix not materialized (no whole-tensor capacity); matches the compiler's static accounting of the loop's fused op (weights + M x K x 2 read, 4 B written), which is not measured traffic"
+ ]
+}

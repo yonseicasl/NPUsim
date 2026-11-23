@@ -29,6 +29,9 @@ its own network / weight / mapping name, and check_inputs() verifies network and
 queued run after all inputs are generated and again after the runs.
 
 Usage: python3 balance_npusim.py RUN_DIR OUT_DIR [--dram YAML] [--only dtype:M:K,...] [--variants ABC] [-j 6]
+       python3 balance_npusim.py PROFILE_RUN_DIR OUT_DIR --manifest MANIFEST.csv [--only dtype:M:K:N,...] ...
+       (the second form: non-square cases of a stream-bench profile run, selected and audited by
+        projection_cohort.py -- a retrospective cohort, see its manifest)
 """
 import argparse
 import csv
@@ -77,13 +80,35 @@ def check_inputs(cfgroot, name, accel, M, K, N):
     assert got == (M, K, N), f"{accel}/{name}: mapping covers {got}, wanted {(M, K, N)}"
 
 
-def frozen():
-    """Hashes of what a batch runs on."""
+RAN_ON = ("binary_sha256", "library_sha256", "backend_libraries", "configs", "driver_sha256", "helper_sources",
+          "dram_yaml", "inputs")
+
+
+def frozen(a):
+    """Hashes of everything that decides a batch's results (RAN_ON) plus the git head / status for the record:
+    the binary, libnpusim and every shared library the binary resolves from the simulator or DRAM backend trees
+    (ldd), the base accelerator configs, this driver and the helper sources it imports, the DRAM yaml, and the
+    case inputs (balance.csv or the manifest)."""
     root = palm.ROOT
-    git = lambda *a: subprocess.run(["git", "-C", root, *a], capture_output=True, text=True).stdout.strip()
-    return dict(binary_sha256=sha(os.path.join(root, "models", "model")),
-                library_sha256=sha(os.path.join(root, "library", "libnpusim.so")),
+    here = os.path.dirname(os.path.abspath(__file__))
+    git = lambda *x: subprocess.run(["git", "-C", root, *x], capture_output=True, text=True).stdout.strip()
+    binary = os.path.join(root, "models", "model")
+    libs = {}
+    for line in subprocess.run(["ldd", binary], capture_output=True, text=True).stdout.splitlines():
+        m = re.match(r"\s*(\S+) => (\S+) \(", line) or re.match(r"\s*(/\S+) \(", line)
+        path = m and m.group(m.lastindex)
+        if path and re.search(r"npusim|nebula|ramulator|mosaic|cosim|dram", path, re.I) and os.path.exists(path):
+            libs[os.path.realpath(path)] = sha(path)
+    helpers = {os.path.relpath(f, root): sha(f) for f in (
+        os.path.join(here, "compare_v5e.py"), os.path.join(here, "balance_analyze.py"),
+        os.path.join(here, "int8_decompose.py"), os.path.join(here, "..", "palm", "palm_decode.py"))}
+    inputs = {os.path.abspath(a.manifest): sha(a.manifest)} if a.manifest else \
+        {os.path.abspath(os.path.join(a.run, "balance.csv")): sha(os.path.join(a.run, "balance.csv"))}
+    return dict(binary_sha256=sha(binary), library_sha256=sha(os.path.join(root, "library", "libnpusim.so")),
+                backend_libraries=libs,
                 configs={n: sha(os.path.join(root, "configs", "accelerators", n + ".cfg")) for n in ACCEL.values()},
+                driver_sha256=sha(os.path.abspath(__file__)), helper_sources=helpers,
+                dram_yaml={os.path.abspath(a.dram): sha(a.dram)} if a.dram else None, inputs=inputs,
                 git_head=git("rev-parse", "HEAD"), git_dirty=git("status", "--porcelain", "-uno").splitlines())
 
 
@@ -101,19 +126,40 @@ def main():
                     help="residency2 (the first batches): activation_residency = 2, granted only when the tensors "
                          "fit the GLB capacity. fused_output: fused_output_consumer = 1 -- input read from DRAM, "
                          "output consumed on chip as produced, as the compiler accounts the loop's fused op")
+    ap.add_argument("--manifest", help="projection_cohort.py manifest.csv: its supported cases (any K, N) instead "
+                                       "of RUN_DIR/balance.csv; RUN_DIR is then the profile run the manifest describes "
+                                       "and --only takes dtype:M:K:N")
     a = ap.parse_args()
     only = a.only and {tuple(x.split(":")) for x in a.only.split(",")}
     cases = []
-    for r in csv.DictReader(open(os.path.join(a.run, "balance.csv"))):
+    if a.manifest:
+        for r in csv.DictReader(open(a.manifest)):
+            if r["supported"] == "True" and (not only or (r["dtype"], r["M"], r["K"], r["N"]) in only):
+                hlo = os.path.join(a.run, r["hlo"])
+                assert sha(hlo) == r["hlo_sha256"], f"{hlo}: not the HLO the manifest was built from"
+                it, kw = window_config(hlo)
+                M, K, N, n = int(r["M"]), int(r["K"]), int(r["N"]), balance_analyze.windows(hlo)
+                assert n == int(r["windows"]), (r["tag"], n, r["windows"])
+                cases.append(dict(dtype=r["dtype"], M=M, K=K, N=N, windows=n, iteration_bounds="x".join(map(str, it)),
+                                  kernel_window_bounds="x".join(map(str, kw)),
+                                  window_coverage=round(n * kw[0] * 8 * kw[1] * 128 / (K * N), 4),
+                                  window_model="count-based equal-share",
+                                  w_calibration_case=r["w_calibration_case"] == "True",
+                                  measured_us=float(r["conv_event_us"]), measured_modules=int(r["modules"]),
+                                  hlo_sha256=r["hlo_sha256"], source_tag=r["tag"]))
+    for r in ([] if a.manifest else csv.DictReader(open(os.path.join(a.run, "balance.csv")))):
         if r["schedule"] == "loop" and (not only or (r["dtype"], r["M"], r["K"]) in only):
             hlo = os.path.join(a.run, "hlo", f"balance_{r['dtype']}_{r['M']}x{r['K']}_loop.txt")
             it, kw = window_config(hlo)
             M, K, n = int(r["M"]), int(r["K"]), balance_analyze.windows(hlo)
-            cases.append(dict(dtype=r["dtype"], M=M, K=K, windows=n, iteration_bounds="x".join(map(str, it)),
+            cases.append(dict(dtype=r["dtype"], M=M, K=K, N=K, windows=n, iteration_bounds="x".join(map(str, it)),
                               kernel_window_bounds="x".join(map(str, kw)),
                               window_coverage=round(n * kw[0] * 8 * kw[1] * 128 / (K * K), 3),
                               window_model="count-based equal-share",
                               measured_us=float(r["fused_ops_sum_per_iter_us"]), hlo_sha256=sha(hlo)))
+    assert cases, "no cases selected"
+    # square balance cases keep their names (bal_<dtype>_<M>x<K>_<variant>); manifest cases carry N too
+    stem = lambda x: f"prj_{x['dtype']}_{x['M']}x{x['K']}x{x['N']}" if a.manifest else f"bal_{x['dtype']}_{x['M']}x{x['K']}"
     tmp, cfgroot, rundir = palm.workdir(tuple(ACCEL.values()))
     palm.MOSAIC_DRAM = a.dram and os.path.abspath(a.dram)
     todo = {}
@@ -127,21 +173,27 @@ def main():
         knobs = {"A": "", "B": f"offchip_window_count = {x['windows']}\n",
                  "C": f"offchip_window_count = {x['windows']}\nwindow_switch_cycle = {a.w}\n"}
         for v in a.variants:
-            accel = f"bal_{x['dtype']}_{x['M']}x{x['K']}_{v}".lower()
+            accel = f"{stem(x)}_{v}".lower()
             text = base.replace("[accelerator]\n", "[accelerator]\n" + knobs[v], 1)
             assert v == "A" or "offchip_window_count" in text
             open(os.path.join(cfgroot, "accelerators", accel + ".cfg"), "w").write(text)
             # the run's name is its accel: network, weights, mapping and report are this run's alone
-            palm.gemm_files(cfgroot, rundir, accel, accel, x["M"], x["K"], x["K"])
-            todo[x["dtype"], x["M"], x["K"], v] = (cfgroot, rundir, accel, accel)
-    for (dt, M, K, v), (_, _, name, accel) in todo.items():   # after ALL generation: nothing was overwritten
-        check_inputs(cfgroot, name, accel, M, K, K)
+            palm.gemm_files(cfgroot, rundir, accel, accel, x["M"], x["K"], x["N"])
+            todo[x["dtype"], x["M"], x["K"], x["N"], v] = (cfgroot, rundir, accel, accel)
+    for (dt, M, K, N, v), (_, _, name, accel) in todo.items():   # after ALL generation: nothing was overwritten
+        check_inputs(cfgroot, name, accel, M, K, N)
     assert len({t[2] for t in todo.values()}) == len(todo)
     os.makedirs(a.out, exist_ok=True)
     tag = (os.path.splitext(os.path.basename(a.dram))[0] if a.dram else "analytic") + (f"_w{a.w}" if a.w != W_CYCLES else "") \
         + ("_fusedout" if a.activations == "fused_output" else "")
     gen = os.path.join(a.out, "generated_" + tag)            # what every run is given
-    shutil.rmtree(gen, ignore_errors=True)
+    # Never overwrite or remove an earlier result of the same DRAM tag: refuse before writing anything.
+    old = [p for p in (gen, os.path.join(a.out, f"balance_npusim_{tag}.csv"), os.path.join(a.out, f"balance_npusim_{tag}.json"),
+                       os.path.join(a.out, f"balance_npusim_{tag}_exact.json")) if os.path.exists(p)]
+    if old:
+        shutil.rmtree(tmp)
+        raise SystemExit(f"{a.out} already holds results for '{tag}' ({os.path.basename(old[0])}, ...); nothing was "
+                         "changed -- use a fresh output directory")
     for _, _, name, accel in todo.values():
         os.makedirs(os.path.join(gen, accel))
         shutil.copy(os.path.join(cfgroot, "accelerators", accel + ".cfg"), os.path.join(gen, accel))
@@ -151,30 +203,40 @@ def main():
         shutil.rmtree(tmp)
         print(f"generated and checked {len(todo)} runs -> {gen}")
         return
-    before = frozen()                             # only a real batch needs (and hashes) the simulator
+    before = frozen(a)                            # only a real batch needs (and hashes) the simulator
+    assert not a.dram or any("ramulator" in p for p in before["backend_libraries"]), "no DRAM backend library resolved"
     print(f"NPUsim: {len(todo)} whole-GEMM runs on {a.jobs} threads ...", flush=True)
     with ThreadPoolExecutor(a.jobs) as ex:
         sim = dict(zip(todo, ex.map(palm.run_gemm, todo.values())))
-    after = frozen()
-    for (dt, M, K, v), (_, _, name, accel) in todo.items():
-        check_inputs(cfgroot, name, accel, M, K, K)           # still intact after the runs
+    after = frozen(a)
+    for (dt, M, K, N, v), (_, _, name, accel) in todo.items():
+        check_inputs(cfgroot, name, accel, M, K, N)           # still intact after the runs
         for report in (f"{accel}_{name}.txt", f"{accel}_{name}_layer_0.txt"):   # the run's own stage / timeline report
             shutil.copy(os.path.join(rundir, report), os.path.join(gen, accel))
     shutil.rmtree(tmp)
-    if before != after:
+    # What decides a run's result must not change under a batch: the binary, the library, the base configs and
+    # this driver. Other files of the checkout (documents, results) may; git head and status are recorded only.
+    ran_on = lambda f: {k: f[k] for k in RAN_ON}
+    if ran_on(before) != ran_on(after):
         json.dump(dict(before=before, after=after), open(os.path.join(a.out, f"MIXED_BINARY_{tag}.json"), "w"), indent=1)
-        raise SystemExit("binary, library or configs changed during the batch: results discarded")
-    rows, err = [], {v: [] for v in a.variants}
-    print(f"{'dtype':5} {'M':>4} {'K':>5} {'n':>3} | {'measured':>8} | " + " | ".join(f"{v + ' us':>8} {'err':>6}" for v in a.variants))
+        raise SystemExit("binary, libraries, driver, helpers, configs, DRAM yaml or inputs changed during the batch: "
+                         "results discarded")
+    rows, err, exact = [], {v: [] for v in a.variants}, {}
+    print(f"{'dtype':5} {'M':>4} {'K':>5} {'N':>5} {'n':>3} | {'measured':>8} | " + " | ".join(f"{v + ' us':>8} {'err':>6}" for v in a.variants))
     for x in cases:
         row = dict(x, dram=tag, timing_kind="device_trace(fused op per loop iteration)")
         cells = []
         for v in a.variants:
-            us = sim[x["dtype"], x["M"], x["K"], v] * 1e6
-            e = us / x["measured_us"] - 1
-            err[v].append(({x["dtype"], "full windows" if x["window_coverage"] <= 1 else "partial edge windows"}, e))
+            us = sim[x["dtype"], x["M"], x["K"], x["N"], v] * 1e6
+            e = us / x["measured_us"] - 1                      # unrounded; the csv below rounds for display only
+            err[v].append(({x["dtype"], "full windows" if x["window_coverage"] <= 1 else "partial edge windows",
+                            {True: "w-calibration cases", False: "other cases"}.get(x.get("w_calibration_case"))}, e))
             row[f"npusim_{v}_us"], row[f"err_{v}_pct"] = round(us, 2), round(100 * e, 1)
-            accel = todo[x["dtype"], x["M"], x["K"], v][3]       # what the run itself reports, not what was asked
+            exact.setdefault((x["dtype"], x["M"], x["K"], x["N"]), dict(
+                dtype=x["dtype"], M=x["M"], K=x["K"], N=x["N"], windows=x["windows"], measured_us=x["measured_us"],
+                window_coverage=x["window_coverage"], w_calibration_case=x.get("w_calibration_case")))[v] = dict(
+                    critical_path_cycles=us * palm.CLOCK_HZ / 1e6, us=us, err_pct=100 * e)
+            accel = todo[x["dtype"], x["M"], x["K"], x["N"], v][3]   # what the run itself reports, not what was asked
             m = re.search(r"Tensor residency\s*:\s*(.*)", open(os.path.join(gen, accel, f"{accel}_{accel}_layer_0.txt")).read())
             row[f"residency_{v}"] = m.group(1).strip() if m else "not reported"
             # the run's own DRAM payload transactions; A, B and C of a case must move the same data
@@ -191,7 +253,7 @@ def main():
         bits = [int(b) for b in re.search(r"(?m)^line_size\s*=\s*([\d:]+)", dram).group(1).split(":")]
         assert len(bits) == 3 and all(b % 8 == 0 for b in bits), bits
         got = [t * b // 8 for t, b in zip(tx, bits)]
-        wbytes = x["K"] * x["K"] * (1 if x["dtype"] == "int8" else 2)
+        wbytes = x["K"] * x["N"] * (1 if x["dtype"] == "int8" else 2)
         act = x["M"] * x["K"] * 2
         row.update(dram_line_bits=":".join(map(str, bits)), dram_input_bytes=got[0], dram_weight_bytes=got[1],
                    dram_output_bytes=got[2], dram_traffic="same for all variants of the case")
@@ -200,8 +262,9 @@ def main():
         if a.activations == "fused_output":
             assert (got[0], got[2]) == (act, 0), f"{accel}: fused_output wants input {act} B and no output, got {got}"
         rows.append(row)
-        print(f"{x['dtype']:5} {x['M']:4d} {x['K']:5d} {x['windows']:3d} | {x['measured_us']:8.2f} | " + " | ".join(cells))
-    for g in ("all", "bf16", "int8", "full windows", "partial edge windows"):   # edge effects are not pooled away
+        print(f"{x['dtype']:5} {x['M']:4d} {x['K']:5d} {x['N']:5d} {x['windows']:3d} | {x['measured_us']:8.2f} | " + " | ".join(cells))
+    for g in ("all", "bf16", "int8", "full windows", "partial edge windows",    # edge effects are not pooled away
+              "w-calibration cases", "other cases"):
         sel = {v: [e for d, e in err[v] if g == "all" or g in d] for v in a.variants}
         if sel[a.variants[0]]:
             print(f"{g:20s} n={len(sel[a.variants[0]]):2d} mean / MAPE: " + "  ".join(
@@ -211,8 +274,15 @@ def main():
         w.writeheader()
         w.writerows(rows)
     env = json.load(open(os.path.join(a.run, "env.json")))
-    json.dump(dict(frozen=before, dram=a.dram and {os.path.abspath(a.dram): sha(a.dram)},
-                   balance_csv_sha256=sha(os.path.join(a.run, "balance.csv")),
+    src = dict(manifest_sha256=sha(a.manifest), manifest=os.path.abspath(a.manifest),
+               evaluation="RETROSPECTIVE: see the manifest's calibration note; w-calibration cases reported apart",
+               reference="mean convolution-event duration of each case's profiled invocation(s) (measured_modules)") \
+        if a.manifest else dict(balance_csv_sha256=sha(os.path.join(a.run, "balance.csv")))
+    json.dump(dict(note="unrounded per-run values; critical_path_cycles is read from the run's report, which prints "
+                        "it with one decimal; aggregates are to be computed from this file, not from the display csv",
+                   clock_hz=palm.CLOCK_HZ, variants=a.variants, cases=list(exact.values())),
+              open(os.path.join(a.out, f"balance_npusim_{tag}_exact.json"), "w"), indent=1)
+    json.dump(dict(frozen_before=before, frozen_after=after, dram=a.dram and {os.path.abspath(a.dram): sha(a.dram)}, **src,
                    measurement=dict(run=os.path.abspath(a.run), jax=env.get("jax"), device=env.get("device_kind"),
                                     date=env.get("date"), scope="streaming loop, fused op per iteration (device trace)"),
                    mapping="whole GEMM, 512-column strips as DRAM iterations, one <= 512-row tile",
