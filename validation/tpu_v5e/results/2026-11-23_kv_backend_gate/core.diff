@@ -1,0 +1,316 @@
+diff --git a/components/dram.cc b/components/dram.cc
+index 80b6e32..61f412f 100644
+--- a/components/dram.cc
++++ b/components/dram.cc
+@@ -7,9 +7,11 @@
+ #include <cstdlib>
+ 
+ #ifdef NPUSIM_MOSAIC_DRAM
++#include <fstream>
+ #include <functional>
+ #include <map>
+ #include <queue>
++#include <sstream>
+ #include <tuple>
+ #include "dram/cosim_frontend.h"
+ 
+@@ -19,11 +21,21 @@ namespace {
+ // (0: 64 DRAM transactions), at most max_inflight outstanding (0: unlimited), each holding its
+ // slot for path_latency_ns beyond the DRAM access (caches, buses, clock crossings), so a
+ // latency-bound DMA streams at max_inflight x request_bytes per round trip. Memoized: the tiles
+-// of a layer repeat the same sizes.
++// of a layer repeat the same sizes. The memo is keyed by the DEVICE CONFIGURATION too -- the yaml's
++// path and its bytes, read at every call -- so two configurations in one process never share a
++// timing, and an edited file is a new configuration.
+ double ramulator_ns(const std::string &yaml, size_t bytes, bool is_write, size_t request_bytes,
+                     unsigned max_inflight, double path_latency_ns) {
+-    static std::map<std::tuple<size_t, bool, size_t, unsigned, double>, double> memo;
+-    const auto key = std::make_tuple(bytes, is_write, request_bytes, max_inflight, path_latency_ns);
++    std::ifstream file(yaml.c_str(), std::ios::binary);
++    if(!file) {
++        std::cerr << "Error: cannot read the MOSAIC DRAM configuration " << yaml << std::endl;
++        exit(1);
++    }
++    std::ostringstream content;
++    content << file.rdbuf();
++    static std::map<std::tuple<std::string, std::string, size_t, bool, size_t, unsigned, double>, double> memo;
++    const auto key = std::make_tuple(yaml, content.str(), bytes, is_write, request_bytes, max_inflight,
++                                     path_latency_ns);
+     auto it = memo.find(key);
+     if(it != memo.end()) return it->second;
+     mosaicsim::CosimFrontend fe(yaml);
+@@ -53,6 +65,11 @@ double ramulator_ns(const std::string &yaml, size_t bytes, bool is_write, size_t
+     return memo[key] = std::max<uint64_t>(end, fe.get_clk())*fe.get_tCK();
+ }
+ } // namespace
++
++double mosaic_dram_stream_ns(const std::string &yaml, size_t bytes, bool is_write, size_t request_bytes,
++                             unsigned max_inflight, double path_latency_ns) {
++    return bytes == 0 ? 0.0 : ramulator_ns(yaml, bytes, is_write, request_bytes, max_inflight, path_latency_ns);
++}
+ #endif
+ 
+ 
+@@ -339,6 +356,51 @@ void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, si
+ }
+ 
+ 
++// See dram.h. Unlike mosaic_stream() nothing is amortized: the stream is simulated from a fresh
++// device and pays its own start.
++bool dram_t::mosaic_read_stream(size_t m_bytes, double *m_cycles, bool *m_extrapolated) const {
++    *m_cycles = 0.0;
++    *m_extrapolated = false;
++    if(mosaic_dram_config.empty()) return false;      // no backend selected: the caller's analytical cost stands
++#ifdef NPUSIM_MOSAIC_DRAM
++    if(m_bytes == 0) return true;
++    const size_t cap = mosaic_stream_exact_bytes;
++    auto ns_of = [&](size_t bytes) {
++        const double ns = ramulator_ns(mosaic_dram_config, bytes, false, mosaic_request_bytes,
++                                       mosaic_max_inflight, mosaic_path_latency_ns);
++        if(!std::isfinite(ns) || ns <= 0.0) {
++            // A selected backend that fails is an error, never a silent return to the analytical cost.
++            std::cerr << "Error: MOSAIC DRAM read stream of " << bytes << " bytes returned " << ns
++                      << " ns (" << mosaic_dram_config << ")" << std::endl;
++            exit(1);
++        }
++        return ns;
++    };
++    double ns;
++    if(m_bytes <= cap) {
++        ns = ns_of(m_bytes);
++    } else {
++        // Affine extension of the steady stream: T(cap) + (bytes - cap) x (T(cap) - T(cap/2))/(cap/2).
++        const double hi = ns_of(cap), lo = ns_of(cap/2);
++        const double slope = (hi - lo)/static_cast<double>(cap/2);
++        if(!std::isfinite(slope) || slope <= 0.0) {
++            std::cerr << "Error: MOSAIC DRAM read stream: non-positive steady slope between " << cap/2
++                      << " and " << cap << " bytes (" << lo << " ns, " << hi << " ns)" << std::endl;
++            exit(1);
++        }
++        ns = hi + static_cast<double>(m_bytes - cap)*slope;
++        *m_extrapolated = true;
++    }
++    *m_cycles = ns*frequency/1e3;
++    return true;
++#else
++    (void)m_bytes;
++    std::cerr << "Error: NPUSIM_MOSAIC_DRAM is set but NPUsim was built without MOSAIC_ROOT" << std::endl;
++    exit(1);
++#endif
++}
++
++
+ // Connect DRAM to Global buffer.
+ void dram_t::connect(multi_chip_t *m_multi_chip) {
+     multi_chip = m_multi_chip;
+@@ -382,8 +444,9 @@ bool dram_t::is_idle() {
+ // so nobody reads its bank parallelism as a conflict model.
+ std::string dram_t::describe_timing_model() const {
+     if(!mosaic_dram_config.empty()) {
+-        return "MOSAIC Ramulator2 (" + mosaic_dram_config + ") for tile streams;"
+-               " KV-cache/SFU operand streams analytical";
++        return "MOSAIC Ramulator2 (" + mosaic_dram_config + ") for tile streams and the"
++               " attention consumer's K/V read streams; KV cache append, KV proxy modes and"
++               " SFU operand streams analytical";
+     }
+     if(row_buffer_bytes == 0) {
+         return "flat per-access (no row-buffer model)";
+diff --git a/components/dram.h b/components/dram.h
+index 453ecbe..21fff0d 100644
+--- a/components/dram.h
++++ b/components/dram.h
+@@ -129,6 +129,17 @@ public:
+     // overlap: the stream feeds cycle_chip_dram, which becomes max(DRAM stream, sink_cycle).
+     void mosaic_stream(const cycles_snapshot_t &before, data_type_t type, size_t elements,
+                        bool is_write, bool overlap, double sink_cycle);
++    // One complete sequential READ of m_bytes on a fresh MOSAIC DRAM device, issued like the tile
++    // streams (mosaic_request_bytes / mosaic_max_inflight / mosaic_path_latency_ns), NOT amortized:
++    // the stream pays its own start. *m_cycles is in [dram]-clock cycles (ns x [dram] frequency /
++    // 1e3), the unit of u_read_cycle and of the tile streams. Streams up to
++    // mosaic_stream_exact_bytes are simulated exactly; longer ones are T(cap) plus the steady slope
++    // between cap/2 and cap (*m_extrapolated = true).
++    // Returns false -- cycles 0 -- when no MOSAIC DRAM is selected: the caller keeps its analytical
++    // cost. With one selected, a failed or non-finite timing ends the run; it never falls back.
++    // 0 bytes cost 0 cycles.
++    bool mosaic_read_stream(size_t m_bytes, double *m_cycles, bool *m_extrapolated) const;
++    static const size_t mosaic_stream_exact_bytes = static_cast<size_t>(32) << 20;
+     std::string mosaic_dram_config;
+     // [dram] mosaic_request_bytes / mosaic_max_inflight / mosaic_path_latency_ns: the DMA issuing the
+     // tile streams -- request size, outstanding-request limit, round-trip latency outside the DRAM.
+@@ -205,4 +216,12 @@ private:
+ 
+ };
+ 
++#ifdef NPUSIM_MOSAIC_DRAM
++// DRAM nanoseconds of one sequential stream on a fresh device of the MOSAIC DRAM configuration `yaml`
++// (the helper behind dram_t's MOSAIC timing; for tests and diagnostics). request_bytes 0: 64 DRAM
++// transactions per request; max_inflight 0: unlimited.
++double mosaic_dram_stream_ns(const std::string &yaml, size_t bytes, bool is_write, size_t request_bytes,
++                             unsigned max_inflight, double path_latency_ns);
++#endif
++
+ #endif
+diff --git a/scheduler/npu.cc b/scheduler/npu.cc
+index 55da7e5..a5e30dd 100644
+--- a/scheduler/npu.cc
++++ b/scheduler/npu.cc
+@@ -1960,7 +1960,13 @@ void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
+         kv_stream_cost_t cost;
+         // One sequential stream of m_bytes: device/link makespans overlap packet-level
+         // (max), the busiest bank's row activations serialize on top.
+-        auto read_stream = [&](size_t m_bytes, double *m_energy) {
++        // With a MOSAIC DRAM selected the stream's TIME is the backend's instead (a complete read on
++        // a fresh device, dram_t::mosaic_read_stream): it replaces the analytical makespan INCLUDING
++        // the row-activation time -- never both. K and V are two fresh, independent streams: no
++        // DRAM state carries from the K pass to the V pass (a modeling choice of the two-pass
++        // schedule, not a bound). Energy, link beats and row-activation counts stay the analytical
++        // [dram] bookkeeping; they are not Ramulator counters.
++        auto read_stream = [&](size_t m_bytes, double *m_energy, bool *m_extrapolated) {
+             const size_t bits = m_bytes*8;
+             const size_t accesses = (bits + std::max(1u, dram->line_size[T]) - 1)/
+                                     std::max(1u, dram->line_size[T]);
+@@ -1978,6 +1984,11 @@ void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
+                 cycle += static_cast<double>(rows.busiest_bank)*per_activation_cycle;
+                 *m_energy += static_cast<double>(rows.activations)*dram->u_row_miss_energy;
+             }
++            double backend_cycle = 0.0;
++            if(dram->mosaic_read_stream(m_bytes, &backend_cycle, m_extrapolated)) {
++                cost.read_backend = true;
++                cycle = backend_cycle;
++            }
+             return cycle;
+         };
+         // K and V passes fetch the COMPRESSED halves; the decoder reconstitutes dense at
+@@ -1985,10 +1996,14 @@ void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
+         const size_t comp_half = kvcache->compressed_read_bytes()/2;
+         const double decoder_half =
+             kvcache->decoder_cycles(kvcache->dense_read_bytes())/2.0;
+-        cost.k_supply_cycle = read_stream(comp_half, &cost.dram_energy) + decoder_half;
+-        cost.v_supply_cycle = read_stream(comp_half, &cost.dram_energy) + decoder_half;
++        cost.k_dram_read_cycle = read_stream(comp_half, &cost.dram_energy, &cost.k_extrapolated);
++        cost.v_dram_read_cycle = read_stream(comp_half, &cost.dram_energy, &cost.v_extrapolated);
++        cost.read_stream_bytes = comp_half;
++        cost.k_supply_cycle = cost.k_dram_read_cycle + decoder_half;
++        cost.v_supply_cycle = cost.v_dram_read_cycle + decoder_half;
+         // Cache append: the current token's K/V, stored at the cache's compression. One
+         // token is far below a DRAM row, so no row-activation charge for the append.
++        // Analytical also with a MOSAIC DRAM selected (reported as such).
+         const size_t dense_w = kvcache->kv_write_bytes();
+         const size_t write_b = kvcache->bypassed() ? dense_w
+             : std::max<size_t>(1, static_cast<size_t>(
+diff --git a/scheduler/stats.cc b/scheduler/stats.cc
+index 2c13115..5485ffa 100644
+--- a/scheduler/stats.cc
++++ b/scheduler/stats.cc
+@@ -401,6 +401,12 @@ void stats_t::init() {
+     attn_supply_k_cycle = 0.0;
+     attn_supply_v_cycle = 0.0;
+     attn_write_cycle = 0.0;
++    attn_dram_read_k_cycle = 0.0;
++    attn_dram_read_v_cycle = 0.0;
++    attn_read_stream_bytes = 0;
++    attn_read_backend = false;
++    attn_read_k_extrapolated = false;
++    attn_read_v_extrapolated = false;
+     attn_step_latency = 0.0;
+     attn_exposed_cycle = 0.0;
+     attn_hidden_cycle = 0.0;
+@@ -2476,6 +2482,12 @@ void stats_t::apply_attention_step(kvcache_t *m_engine, const kv_stream_cost_t &
+     attn_supply_k_cycle = m_cost.k_supply_cycle;
+     attn_supply_v_cycle = m_cost.v_supply_cycle;
+     attn_write_cycle = m_cost.write_cycle;
++    attn_dram_read_k_cycle = m_cost.k_dram_read_cycle;
++    attn_dram_read_v_cycle = m_cost.v_dram_read_cycle;
++    attn_read_stream_bytes = m_cost.read_stream_bytes;
++    attn_read_backend = m_cost.read_backend;
++    attn_read_k_extrapolated = m_cost.k_extrapolated;
++    attn_read_v_extrapolated = m_cost.v_extrapolated;
+     bool mac_priced = true, softmax_priced = true;
+     attn_compute_energy = m_engine->attention_compute_energy(&mac_priced, &softmax_priced);
+     if(!mac_priced) {
+@@ -2720,6 +2732,12 @@ void stats_t::update_network_stats(stats_t *m_source) {
+     attn_supply_k_cycle += m_source->attn_supply_k_cycle;
+     attn_supply_v_cycle += m_source->attn_supply_v_cycle;
+     attn_write_cycle += m_source->attn_write_cycle;
++    attn_dram_read_k_cycle += m_source->attn_dram_read_k_cycle;
++    attn_dram_read_v_cycle += m_source->attn_dram_read_v_cycle;
++    attn_read_stream_bytes = std::max(attn_read_stream_bytes, m_source->attn_read_stream_bytes);
++    attn_read_backend = attn_read_backend || m_source->attn_read_backend;
++    attn_read_k_extrapolated = attn_read_k_extrapolated || m_source->attn_read_k_extrapolated;
++    attn_read_v_extrapolated = attn_read_v_extrapolated || m_source->attn_read_v_extrapolated;
+     attn_step_latency += m_source->attn_step_latency;
+     attn_exposed_cycle += m_source->attn_exposed_cycle;
+     attn_hidden_cycle += m_source->attn_hidden_cycle;
+@@ -3620,7 +3638,21 @@ void stats_t::print_results(std::ofstream &m_output_file) {
+                           ? "added to DRAM access axis"
+                           : "tile-level supply stage vs the layer window")
+                       << ")" << std::endl;
+-        if(attn_present) {
++        if(attn_present && attn_read_backend) {
++            m_output_file << " * cost basis           : K / V READ TIME from the MOSAIC DRAM backend --"
++                          << " one complete read stream per pass on a fresh device (fresh independent"
++                          << " K and V streams, no inter-pass DRAM-state continuity); cache append,"
++                          << " energy, link and row-activation counts from the analytical [dram] unit"
++                          << " costs (not backend counters)" << std::endl;
++            m_output_file << " * K / V DRAM read      :" << std::setw(11) << std::setprecision(1)
++                          << attn_dram_read_k_cycle << " / " << attn_dram_read_v_cycle
++                          << " cycles, decoder excluded (" << attn_read_stream_bytes
++                          << " B per pass; K " << (attn_read_k_extrapolated ? "extrapolated" : "exact")
++                          << ", V " << (attn_read_v_extrapolated ? "extrapolated" : "exact")
++                          << ")" << std::endl;
++            m_output_file << " * supply schedule      : each pass's stream time is spread uniformly"
++                          << " over its tiles (not per-tile DRAM arrival times)" << std::endl;
++        } else if(attn_present) {
+             m_output_file << " * cost basis           : dedicated stream on the DRAM model"
+                           << " (device read/write, link, row activations)" << std::endl;
+         } else {
+@@ -3658,7 +3690,8 @@ void stats_t::print_results(std::ofstream &m_output_file) {
+             m_output_file << " * buffer-full stall    :" << std::setw(11) << std::setprecision(1)
+                           << attn_stall_cycle << " cycles" << std::endl;
+             m_output_file << " * cache append write   :" << std::setw(11) << std::setprecision(1)
+-                          << attn_write_cycle << " cycles" << std::endl;
++                          << attn_write_cycle << " cycles"
++                          << (attn_read_backend ? " (analytical)" : "") << std::endl;
+             m_output_file << " * cache occupancy      :" << std::setw(11)
+                           << attn_kv_occupancy_bytes << " B after append";
+             if(attn_kv_capacity_bytes > 0) {
+diff --git a/scheduler/stats.h b/scheduler/stats.h
+index d095edb..b58483d 100644
+--- a/scheduler/stats.h
++++ b/scheduler/stats.h
+@@ -56,9 +56,20 @@ struct kv_stream_cost_t {
+     double dram_energy;         // read + write + link + row-activation energy (priced)
+     size_t link_transactions;
+     size_t row_activations;
++    // Raw DRAM read time of each pass, decoder excluded, and where it came from: the analytical
++    // [dram] unit costs, or (read_backend) a complete MOSAIC DRAM read stream per pass --
++    // simulated exactly or, for a long stream, extrapolated from its steady slope.
++    double k_dram_read_cycle;
++    double v_dram_read_cycle;
++    size_t read_stream_bytes;   // compressed bytes of ONE pass
++    bool read_backend;
++    bool k_extrapolated;
++    bool v_extrapolated;
+ 
+     kv_stream_cost_t() : k_supply_cycle(0.0), v_supply_cycle(0.0), write_cycle(0.0),
+-                         dram_energy(0.0), link_transactions(0), row_activations(0) {}
++                         dram_energy(0.0), link_transactions(0), row_activations(0),
++                         k_dram_read_cycle(0.0), v_dram_read_cycle(0.0), read_stream_bytes(0),
++                         read_backend(false), k_extrapolated(false), v_extrapolated(false) {}
+ };
+ 
+ class stats_t {
+@@ -476,6 +487,13 @@ public:
+     double attn_supply_k_cycle;          // K stream (dedicated DRAM cost + decoder share)
+     double attn_supply_v_cycle;
+     double attn_write_cycle;             // cache append of the current token's K/V
++    // K / V raw DRAM read time (decoder excluded) and its source, for the report; see kv_stream_cost_t.
++    double attn_dram_read_k_cycle;
++    double attn_dram_read_v_cycle;
++    size_t attn_read_stream_bytes;
++    bool attn_read_backend;
++    bool attn_read_k_extrapolated;
++    bool attn_read_v_extrapolated;
+     double attn_step_latency;            // integrated step latency (schedule-dependent)
+     double attn_exposed_cycle;           // KV supply beyond the attention compute window
+     double attn_hidden_cycle;

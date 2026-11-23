@@ -1,0 +1,9 @@
+1 MiB read: fresh processes 1412.500000 / 1465.625000 ns; one process 1412.500000 / 1465.625000 / 1412.500000 ns (A, B, A again)
+unaligned stream of 4194317 B: 5580.625 ns
+half   1 MiB: two fresh streams     2825.000 ns, one stream of both     2830.625 ns, difference   -5.625 ns (-0.199%)
+half   2 MiB: two fresh streams     5661.250 ns, one stream of both     5580.625 ns, difference  +80.625 ns (+1.445%)
+half   4 MiB: two fresh streams    11161.250 ns, one stream of both    11171.250 ns, difference  -10.000 ns (-0.090%)
+half   8 MiB: two fresh streams    22342.500 ns, one stream of both    22345.000 ns, difference   -2.500 ns (-0.011%)
+half  16 MiB: two fresh streams    44690.000 ns, one stream of both    44626.250 ns, difference  +63.750 ns (+0.143%)
+64 MiB: predicted from 16 / 32 MiB 89188.750 ns, exact 89284.375 ns, -0.1071% (acceptance 1%)
+MOSAIC KV stream checks passed

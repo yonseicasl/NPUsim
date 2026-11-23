@@ -1,0 +1,10 @@
+{
+ "point": "attn_b8__hbm2e_refsb",
+ "workload": {
+  "kind": "attention",
+  "B": 8,
+  "L": 2048
+ },
+ "dram_yaml": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml",
+ "network": "attn_b8_l2048"
+}

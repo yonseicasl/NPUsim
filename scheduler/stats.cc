@@ -401,6 +401,12 @@ void stats_t::init() {
     attn_supply_k_cycle = 0.0;
     attn_supply_v_cycle = 0.0;
     attn_write_cycle = 0.0;
+    attn_dram_read_k_cycle = 0.0;
+    attn_dram_read_v_cycle = 0.0;
+    attn_read_stream_bytes = 0;
+    attn_read_backend = false;
+    attn_read_k_extrapolated = false;
+    attn_read_v_extrapolated = false;
     attn_step_latency = 0.0;
     attn_exposed_cycle = 0.0;
     attn_hidden_cycle = 0.0;
@@ -2476,6 +2482,12 @@ void stats_t::apply_attention_step(kvcache_t *m_engine, const kv_stream_cost_t &
     attn_supply_k_cycle = m_cost.k_supply_cycle;
     attn_supply_v_cycle = m_cost.v_supply_cycle;
     attn_write_cycle = m_cost.write_cycle;
+    attn_dram_read_k_cycle = m_cost.k_dram_read_cycle;
+    attn_dram_read_v_cycle = m_cost.v_dram_read_cycle;
+    attn_read_stream_bytes = m_cost.read_stream_bytes;
+    attn_read_backend = m_cost.read_backend;
+    attn_read_k_extrapolated = m_cost.k_extrapolated;
+    attn_read_v_extrapolated = m_cost.v_extrapolated;
     bool mac_priced = true, softmax_priced = true;
     attn_compute_energy = m_engine->attention_compute_energy(&mac_priced, &softmax_priced);
     if(!mac_priced) {
@@ -2720,6 +2732,12 @@ void stats_t::update_network_stats(stats_t *m_source) {
     attn_supply_k_cycle += m_source->attn_supply_k_cycle;
     attn_supply_v_cycle += m_source->attn_supply_v_cycle;
     attn_write_cycle += m_source->attn_write_cycle;
+    attn_dram_read_k_cycle += m_source->attn_dram_read_k_cycle;
+    attn_dram_read_v_cycle += m_source->attn_dram_read_v_cycle;
+    attn_read_stream_bytes = std::max(attn_read_stream_bytes, m_source->attn_read_stream_bytes);
+    attn_read_backend = attn_read_backend || m_source->attn_read_backend;
+    attn_read_k_extrapolated = attn_read_k_extrapolated || m_source->attn_read_k_extrapolated;
+    attn_read_v_extrapolated = attn_read_v_extrapolated || m_source->attn_read_v_extrapolated;
     attn_step_latency += m_source->attn_step_latency;
     attn_exposed_cycle += m_source->attn_exposed_cycle;
     attn_hidden_cycle += m_source->attn_hidden_cycle;
@@ -3620,7 +3638,21 @@ void stats_t::print_results(std::ofstream &m_output_file) {
                           ? "added to DRAM access axis"
                           : "tile-level supply stage vs the layer window")
                       << ")" << std::endl;
-        if(attn_present) {
+        if(attn_present && attn_read_backend) {
+            m_output_file << " * cost basis           : K / V READ TIME from the MOSAIC DRAM backend --"
+                          << " one complete read stream per pass on a fresh device (fresh independent"
+                          << " K and V streams, no inter-pass DRAM-state continuity); cache append,"
+                          << " energy, link and row-activation counts from the analytical [dram] unit"
+                          << " costs (not backend counters)" << std::endl;
+            m_output_file << " * K / V DRAM read      :" << std::setw(11) << std::setprecision(1)
+                          << attn_dram_read_k_cycle << " / " << attn_dram_read_v_cycle
+                          << " cycles, decoder excluded (" << attn_read_stream_bytes
+                          << " B per pass; K " << (attn_read_k_extrapolated ? "extrapolated" : "exact")
+                          << ", V " << (attn_read_v_extrapolated ? "extrapolated" : "exact")
+                          << ")" << std::endl;
+            m_output_file << " * supply schedule      : each pass's stream time is spread uniformly"
+                          << " over its tiles (not per-tile DRAM arrival times)" << std::endl;
+        } else if(attn_present) {
             m_output_file << " * cost basis           : dedicated stream on the DRAM model"
                           << " (device read/write, link, row activations)" << std::endl;
         } else {
@@ -3658,7 +3690,8 @@ void stats_t::print_results(std::ofstream &m_output_file) {
             m_output_file << " * buffer-full stall    :" << std::setw(11) << std::setprecision(1)
                           << attn_stall_cycle << " cycles" << std::endl;
             m_output_file << " * cache append write   :" << std::setw(11) << std::setprecision(1)
-                          << attn_write_cycle << " cycles" << std::endl;
+                          << attn_write_cycle << " cycles"
+                          << (attn_read_backend ? " (analytical)" : "") << std::endl;
             m_output_file << " * cache occupancy      :" << std::setw(11)
                           << attn_kv_occupancy_bytes << " B after append";
             if(attn_kv_capacity_bytes > 0) {

@@ -1,0 +1,148 @@
+# Energy unit: uncalibrated (ESTIMATED scale; absolute totals and power are NOT meaningful) -- no energy_unit declared, so the numbers are relative event x unit-cost sums of unknown scale
+# Runtime formats: input=bf16 weight=bf16 output=bf16 accumulator=fp32
+============ MAC specification =============
+# of MACs          :                       1
+Computation energy :                 0.00 uncalibrated
+Computation cycle  :              1.0 cycles
+Line size
+ * Input           :                 16 bits
+ * Weight          :                 16 bits
+ * Output          :                 16 bits
+Access energy (read/write)
+ * MAC units       :            0.00/0.00 uncalibrated
+Access cycle (read/write)
+ * MAC units       :          1.0/1.0 cycles
+
+============= PE specification =============
+Local buffer type  :               Separated
+ * Input           :               2048 Byte
+ * Weight          :                 64 Byte
+ * Output          :                 64 Byte
+Line size
+ * Input           :                 16 bits
+ * Weight          :                 16 bits
+ * Output          :                 16 bits
+Stationary type    :       Weight stationary
+Bandwidth          :             384000 GB/s
+Access energy (read/write)
+ * Input buffer    :            0.00/0.00 uncalibrated
+ * Weight buffer   :            0.00/0.00 uncalibrated
+ * Output buffer   :            0.00/0.00 uncalibrated
+Access cycle (read/write)
+ * Input buffer    :          1.0/1.0 cycles
+ * Weight buffer   :          1.0/1.0 cycles
+ * Output buffer   :          1.0/1.0 cycles
+
+========== PE array specification ==========
+PE array type      :          Systolic Array
+Array height       :                     128
+Array width        :                     128
+Stationary type    :       Weight stationary
+Bandwidth          :             384000 GB/s
+NoC type           :                     Bus
+NoC cycle          :                1 cycles
+NoC energy         :                    0 uncalibrated
+
+============== Global buffer ===============
+Global buffer type :                Separate
+Input size         :              24576.0 KB
+Weight size        :               4096.0 KB
+Output size        :               2048.0 KB
+Line size
+ * Input data      :               4096 bits
+ * Weight          :               4096 bits
+ * Output data     :               4096 bits
+Stationary type    :       Output stationary
+Bandwidth          :             768000 GB/s
+Access energy (read/write)
+ * Input buffer    :            0.00/0.00 uncalibrated
+ * Weight buffer   :            0.00/0.00 uncalibrated
+ * Output buffer   :            0.00/0.00 uncalibrated
+Access cycle (read/write)
+ * Input buffer    :          1.0/1.0 cycles
+ * Weight buffer   :          1.0/1.0 cycles
+ * Output buffer   :          1.0/1.0 cycles
+
+================ Multi Chip ================
+Type               :                    Mesh
+Height             :                       4
+Width              :                       1
+Stationary type    :       Output stationary
+Bandwidth          :            1536000 GB/s
+NoP cycle          :                1 cycles
+NoP energy         :                    0 uncalibrated
+
+===== DRAM =====
+
+==== KV cache + attention step ====
+Model scope        : attention consumer (QK/softmax/AV, two_pass), dedicated KV DRAM stream, cache append; one decode step at the declared context (no multi-step growth)
+Geometry           :         32 q-heads / 8 kv-heads / head_dim 128 / 2 B/elem
+Attention rate     :          65536.00 MAC/cycle
+Softmax rate       :              0.01 cycles/score
+Per-token KV       :              4096 B/token/layer
+Context length     :              2048 tokens
+Batch              :                 1 sequences
+Compression        :              1.00x  (uncompressed)
+Read per step      :              8.39 MB dense / 8.39 MB fetched
+Decoder throughput :              0.00 dense B/cycle  (ideal)
+Schedule           :         streaming  (tile 1048576 B, buffer 2 tiles)
+Read energy        :            0.0000 /byte (UNPRICED)
+Provenance         : validation/tpu_v5e/compare_attention.py(structuralrates;KVsupplyfrom[dram])
+
+# Initialize neural network model ...
+Initializing network ...
+  Done!
+# Initialize the mapping table ...
+  Done!
+# Initialize the scheduler ...
+  Done!
+# Initialize the stat ...
+  Done!
+# Run the network
+The network configuration of #0 layer
+* Tile size
+========= MAC ==========
+Input data  :          1
+Weight      :          1
+Output data :          1
+========================
+
+===== Local buffer =====
+Input data  :          1
+Weight      :          1
+Output data :          1
+========================
+
+======= PE array =======
+Input data  :        128
+Weight      :      16384
+Output data :        128
+========================
+
+===== Global buffer ====
+Input data  :        128
+Weight      :      16384
+Output data :        128
+========================
+
+======= Processor ======
+Input data  :        128
+Weight      :      65536
+Output data :        512
+========================
+
+========= DRAM =========
+Input data  :        128
+Weight      :      65536
+Output data :        512
+========================
+
+The simulation result of #0 layer
+
+tpu_v5e_attn_b1_l2048_layer_0.txt
+The simulator result of attn_b1_l2048
+
+tpu_v5e_attn_b1_l2048.txt
+Warning: network layer 1 is excluded from accelerator timing (only convolution/connected are supported)
+Warning: network layer 2 is excluded from accelerator timing (only convolution/connected are supported)
+WARNING: partial timing result; 2 non-convolution/connected layers were excluded.

@@ -1,0 +1,7 @@
+preflight: analytic GEMM M 32 in 39.2 s, 1.3 GB peak; capacity {'hbm2e_refsb': True, 'hbdram_example': True}
+hbm2e_refsb: HBM2, 16 channels x 128 DQ x 3200 Mbps = 819.2 GB/s nominal, 16 GiB, transaction 32 B, tCK 0.625 ns
+hbdram_example: HBDRAM, 16 channels x 1024 DQ x 500 Mbps = 1024.0 GB/s nominal, 8 GiB, transaction 128 B, tCK 2.0 ns
+gemm_m32   GEMM critical path:      45.79 us ->      33.91 us, x1.351   DRAM busy 99.5% -> 99.3%, compute busy 12.4% -> 16.8%, bottleneck DRAM -> DRAM
+gemm_m512  GEMM critical path:      89.04 us ->      88.99 us, x1.001   DRAM busy 57.1% -> 42.2%, compute busy 98.4% -> 98.4%, bottleneck PE array -> PE array
+attn_b8    attention step (appended after a dummy projection):      91.08 us ->      71.19 us, x1.279   K read 66939.4 -> 52017.0 cycles, KV exposed 131894.8 -> 102050.0
+24 of 24 checks passed

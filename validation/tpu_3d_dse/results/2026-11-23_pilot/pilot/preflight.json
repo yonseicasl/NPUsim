@@ -1,0 +1,16 @@
+{
+ "largest_live_tensor_bytes": 67108864,
+ "capacity_ok": {
+  "hbm2e_refsb": true,
+  "hbdram_example": true
+ },
+ "note": "capacity is checked for the pilot's own tensors only; whether a whole model fits is NOT examined",
+ "analytic_run": {
+  "wall_s": 39.2,
+  "peak_rss_kb": 1304604,
+  "busy_dram_cycles": 62748.0,
+  "latency_cycles": 63102.3,
+  "dram_timing_model": "flat per-access (no row-buffer model)"
+ },
+ "runtime_estimate": "about the analytic run per GEMM M 32 point; front-end load grows with the batch (M 512, B 8)"
+}

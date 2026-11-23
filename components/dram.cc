@@ -7,9 +7,11 @@
 #include <cstdlib>
 
 #ifdef NPUSIM_MOSAIC_DRAM
+#include <fstream>
 #include <functional>
 #include <map>
 #include <queue>
+#include <sstream>
 #include <tuple>
 #include "dram/cosim_frontend.h"
 
@@ -19,11 +21,21 @@ namespace {
 // (0: 64 DRAM transactions), at most max_inflight outstanding (0: unlimited), each holding its
 // slot for path_latency_ns beyond the DRAM access (caches, buses, clock crossings), so a
 // latency-bound DMA streams at max_inflight x request_bytes per round trip. Memoized: the tiles
-// of a layer repeat the same sizes.
+// of a layer repeat the same sizes. The memo is keyed by the DEVICE CONFIGURATION too -- the yaml's
+// path and its bytes, read at every call -- so two configurations in one process never share a
+// timing, and an edited file is a new configuration.
 double ramulator_ns(const std::string &yaml, size_t bytes, bool is_write, size_t request_bytes,
                     unsigned max_inflight, double path_latency_ns) {
-    static std::map<std::tuple<size_t, bool, size_t, unsigned, double>, double> memo;
-    const auto key = std::make_tuple(bytes, is_write, request_bytes, max_inflight, path_latency_ns);
+    std::ifstream file(yaml.c_str(), std::ios::binary);
+    if(!file) {
+        std::cerr << "Error: cannot read the MOSAIC DRAM configuration " << yaml << std::endl;
+        exit(1);
+    }
+    std::ostringstream content;
+    content << file.rdbuf();
+    static std::map<std::tuple<std::string, std::string, size_t, bool, size_t, unsigned, double>, double> memo;
+    const auto key = std::make_tuple(yaml, content.str(), bytes, is_write, request_bytes, max_inflight,
+                                     path_latency_ns);
     auto it = memo.find(key);
     if(it != memo.end()) return it->second;
     mosaicsim::CosimFrontend fe(yaml);
@@ -53,6 +65,11 @@ double ramulator_ns(const std::string &yaml, size_t bytes, bool is_write, size_t
     return memo[key] = std::max<uint64_t>(end, fe.get_clk())*fe.get_tCK();
 }
 } // namespace
+
+double mosaic_dram_stream_ns(const std::string &yaml, size_t bytes, bool is_write, size_t request_bytes,
+                             unsigned max_inflight, double path_latency_ns) {
+    return bytes == 0 ? 0.0 : ramulator_ns(yaml, bytes, is_write, request_bytes, max_inflight, path_latency_ns);
+}
 #endif
 
 
@@ -339,6 +356,51 @@ void dram_t::mosaic_stream(const cycles_snapshot_t &before, data_type_t type, si
 }
 
 
+// See dram.h. Unlike mosaic_stream() nothing is amortized: the stream is simulated from a fresh
+// device and pays its own start.
+bool dram_t::mosaic_read_stream(size_t m_bytes, double *m_cycles, bool *m_extrapolated) const {
+    *m_cycles = 0.0;
+    *m_extrapolated = false;
+    if(mosaic_dram_config.empty()) return false;      // no backend selected: the caller's analytical cost stands
+#ifdef NPUSIM_MOSAIC_DRAM
+    if(m_bytes == 0) return true;
+    const size_t cap = mosaic_stream_exact_bytes;
+    auto ns_of = [&](size_t bytes) {
+        const double ns = ramulator_ns(mosaic_dram_config, bytes, false, mosaic_request_bytes,
+                                       mosaic_max_inflight, mosaic_path_latency_ns);
+        if(!std::isfinite(ns) || ns <= 0.0) {
+            // A selected backend that fails is an error, never a silent return to the analytical cost.
+            std::cerr << "Error: MOSAIC DRAM read stream of " << bytes << " bytes returned " << ns
+                      << " ns (" << mosaic_dram_config << ")" << std::endl;
+            exit(1);
+        }
+        return ns;
+    };
+    double ns;
+    if(m_bytes <= cap) {
+        ns = ns_of(m_bytes);
+    } else {
+        // Affine extension of the steady stream: T(cap) + (bytes - cap) x (T(cap) - T(cap/2))/(cap/2).
+        const double hi = ns_of(cap), lo = ns_of(cap/2);
+        const double slope = (hi - lo)/static_cast<double>(cap/2);
+        if(!std::isfinite(slope) || slope <= 0.0) {
+            std::cerr << "Error: MOSAIC DRAM read stream: non-positive steady slope between " << cap/2
+                      << " and " << cap << " bytes (" << lo << " ns, " << hi << " ns)" << std::endl;
+            exit(1);
+        }
+        ns = hi + static_cast<double>(m_bytes - cap)*slope;
+        *m_extrapolated = true;
+    }
+    *m_cycles = ns*frequency/1e3;
+    return true;
+#else
+    (void)m_bytes;
+    std::cerr << "Error: NPUSIM_MOSAIC_DRAM is set but NPUsim was built without MOSAIC_ROOT" << std::endl;
+    exit(1);
+#endif
+}
+
+
 // Connect DRAM to Global buffer.
 void dram_t::connect(multi_chip_t *m_multi_chip) {
     multi_chip = m_multi_chip;
@@ -382,8 +444,9 @@ bool dram_t::is_idle() {
 // so nobody reads its bank parallelism as a conflict model.
 std::string dram_t::describe_timing_model() const {
     if(!mosaic_dram_config.empty()) {
-        return "MOSAIC Ramulator2 (" + mosaic_dram_config + ") for tile streams;"
-               " KV-cache/SFU operand streams analytical";
+        return "MOSAIC Ramulator2 (" + mosaic_dram_config + ") for tile streams and the"
+               " attention consumer's K/V read streams; KV cache append, KV proxy modes and"
+               " SFU operand streams analytical";
     }
     if(row_buffer_bytes == 0) {
         return "flat per-access (no row-buffer model)";
