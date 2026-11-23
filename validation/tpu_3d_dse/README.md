@@ -21,8 +21,12 @@ given, and NPUsim's energy numbers are unpriced.
   - `hbdram_example` -- hybrid-bonded DRAM on logic: the repository's EXISTING example profile
     (`configs/architecture/dram/thermal_sweep/hb3d_example.yaml`). An existing model scenario, not a validated
     device, and nothing about its technology is added here.
-  - Not prepared: HBM stack / channel expansion (needs a new yaml and a statement of what is scaled). Which of
-    the two the exploration targets is an open question to the user.
+  - **Target architecture (user, 2026-11-23): one DRAM die bonded directly on the xPU -- 1-high.** HBM stack /
+    channel expansion is therefore out of scope and not prepared; HBM2e stays only as the measured-against
+    baseline. Consequences still to be worked out, none assumed here: with a single DRAM layer the capacity is
+    bounded by the area over the logic die (the example profile's 8 GiB in one layer is an organisation in a
+    preset table, not a checked floorplan), and MOSAIC's thermal examples start at 2 stacked dies -- a 1-high
+    entry does not exist yet.
 - **Stack depth is not a performance axis yet.** MOSAIC's `tests/thermal_dram_sweep.py` varies 2 / 4 / 8 stacked
   dies in the thermal model only; all three share one performance yaml. No stack-depth performance effect can be
   claimed until organisation / capacity / channels are tied to the depth. That sweep also uses MOSAIC's 16-core
