@@ -1,0 +1,11 @@
+{
+ "point": "gemm_m32__hbm2e_refsb",
+ "workload": {
+  "kind": "gemm",
+  "M": 32,
+  "K": 4096,
+  "N": 4096
+ },
+ "dram_yaml": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml",
+ "network": "gemm_32x4096x4096"
+}

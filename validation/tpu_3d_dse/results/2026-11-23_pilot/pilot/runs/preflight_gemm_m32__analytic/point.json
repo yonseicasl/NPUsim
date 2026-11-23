@@ -1,0 +1,11 @@
+{
+ "point": "preflight_gemm_m32__analytic",
+ "workload": {
+  "kind": "gemm",
+  "M": 32,
+  "K": 4096,
+  "N": 4096
+ },
+ "dram_yaml": null,
+ "network": "gemm_32x4096x4096"
+}

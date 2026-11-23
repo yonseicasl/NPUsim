@@ -1,0 +1,492 @@
+{
+ "frozen_after": {
+  "models/model": "d9367f81be607f8ddcc6a7feb0db0b3bce800cdbbdce3d5a465464be32103c0d",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c",
+  "configs/accelerators/tpu_v5e.cfg": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+  "validation/tpu_v5e/kv_backend_probe.py": "b8da3d229d9f16bc5de6241fb206a4b0186148b8ef04ac243cc7561432b811d5",
+  "validation/tpu_v5e/compare_attention.py": "d3a096848349c768802337021bbe3b7e273292775deafaa86453ed61a2b94a9a",
+  "validation/palm/palm_decode.py": "508db3a3fd552f1d6e2826c9728c9af24453ee02eee1a45aa38c382f96a620c4",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/././libLerc.so.4": "7967e1ff7f3b8d02c16aba395c876304021d92b962ab36f4b66e54aa3ec07a11",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/././libbrotlicommon.so.1": "0d3a498fba7e059eac803b01321796746d1a1c66c693f768a4864c3d8a9348f1",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/././libdeflate.so.0": "6f6e9a96b4735c5dff9987d8f292f91ef615616d71ccfae76822cfb6da0ea3de",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/././libgomp.so.1": "34324e0835be6e103844d7c416bec42834cf803d3ba8d9519df15ced19914dfe",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/././liblzma.so.5": "491c01c02da5a22f5825a7c05a561e175aa70c203d5e462dfe90b5040dbdaf50",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/././libsharpyuv.so.0": "5506179ef4b8fb9d513d2f76366ccc2eb63cd06c7e17d7f26d1853d986f7febb",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/././libzstd.so.1": "b0e2bad8c117a3ad7d344d7924272d12b8e363956efb91b5074e43d4e201a08d",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libIex.so.34": "2911599f95f790b8a0735619231a781ecbcb2c9d9bcdd75e9f4a1b46aa2bcd76",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libIlmThread.so.34": "e8606c9d88c165cb4682411cd6197f4d8cfff0d408ed91f72f6835c79bfda2c1",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libImath.so.30": "b3236f91514142ed200f0ec86323d88ec4e8cf67ef826cfea082506036fe1215",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libOpenEXR.so.34": "49717a7dc5c54f5bfba8d4b36fd7966f3830717c430730b41d82126787dfd521",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libOpenEXRCore.so.34": "47877f3f5a790686216c387b4ef180ddb6c5c76e193273971a6db91bb570bb6a",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libSvtAv1Enc.so.4": "315403833e04a06d69a28ab5b136532013db7a4581f28d822b7b079ef7e3ba6c",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libaom.so.3": "44ac3346467bd4157eedbb71ab6e21c36d5b85d1220dc75d5378b577de660793",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libavif.so.16": "34e56d1e77400c529ff3a953cda63117485f92bfec395de4302267dc30987d32",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libbrotlidec.so.1": "64242b3d5636ba6ea933a58dec3d498cb71ca2707f637343570c836cfd5c99ea",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libbrotlienc.so.1": "03989d64af3833b2a14cfb50540d38c9b039a244de657e6cade01167ed4eb4f9",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libdav1d.so.7": "ec3e592835eb249049fa4ce9135e08c3241afe3fc600e26110b1cda31dde15c6",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libhwy.so.1": "072562af96c2bf92969bb079bf3041cae2ce6feab195ccce72bcb236806819a8",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libjpeg.so.8": "27d5bc7b9c9674cc073e71e899e7d5f6dedf86f0ad4d93947f60aaee2c2b25c8",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libjxl.so.0.12": "649906e324113ac05b7d124416d92c8ccd8cfb03784fefb99d558c71abf71fa1",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libjxl_cms.so.0.12": "d6839bfed7720ad90b67c4e6487624192411d8a4fb7d05827838ffc90b73b474",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libjxl_threads.so.0.12": "547431b94950bf98d836f578e1381c3bb030aceeecb96af321a0f560216a4a98",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libopencv_core.so.413": "f9f1c7f43d6c55999e08cb02d28af700375ed6fffdfeae89fd417f17d650f49a",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libopencv_imgproc.so.413": "05c671c1c925699a3561ed5f1adcecf8442803066633e225bbd8d0dd004ffb51",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libopenjp2.so.7": "f6b10df0ab34597117b0c6afd6551aa6d43e222ec0c17b54fd4c17cb12ce1d61",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libopenjph.so.0.32": "ad33a8bb96395a9fd0c25c04c6b550a870def0e8ab4d2e373ef45de0c1e86f6c",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libpng16.so.16": "c98b248979695d9d3b0d7d8d0b6ed25bc3013a2d479e4324e85886ee80f78708",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libquadmath.so.0": "9fa4807097fa47da1815765f0a43177c45e7ec7cc94e44cfa95a4c3a1a341ee6",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./librav1e.so.0.8": "dee89ab52e4bd68fd15364481312e8f21741cb9c5cd380d84cc68e259e356754",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libtiff.so.6": "3902be0e4b1f762bed5cfebfcf3e8a5dd02a8f2f423805a5008e9743ab36ddf2",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libwebp.so.7": "54491b4b810128b52895134aeff75e6de308365e93b59fd7c3b0278b54ca6a31",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libwebpdemux.so.2": "b42102f88cb510b42dfda52d8235ff6e95a74ac971d5ca11edde792c720df5ba",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libwebpmux.so.3": "89c18c4d31d860f54fbee6957fb74ce1e5db050ba585b7502770a9bc1d6f2e85",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/./libz.so.1": "3c6fd78e248a60e45081bcc77031204a7cb64a88ff2e27fc786ef12ae7e91fca",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/libgcc_s.so.1": "5444fbe71e8cfe3bd05cdf2b44bd8c2e553e6e7e276977089b5e4e1a1ceed531",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/libgfortran.so.5": "8b93406aef97f0f39ebac58aed3b63c58c9c26eb246595d8141dde5baeee5b33",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/libopenblas.so.0": "f1424288e9ac125331102c0150b66fbd244560987779552e0e97d5cfd9de572b",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/libopencv_imgcodecs.so.413": "e6a6311623f2864903bb523a9012e41df086e877676b872dabce410d369d1f42",
+  "/home/bogil/.claude/jobs/022d1497/tmp/npuenv/lib/libstdc++.so.6": "10f0d3c46c070acd4abea2ccf2500ff0ec77e9b90154b82ea2720dba05510cb9",
+  "library/libnpusim.so": "314d6e3dea3f7faf8929b35bce35eb4e0f93524745918924c485eff807e49095",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/3rd/npusim/ext/nebula/library/libnebula.so": "5b7b5b08ec6b84a0926544f60ae210d88a41000794eb0be1bdff8b4314f5f9d6",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/lib/libramulator.so": "f4309d9e952e233565e558adc39b2b692b58fde7a4f8341fccf10a7fb342ad86",
+  "/lib/x86_64-linux-gnu/libc.so.6": "4ebb1967c395ca547dcfeaeeab7a2819724604a331aede44e8a749a7e1a4628e",
+  "/lib/x86_64-linux-gnu/libdl.so.2": "9cb9b7e3171939e7409e26773f44f3f22e200ec2e6936a5d7484a4f9b81d92f2",
+  "/lib/x86_64-linux-gnu/libm.so.6": "045fdb0436a8fb0d651f039e3444a9cbffc011d379c82b979cebf43571053eca",
+  "/lib/x86_64-linux-gnu/libpthread.so.0": "fbed9505adacada2abb37c6b43be2df6de81e742712c6025694ba48de62c7e78",
+  "/lib64/ld-linux-x86-64.so.2": "a87fec14aeedb537d0b2a80c6a3308b82e774d86541dff4654a75ab1fd22df0a",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/thermal_sweep/hb3d_example.yaml": "68e9c6ce46bc8be34f8ec14eb67c338117ff662b54078b5b3d6a27d4c97823d8",
+  "validation/tpu_3d_dse/dse_pilot.py": "20b17733057cf20e4ea337ac9c467ad2b4af8264542955fdafd0c261373ba784"
+ },
+ "checks": [
+  {
+   "check": "inputs unchanged during the runs (binary, every loaded library, yaml, config, scripts)",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32__hbm2e_refsb: the report names the selected yaml as the DRAM timing model",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32__hbm2e_refsb: MACs = M x K x N, DRAM payload = input + weights once, no output; mapping products = N, M, K",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32__hbm2e_refsb: live tensors fit the declared GLB (input, one weight strip, one output strip)",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32__hbdram_example: the report names the selected yaml as the DRAM timing model",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32__hbdram_example: MACs = M x K x N, DRAM payload = input + weights once, no output; mapping products = N, M, K",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32__hbdram_example: live tensors fit the declared GLB (input, one weight strip, one output strip)",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512__hbm2e_refsb: the report names the selected yaml as the DRAM timing model",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512__hbm2e_refsb: MACs = M x K x N, DRAM payload = input + weights once, no output; mapping products = N, M, K",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512__hbm2e_refsb: live tensors fit the declared GLB (input, one weight strip, one output strip)",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512__hbdram_example: the report names the selected yaml as the DRAM timing model",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512__hbdram_example: MACs = M x K x N, DRAM payload = input + weights once, no output; mapping products = N, M, K",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512__hbdram_example: live tensors fit the declared GLB (input, one weight strip, one output strip)",
+   "ok": true
+  },
+  {
+   "check": "attn_b8__hbm2e_refsb: the report names the selected yaml as the DRAM timing model",
+   "ok": true
+  },
+  {
+   "check": "attn_b8__hbm2e_refsb: reported KV read / append bytes = geometry; K / V read backend-derived and exact",
+   "ok": true
+  },
+  {
+   "check": "attn_b8__hbdram_example: the report names the selected yaml as the DRAM timing model",
+   "ok": true
+  },
+  {
+   "check": "attn_b8__hbdram_example: reported KV read / append bytes = geometry; K / V read backend-derived and exact",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32: the two memory models give different DRAM time (the backend processes the reads)",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32: same MACs, payload and compute busy on both memories (operation scope identical)",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512: the two memory models give different DRAM time (the backend processes the reads)",
+   "ok": true
+  },
+  {
+   "check": "gemm_m512: same MACs, payload and compute busy on both memories (operation scope identical)",
+   "ok": true
+  },
+  {
+   "check": "attn_b8: the two memory models give different DRAM time (the backend processes the reads)",
+   "ok": true
+  },
+  {
+   "check": "attn_b8: QK / softmax / AV identical on both memories",
+   "ok": true
+  },
+  {
+   "check": "gemm_m32: both MOSAIC runs differ from the analytical-DRAM preflight in DRAM busy",
+   "ok": true
+  }
+ ],
+ "rows": [
+  {
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "residency": "fused_output_consumer: input DRAM-backed, output consumed on chip as produced (not materialized; no whole-tensor capacity; the consumer's own work and result are not simulated)",
+   "layer_critical_path_cycles": 68684.0,
+   "bottleneck": "DRAM",
+   "busy_dram_cycles": 68329.7,
+   "busy_dram_pct": 99.5,
+   "busy_nop_cycles": 33024.0,
+   "busy_nop_pct": 48.1,
+   "busy_glb_cycles": 16384.0,
+   "busy_glb_pct": 23.9,
+   "busy_pe_array_cycles": 32768.0,
+   "busy_pe_array_pct": 47.7,
+   "busy_pe_compute_cycles": 8522.0,
+   "busy_pe_compute_pct": 12.4,
+   "dram_payload_bytes": {
+    "input": 262144,
+    "weight": 33554432,
+    "output": 0
+   },
+   "scalar_macs": 536870912.0,
+   "glb_declared_bytes": {
+    "Input": 25165824,
+    "Weight": 4194304,
+    "Output": 2097152
+   },
+   "mapping_products_KBC": [
+    4096,
+    32,
+    4096
+   ],
+   "metric": "GEMM critical path",
+   "latency_cycles": 68684.0,
+   "expected_payload_bytes": {
+    "input": 262144,
+    "weight": 33554432,
+    "output": 0
+   },
+   "expected_macs": 536870912,
+   "live_set_bytes": {
+    "Input": 262144,
+    "Weight": 4194304,
+    "Output": 32768
+   },
+   "approximation": "tile streams: a tile is charged its share of a >= 1 MiB sequential stream on a fresh device (amortized start); contiguous, uncontended",
+   "mapping_ok": true,
+   "point": "gemm_m32__hbm2e_refsb",
+   "workload": "gemm_m32",
+   "memory": "hbm2e_refsb",
+   "wall_s": 40.3,
+   "peak_rss_kb": 1313972,
+   "latency_us": 45.78933333333333,
+   "speedup_vs_hbm2e_refsb": 1.0
+  },
+  {
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/thermal_sweep/hb3d_example.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "residency": "fused_output_consumer: input DRAM-backed, output consumed on chip as produced (not materialized; no whole-tensor capacity; the consumer's own work and result are not simulated)",
+   "layer_critical_path_cycles": 50857.8,
+   "bottleneck": "DRAM",
+   "busy_dram_cycles": 50503.5,
+   "busy_dram_pct": 99.3,
+   "busy_nop_cycles": 33024.0,
+   "busy_nop_pct": 64.9,
+   "busy_glb_cycles": 16384.0,
+   "busy_glb_pct": 32.2,
+   "busy_pe_array_cycles": 32768.0,
+   "busy_pe_array_pct": 64.4,
+   "busy_pe_compute_cycles": 8522.0,
+   "busy_pe_compute_pct": 16.8,
+   "dram_payload_bytes": {
+    "input": 262144,
+    "weight": 33554432,
+    "output": 0
+   },
+   "scalar_macs": 536870912.0,
+   "glb_declared_bytes": {
+    "Input": 25165824,
+    "Weight": 4194304,
+    "Output": 2097152
+   },
+   "mapping_products_KBC": [
+    4096,
+    32,
+    4096
+   ],
+   "metric": "GEMM critical path",
+   "latency_cycles": 50857.8,
+   "expected_payload_bytes": {
+    "input": 262144,
+    "weight": 33554432,
+    "output": 0
+   },
+   "expected_macs": 536870912,
+   "live_set_bytes": {
+    "Input": 262144,
+    "Weight": 4194304,
+    "Output": 32768
+   },
+   "approximation": "tile streams: a tile is charged its share of a >= 1 MiB sequential stream on a fresh device (amortized start); contiguous, uncontended",
+   "mapping_ok": true,
+   "point": "gemm_m32__hbdram_example",
+   "workload": "gemm_m32",
+   "memory": "hbdram_example",
+   "wall_s": 39.5,
+   "peak_rss_kb": 1306320,
+   "latency_us": 33.9052,
+   "speedup_vs_hbm2e_refsb": 1.3505106394692652
+  },
+  {
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "residency": "fused_output_consumer: input DRAM-backed, output consumed on chip as produced (not materialized; no whole-tensor capacity; the consumer's own work and result are not simulated)",
+   "layer_critical_path_cycles": 133563.2,
+   "bottleneck": "PE array",
+   "busy_dram_cycles": 76275.0,
+   "busy_dram_pct": 57.1,
+   "busy_nop_cycles": 36864.0,
+   "busy_nop_pct": 27.6,
+   "busy_glb_cycles": 131072.0,
+   "busy_glb_pct": 98.1,
+   "busy_pe_array_cycles": 132096.0,
+   "busy_pe_array_pct": 98.9,
+   "busy_pe_compute_cycles": 131402.0,
+   "busy_pe_compute_pct": 98.4,
+   "dram_payload_bytes": {
+    "input": 4194304,
+    "weight": 33554432,
+    "output": 0
+   },
+   "scalar_macs": 8589934592.0,
+   "glb_declared_bytes": {
+    "Input": 25165824,
+    "Weight": 4194304,
+    "Output": 2097152
+   },
+   "mapping_products_KBC": [
+    4096,
+    512,
+    4096
+   ],
+   "metric": "GEMM critical path",
+   "latency_cycles": 133563.2,
+   "expected_payload_bytes": {
+    "input": 4194304,
+    "weight": 33554432,
+    "output": 0
+   },
+   "expected_macs": 8589934592,
+   "live_set_bytes": {
+    "Input": 4194304,
+    "Weight": 4194304,
+    "Output": 524288
+   },
+   "approximation": "tile streams: a tile is charged its share of a >= 1 MiB sequential stream on a fresh device (amortized start); contiguous, uncontended",
+   "mapping_ok": true,
+   "point": "gemm_m512__hbm2e_refsb",
+   "workload": "gemm_m512",
+   "memory": "hbm2e_refsb",
+   "wall_s": 558.8,
+   "peak_rss_kb": 1367588,
+   "latency_us": 89.04213333333334,
+   "speedup_vs_hbm2e_refsb": 1.0
+  },
+  {
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/thermal_sweep/hb3d_example.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "residency": "fused_output_consumer: input DRAM-backed, output consumed on chip as produced (not materialized; no whole-tensor capacity; the consumer's own work and result are not simulated)",
+   "layer_critical_path_cycles": 133485.5,
+   "bottleneck": "PE array",
+   "busy_dram_cycles": 56376.0,
+   "busy_dram_pct": 42.2,
+   "busy_nop_cycles": 36864.0,
+   "busy_nop_pct": 27.6,
+   "busy_glb_cycles": 131072.0,
+   "busy_glb_pct": 98.2,
+   "busy_pe_array_cycles": 132096.0,
+   "busy_pe_array_pct": 99.0,
+   "busy_pe_compute_cycles": 131402.0,
+   "busy_pe_compute_pct": 98.4,
+   "dram_payload_bytes": {
+    "input": 4194304,
+    "weight": 33554432,
+    "output": 0
+   },
+   "scalar_macs": 8589934592.0,
+   "glb_declared_bytes": {
+    "Input": 25165824,
+    "Weight": 4194304,
+    "Output": 2097152
+   },
+   "mapping_products_KBC": [
+    4096,
+    512,
+    4096
+   ],
+   "metric": "GEMM critical path",
+   "latency_cycles": 133485.5,
+   "expected_payload_bytes": {
+    "input": 4194304,
+    "weight": 33554432,
+    "output": 0
+   },
+   "expected_macs": 8589934592,
+   "live_set_bytes": {
+    "Input": 4194304,
+    "Weight": 4194304,
+    "Output": 524288
+   },
+   "approximation": "tile streams: a tile is charged its share of a >= 1 MiB sequential stream on a fresh device (amortized start); contiguous, uncontended",
+   "mapping_ok": true,
+   "point": "gemm_m512__hbdram_example",
+   "workload": "gemm_m512",
+   "memory": "hbdram_example",
+   "wall_s": 554.4,
+   "peak_rss_kb": 1360436,
+   "latency_us": 88.99033333333334,
+   "speedup_vs_hbm2e_refsb": 1.000582085694701
+  },
+  {
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "residency": "activation_residency 1: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)",
+   "layer_critical_path_cycles": 137577.5,
+   "bottleneck": "PE (compute+LB)",
+   "busy_dram_cycles": 285.3,
+   "busy_dram_pct": 0.2,
+   "busy_nop_cycles": 138.0,
+   "busy_nop_pct": 0.1,
+   "busy_glb_cycles": 64.0,
+   "busy_glb_pct": 0.0,
+   "busy_pe_array_cycles": 128.0,
+   "busy_pe_array_pct": 0.1,
+   "busy_pe_compute_cycles": 338.0,
+   "busy_pe_compute_pct": 0.2,
+   "dram_payload_bytes": {
+    "input": 2048,
+    "weight": 131072,
+    "output": 8192
+   },
+   "scalar_macs": 524288.0,
+   "glb_declared_bytes": {
+    "Input": 25165824,
+    "Weight": 4194304,
+    "Output": 2097152
+   },
+   "mapping_products_KBC": [
+    512,
+    8,
+    128
+   ],
+   "attention_step_cycles": 136624.2,
+   "k_dram_read_cycles": 66939.4,
+   "v_dram_read_cycles": 66939.4,
+   "read_stream_bytes": 33554432,
+   "k_stream": "exact",
+   "v_stream": "exact",
+   "kv_read_bytes_reported": 67108864,
+   "kv_append_bytes_reported": 32768,
+   "qk_cycles": 1024.0,
+   "softmax_cycles": 2621.4,
+   "av_cycles": 1024.0,
+   "kv_exposed_cycles": 131894.8,
+   "kv_hidden_cycles": 1984.0,
+   "kv_stall_cycles": 0.0,
+   "metric": "attention step (appended after a dummy projection)",
+   "latency_cycles": 136624.2,
+   "expected_kv_read_bytes": 67108864,
+   "expected_kv_append_bytes": 32768,
+   "approximation": "K and V: two fresh independent read streams (exact / exact), each total spread uniformly over the supply tiles; QK / AV / softmax rates are configured assumptions; append, energy and link / row counts analytical; uncompressed bf16",
+   "point": "attn_b8__hbm2e_refsb",
+   "workload": "attn_b8",
+   "memory": "hbm2e_refsb",
+   "wall_s": 17.8,
+   "peak_rss_kb": 1179548,
+   "latency_us": 91.0828,
+   "speedup_vs_hbm2e_refsb": 1.0
+  },
+  {
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/thermal_sweep/hb3d_example.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "residency": "activation_residency 1: input DRAM-backed, output materialized to DRAM (capacity 2097152 bytes)",
+   "layer_critical_path_cycles": 107658.4,
+   "bottleneck": "PE (compute+LB)",
+   "busy_dram_cycles": 211.0,
+   "busy_dram_pct": 0.2,
+   "busy_nop_cycles": 138.0,
+   "busy_nop_pct": 0.1,
+   "busy_glb_cycles": 64.0,
+   "busy_glb_pct": 0.1,
+   "busy_pe_array_cycles": 128.0,
+   "busy_pe_array_pct": 0.1,
+   "busy_pe_compute_cycles": 338.0,
+   "busy_pe_compute_pct": 0.3,
+   "dram_payload_bytes": {
+    "input": 2048,
+    "weight": 131072,
+    "output": 8192
+   },
+   "scalar_macs": 524288.0,
+   "glb_declared_bytes": {
+    "Input": 25165824,
+    "Weight": 4194304,
+    "Output": 2097152
+   },
+   "mapping_products_KBC": [
+    512,
+    8,
+    128
+   ],
+   "attention_step_cycles": 106779.4,
+   "k_dram_read_cycles": 52017.0,
+   "v_dram_read_cycles": 52017.0,
+   "read_stream_bytes": 33554432,
+   "k_stream": "exact",
+   "v_stream": "exact",
+   "kv_read_bytes_reported": 67108864,
+   "kv_append_bytes_reported": 32768,
+   "qk_cycles": 1024.0,
+   "softmax_cycles": 2621.4,
+   "av_cycles": 1024.0,
+   "kv_exposed_cycles": 102050.0,
+   "kv_hidden_cycles": 1984.0,
+   "kv_stall_cycles": 0.0,
+   "metric": "attention step (appended after a dummy projection)",
+   "latency_cycles": 106779.4,
+   "expected_kv_read_bytes": 67108864,
+   "expected_kv_append_bytes": 32768,
+   "approximation": "K and V: two fresh independent read streams (exact / exact), each total spread uniformly over the supply tiles; QK / AV / softmax rates are configured assumptions; append, energy and link / row counts analytical; uncompressed bf16",
+   "point": "attn_b8__hbdram_example",
+   "workload": "attn_b8",
+   "memory": "hbdram_example",
+   "wall_s": 6.0,
+   "peak_rss_kb": 1172404,
+   "latency_us": 71.18626666666665,
+   "speedup_vs_hbm2e_refsb": 1.2794996038561748
+  }
+ ]
+}

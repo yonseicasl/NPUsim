@@ -1,0 +1,11 @@
+{
+ "point": "gemm_m512__hbdram_example",
+ "workload": {
+  "kind": "gemm",
+  "M": 512,
+  "K": 4096,
+  "N": 4096
+ },
+ "dram_yaml": "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/thermal_sweep/hb3d_example.yaml",
+ "network": "gemm_512x4096x4096"
+}

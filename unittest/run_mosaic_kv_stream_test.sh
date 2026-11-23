@@ -17,7 +17,9 @@ out=${1:-$test_dir/out}
 mkdir -p "$out"
 [[ ! -e $out/mosaic_kv_stream_diag.csv ]] || { echo "$out already holds a diagnostic; nothing was changed" >&2; exit 1; }
 
-a=$MOSAIC_ROOT/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml
+# The configuration under test (default: the validated v5e HBM2e model); the long-stream rule must be checked
+# per configuration before it is used with it.
+a=${MOSAIC_KV_STREAM_YAML:-$MOSAIC_ROOT/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml}
 b=$repo_dir/validation/tpu_v5e/hbm2e_v5e.yaml
 libs="$repo_dir/library:$repo_dir/ext/nebula/library:$repo_dir/ext/DRAMsim3:$MOSAIC_ROOT/simulator/build/lib"
 opencv_flags=()
