@@ -129,6 +129,17 @@ public:
     // overlap: the stream feeds cycle_chip_dram, which becomes max(DRAM stream, sink_cycle).
     void mosaic_stream(const cycles_snapshot_t &before, data_type_t type, size_t elements,
                        bool is_write, bool overlap, double sink_cycle);
+    // One complete sequential READ of m_bytes on a fresh MOSAIC DRAM device, issued like the tile
+    // streams (mosaic_request_bytes / mosaic_max_inflight / mosaic_path_latency_ns), NOT amortized:
+    // the stream pays its own start. *m_cycles is in [dram]-clock cycles (ns x [dram] frequency /
+    // 1e3), the unit of u_read_cycle and of the tile streams. Streams up to
+    // mosaic_stream_exact_bytes are simulated exactly; longer ones are T(cap) plus the steady slope
+    // between cap/2 and cap (*m_extrapolated = true).
+    // Returns false -- cycles 0 -- when no MOSAIC DRAM is selected: the caller keeps its analytical
+    // cost. With one selected, a failed or non-finite timing ends the run; it never falls back.
+    // 0 bytes cost 0 cycles.
+    bool mosaic_read_stream(size_t m_bytes, double *m_cycles, bool *m_extrapolated) const;
+    static const size_t mosaic_stream_exact_bytes = static_cast<size_t>(32) << 20;
     std::string mosaic_dram_config;
     // [dram] mosaic_request_bytes / mosaic_max_inflight / mosaic_path_latency_ns: the DMA issuing the
     // tile streams -- request size, outstanding-request limit, round-trip latency outside the DRAM.
@@ -204,5 +215,13 @@ private:
 
 
 };
+
+#ifdef NPUSIM_MOSAIC_DRAM
+// DRAM nanoseconds of one sequential stream on a fresh device of the MOSAIC DRAM configuration `yaml`
+// (the helper behind dram_t's MOSAIC timing; for tests and diagnostics). request_bytes 0: 64 DRAM
+// transactions per request; max_inflight 0: unlimited.
+double mosaic_dram_stream_ns(const std::string &yaml, size_t bytes, bool is_write, size_t request_bytes,
+                             unsigned max_inflight, double path_latency_ns);
+#endif
 
 #endif

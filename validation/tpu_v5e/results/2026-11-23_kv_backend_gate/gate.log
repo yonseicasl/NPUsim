@@ -1,0 +1,25 @@
+B 1 L 2048 streaming (8388608 KV bytes read, 4096 appended):
+   projection DRAM busy   249.5 -> 267.9 cycles
+   K / V supply           7680.0 / 7680.0 -> 8370.9 / 8370.9 cycles   (yaml: exact / exact, helper 8370.9375)
+   KV bytes / supply time 819.2 GB/s without the yaml, 751.6 GB/s with it
+   QK / softmax / AV      128.0/327.7/128.0 -> 128.0/327.7/128.0; append 7.5 -> 7.5 cycles
+   attention step         15759.2 -> 17141.1 cycles
+B 8 L 2048 streaming (67108864 KV bytes read, 32768 appended):
+   projection DRAM busy   264.5 -> 285.3 cycles
+   K / V supply           61440.0 / 61440.0 -> 66939.4 / 66939.4 cycles   (yaml: exact / exact, helper 66939.375)
+   KV bytes / supply time 819.2 GB/s without the yaml, 751.9 GB/s with it
+   QK / softmax / AV      1024.0/2621.4/1024.0 -> 1024.0/2621.4/1024.0; append 60.0 -> 60.0 cycles
+   attention step         125625.4 -> 136624.2 cycles
+B 32 L 8192 streaming (1073741824 KV bytes read, 131072 appended):
+   projection DRAM busy   320.8 -> 346.8 cycles
+   K / V supply           983040.0 / 983040.0 -> 1069595.6 / 1069595.6 cycles   (yaml: extrapolated / extrapolated, helper 1069595.625)
+   KV bytes / supply time 819.2 GB/s without the yaml, 752.9 GB/s with it
+   QK / softmax / AV      16384.0/41943.0/16384.0 -> 16384.0/41943.0/16384.0; append 240.0 -> 240.0 cycles
+   attention step         2008327.0 -> 2181438.3 cycles
+B 1 L 2048 blocking (8388608 KV bytes read, 4096 appended):
+   projection DRAM busy   249.5 -> 267.9 cycles
+   K / V supply           7680.0 / 7680.0 -> 8370.9 / 8370.9 cycles   (yaml: exact / exact, helper 8370.9375)
+   KV bytes / supply time 819.2 GB/s without the yaml, 751.6 GB/s with it
+   QK / softmax / AV      128.0/327.7/128.0 -> 128.0/327.7/128.0; append 7.5 -> 7.5 cycles
+   attention step         15951.2 -> 17333.1 cycles
+39 of 39 checks passed

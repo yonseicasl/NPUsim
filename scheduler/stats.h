@@ -56,9 +56,20 @@ struct kv_stream_cost_t {
     double dram_energy;         // read + write + link + row-activation energy (priced)
     size_t link_transactions;
     size_t row_activations;
+    // Raw DRAM read time of each pass, decoder excluded, and where it came from: the analytical
+    // [dram] unit costs, or (read_backend) a complete MOSAIC DRAM read stream per pass --
+    // simulated exactly or, for a long stream, extrapolated from its steady slope.
+    double k_dram_read_cycle;
+    double v_dram_read_cycle;
+    size_t read_stream_bytes;   // compressed bytes of ONE pass
+    bool read_backend;
+    bool k_extrapolated;
+    bool v_extrapolated;
 
     kv_stream_cost_t() : k_supply_cycle(0.0), v_supply_cycle(0.0), write_cycle(0.0),
-                         dram_energy(0.0), link_transactions(0), row_activations(0) {}
+                         dram_energy(0.0), link_transactions(0), row_activations(0),
+                         k_dram_read_cycle(0.0), v_dram_read_cycle(0.0), read_stream_bytes(0),
+                         read_backend(false), k_extrapolated(false), v_extrapolated(false) {}
 };
 
 class stats_t {
@@ -476,6 +487,13 @@ public:
     double attn_supply_k_cycle;          // K stream (dedicated DRAM cost + decoder share)
     double attn_supply_v_cycle;
     double attn_write_cycle;             // cache append of the current token's K/V
+    // K / V raw DRAM read time (decoder excluded) and its source, for the report; see kv_stream_cost_t.
+    double attn_dram_read_k_cycle;
+    double attn_dram_read_v_cycle;
+    size_t attn_read_stream_bytes;
+    bool attn_read_backend;
+    bool attn_read_k_extrapolated;
+    bool attn_read_v_extrapolated;
     double attn_step_latency;            // integrated step latency (schedule-dependent)
     double attn_exposed_cycle;           // KV supply beyond the attention compute window
     double attn_hidden_cycle;

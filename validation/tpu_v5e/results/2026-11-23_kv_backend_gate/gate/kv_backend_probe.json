@@ -1,0 +1,425 @@
+{
+ "frozen_before": {
+  "models/model": "8b26f94db2515325b6aa24890b9b0654bce8067bcf58ad6cb9b56a793e9c44af",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c",
+  "configs/accelerators/tpu_v5e.cfg": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+  "validation/tpu_v5e/kv_backend_probe.py": "185e2d9c64858205837da636c875fda04e401e171dfb484f1cd8a0ad3ecb41f4",
+  "validation/tpu_v5e/compare_attention.py": "d3a096848349c768802337021bbe3b7e273292775deafaa86453ed61a2b94a9a",
+  "validation/palm/palm_decode.py": "508db3a3fd552f1d6e2826c9728c9af24453ee02eee1a45aa38c382f96a620c4",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/lib/libramulator.so": "f4309d9e952e233565e558adc39b2b692b58fde7a4f8341fccf10a7fb342ad86"
+ },
+ "frozen_after": {
+  "models/model": "8b26f94db2515325b6aa24890b9b0654bce8067bcf58ad6cb9b56a793e9c44af",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml": "73e60d17e86356966c857da9d41c2f380d68cf2b5f19acbe70b53ce664d1028c",
+  "configs/accelerators/tpu_v5e.cfg": "58e84a34d1741f3ad909f2496ffba27e62e6dceddbe1203a8687c42ac4bb763c",
+  "validation/tpu_v5e/kv_backend_probe.py": "185e2d9c64858205837da636c875fda04e401e171dfb484f1cd8a0ad3ecb41f4",
+  "validation/tpu_v5e/compare_attention.py": "d3a096848349c768802337021bbe3b7e273292775deafaa86453ed61a2b94a9a",
+  "validation/palm/palm_decode.py": "508db3a3fd552f1d6e2826c9728c9af24453ee02eee1a45aa38c382f96a620c4",
+  "/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/simulator/build/lib/libramulator.so": "f4309d9e952e233565e558adc39b2b692b58fde7a4f8341fccf10a7fb342ad86"
+ },
+ "dram_frequency_mhz": 1500.0,
+ "baseline": "results/2026-11-17_kv_backend_trace",
+ "diag": "results/2026-11-23_kv_backend_gate/stream_diag_final/mosaic_kv_stream_diag.csv",
+ "git_head": "a8e39fcedd2cf289d9ce8f01befd9e707030d932",
+ "git_dirty": [
+  " M components/dram.cc",
+  " M components/dram.h",
+  " M scheduler/npu.cc",
+  " M scheduler/stats.cc",
+  " M scheduler/stats.h",
+  " M validation/tpu_v5e/kv_backend_probe.py",
+  ""
+ ],
+ "checks": [
+  {
+   "check": "inputs unchanged during the runs (binary, libraries, yaml, config, scripts)",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_analytic: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_analytic: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_analytic: reproduces the baseline run without a yaml (supply, step, projection DRAM busy; layer report byte for byte)",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic: projection DRAM busy as in the baseline run with the yaml",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic: K / V read time reported as backend-derived, append labelled analytical",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic: K and V DRAM read = the stream helper for 4194304 B (exact)",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_analytic: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_analytic: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_analytic: reproduces the baseline run without a yaml (supply, step, projection DRAM busy; layer report byte for byte)",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_mosaic: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_mosaic: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_mosaic: projection DRAM busy as in the baseline run with the yaml",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_mosaic: K / V read time reported as backend-derived, append labelled analytical",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_mosaic: K and V DRAM read = the stream helper for 33554432 B (exact)",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_analytic: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_analytic: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_analytic: reproduces the baseline run without a yaml (supply, step, projection DRAM busy; layer report byte for byte)",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_mosaic: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_mosaic: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_mosaic: projection DRAM busy as in the baseline run with the yaml",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_mosaic: K / V read time reported as backend-derived, append labelled analytical",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_mosaic: K and V DRAM read = the stream helper for 536870912 B (extrapolated)",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_analytic_blocking: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_analytic_blocking: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic_blocking: reported KV read / append bytes = geometry",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic_blocking: KV supply = K + V supply, each = its DRAM read + half the decoder",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic_blocking: K / V read time reported as backend-derived, append labelled analytical",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic_blocking: K and V DRAM read = the stream helper for 4194304 B (exact)",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic: QK / softmax / AV, append and bytes equal to the run without the yaml",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic: K / V supply now differ from the analytical ones, and are not their sum with them",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_mosaic: QK / softmax / AV, append and bytes equal to the run without the yaml",
+   "ok": true
+  },
+  {
+   "check": "attn_b8_l2048_mosaic: K / V supply now differ from the analytical ones, and are not their sum with them",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_mosaic: QK / softmax / AV, append and bytes equal to the run without the yaml",
+   "ok": true
+  },
+  {
+   "check": "attn_b32_l8192_mosaic: K / V supply now differ from the analytical ones, and are not their sum with them",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic_blocking: QK / softmax / AV, append and bytes equal to the run without the yaml",
+   "ok": true
+  },
+  {
+   "check": "attn_b1_l2048_mosaic_blocking: K / V supply now differ from the analytical ones, and are not their sum with them",
+   "ok": true
+  }
+ ],
+ "rows": [
+  {
+   "B": 1,
+   "L": 2048,
+   "schedule": "streaming",
+   "backend_env": "(unset)",
+   "dram_timing_model": "flat per-access (no row-buffer model)",
+   "kv_read_bytes_reported": 8388608,
+   "kv_dense_bytes_reported": 8388608,
+   "kv_append_bytes_reported": 4096,
+   "kv_read_bytes_geometry": 8388608,
+   "kv_append_bytes_geometry": 4096,
+   "projection_dram_busy_cycles": 249.5,
+   "attention_step_cycles": 15759.2,
+   "k_supply_cycles": 7680.0,
+   "v_supply_cycles": 7680.0,
+   "kv_supply_dram_cycles": 15360.0,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": null,
+   "v_dram_read_cycles": null,
+   "read_stream_bytes": null,
+   "k_stream": null,
+   "v_stream": null,
+   "append_cycles": 7.5,
+   "append_label": "",
+   "qk_softmax_av_cycles": "128.0/327.7/128.0",
+   "report_sha256": "f8886839c70642714c8b72d7c7c70a9addc5625308dd6d1aa109f0df29631b49",
+   "run_dir": "attn_b1_l2048_analytic"
+  },
+  {
+   "B": 1,
+   "L": 2048,
+   "schedule": "streaming",
+   "backend_env": "hbm2e_tpu_v5e_refsb.yaml",
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "kv_read_bytes_reported": 8388608,
+   "kv_dense_bytes_reported": 8388608,
+   "kv_append_bytes_reported": 4096,
+   "kv_read_bytes_geometry": 8388608,
+   "kv_append_bytes_geometry": 4096,
+   "projection_dram_busy_cycles": 267.9,
+   "attention_step_cycles": 17141.1,
+   "k_supply_cycles": 8370.9,
+   "v_supply_cycles": 8370.9,
+   "kv_supply_dram_cycles": 16741.9,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": 8370.9,
+   "v_dram_read_cycles": 8370.9,
+   "read_stream_bytes": 4194304,
+   "k_stream": "exact",
+   "v_stream": "exact",
+   "append_cycles": 7.5,
+   "append_label": "analytical",
+   "qk_softmax_av_cycles": "128.0/327.7/128.0",
+   "report_sha256": "de832a1d506fcae45773639330f6ab9096dface9038e77304cbdafa0400f4d14",
+   "run_dir": "attn_b1_l2048_mosaic",
+   "helper_stream_cycles": 8370.9375,
+   "helper_stream_kind": "exact"
+  },
+  {
+   "B": 8,
+   "L": 2048,
+   "schedule": "streaming",
+   "backend_env": "(unset)",
+   "dram_timing_model": "flat per-access (no row-buffer model)",
+   "kv_read_bytes_reported": 67108864,
+   "kv_dense_bytes_reported": 67108864,
+   "kv_append_bytes_reported": 32768,
+   "kv_read_bytes_geometry": 67108864,
+   "kv_append_bytes_geometry": 32768,
+   "projection_dram_busy_cycles": 264.5,
+   "attention_step_cycles": 125625.4,
+   "k_supply_cycles": 61440.0,
+   "v_supply_cycles": 61440.0,
+   "kv_supply_dram_cycles": 122880.0,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": null,
+   "v_dram_read_cycles": null,
+   "read_stream_bytes": null,
+   "k_stream": null,
+   "v_stream": null,
+   "append_cycles": 60.0,
+   "append_label": "",
+   "qk_softmax_av_cycles": "1024.0/2621.4/1024.0",
+   "report_sha256": "397f13d1528fac94c533a8912358c3535d4fc82cd01e9c385bfb9fc409835e05",
+   "run_dir": "attn_b8_l2048_analytic"
+  },
+  {
+   "B": 8,
+   "L": 2048,
+   "schedule": "streaming",
+   "backend_env": "hbm2e_tpu_v5e_refsb.yaml",
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "kv_read_bytes_reported": 67108864,
+   "kv_dense_bytes_reported": 67108864,
+   "kv_append_bytes_reported": 32768,
+   "kv_read_bytes_geometry": 67108864,
+   "kv_append_bytes_geometry": 32768,
+   "projection_dram_busy_cycles": 285.3,
+   "attention_step_cycles": 136624.2,
+   "k_supply_cycles": 66939.4,
+   "v_supply_cycles": 66939.4,
+   "kv_supply_dram_cycles": 133878.8,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": 66939.4,
+   "v_dram_read_cycles": 66939.4,
+   "read_stream_bytes": 33554432,
+   "k_stream": "exact",
+   "v_stream": "exact",
+   "append_cycles": 60.0,
+   "append_label": "analytical",
+   "qk_softmax_av_cycles": "1024.0/2621.4/1024.0",
+   "report_sha256": "12d31780268b13f840283039662e9837d72e6b2c6a93ceee9d1cf17a9f4ca21c",
+   "run_dir": "attn_b8_l2048_mosaic",
+   "helper_stream_cycles": 66939.375,
+   "helper_stream_kind": "exact"
+  },
+  {
+   "B": 32,
+   "L": 8192,
+   "schedule": "streaming",
+   "backend_env": "(unset)",
+   "dram_timing_model": "flat per-access (no row-buffer model)",
+   "kv_read_bytes_reported": 1073741824,
+   "kv_dense_bytes_reported": 1073741824,
+   "kv_append_bytes_reported": 131072,
+   "kv_read_bytes_geometry": 1073741824,
+   "kv_append_bytes_geometry": 131072,
+   "projection_dram_busy_cycles": 320.8,
+   "attention_step_cycles": 2008327.0,
+   "k_supply_cycles": 983040.0,
+   "v_supply_cycles": 983040.0,
+   "kv_supply_dram_cycles": 1966080.0,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": null,
+   "v_dram_read_cycles": null,
+   "read_stream_bytes": null,
+   "k_stream": null,
+   "v_stream": null,
+   "append_cycles": 240.0,
+   "append_label": "",
+   "qk_softmax_av_cycles": "16384.0/41943.0/16384.0",
+   "report_sha256": "10b37778412ac8b2313d7664a3d241cbeca6f91035acc44875a640fb6f5e0dc9",
+   "run_dir": "attn_b32_l8192_analytic"
+  },
+  {
+   "B": 32,
+   "L": 8192,
+   "schedule": "streaming",
+   "backend_env": "hbm2e_tpu_v5e_refsb.yaml",
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "kv_read_bytes_reported": 1073741824,
+   "kv_dense_bytes_reported": 1073741824,
+   "kv_append_bytes_reported": 131072,
+   "kv_read_bytes_geometry": 1073741824,
+   "kv_append_bytes_geometry": 131072,
+   "projection_dram_busy_cycles": 346.8,
+   "attention_step_cycles": 2181438.3,
+   "k_supply_cycles": 1069595.6,
+   "v_supply_cycles": 1069595.6,
+   "kv_supply_dram_cycles": 2139191.2,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": 1069595.6,
+   "v_dram_read_cycles": 1069595.6,
+   "read_stream_bytes": 536870912,
+   "k_stream": "extrapolated",
+   "v_stream": "extrapolated",
+   "append_cycles": 240.0,
+   "append_label": "analytical",
+   "qk_softmax_av_cycles": "16384.0/41943.0/16384.0",
+   "report_sha256": "31aa41a872d3a84688a994141c17d3d6e3225e91803b2a613721ca3e6c505ee9",
+   "run_dir": "attn_b32_l8192_mosaic",
+   "helper_stream_cycles": 1069595.625,
+   "helper_stream_kind": "extrapolated"
+  },
+  {
+   "B": 1,
+   "L": 2048,
+   "schedule": "blocking",
+   "backend_env": "(unset)",
+   "dram_timing_model": "flat per-access (no row-buffer model)",
+   "kv_read_bytes_reported": 8388608,
+   "kv_dense_bytes_reported": 8388608,
+   "kv_append_bytes_reported": 4096,
+   "kv_read_bytes_geometry": 8388608,
+   "kv_append_bytes_geometry": 4096,
+   "projection_dram_busy_cycles": 249.5,
+   "attention_step_cycles": 15951.2,
+   "k_supply_cycles": 7680.0,
+   "v_supply_cycles": 7680.0,
+   "kv_supply_dram_cycles": 15360.0,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": null,
+   "v_dram_read_cycles": null,
+   "read_stream_bytes": null,
+   "k_stream": null,
+   "v_stream": null,
+   "append_cycles": 7.5,
+   "append_label": "",
+   "qk_softmax_av_cycles": "128.0/327.7/128.0",
+   "report_sha256": "2bd2082c89657727494d3194cfc0d4b8116308b80c23567935b18f82ea6065bb",
+   "run_dir": "attn_b1_l2048_analytic_blocking"
+  },
+  {
+   "B": 1,
+   "L": 2048,
+   "schedule": "blocking",
+   "backend_env": "hbm2e_tpu_v5e_refsb.yaml",
+   "dram_timing_model": "MOSAIC Ramulator2 (/home/bogil/MOSAIC/.claude/worktrees/npusim-engine/configs/architecture/dram/hbm2e_tpu_v5e_refsb.yaml) for tile streams and the attention consumer's K/V read streams; KV cache append, KV proxy modes and SFU operand streams analytical",
+   "kv_read_bytes_reported": 8388608,
+   "kv_dense_bytes_reported": 8388608,
+   "kv_append_bytes_reported": 4096,
+   "kv_read_bytes_geometry": 8388608,
+   "kv_append_bytes_geometry": 4096,
+   "projection_dram_busy_cycles": 267.9,
+   "attention_step_cycles": 17333.1,
+   "k_supply_cycles": 8370.9,
+   "v_supply_cycles": 8370.9,
+   "kv_supply_dram_cycles": 16741.9,
+   "decoder_cycles": 0.0,
+   "k_dram_read_cycles": 8370.9,
+   "v_dram_read_cycles": 8370.9,
+   "read_stream_bytes": 4194304,
+   "k_stream": "exact",
+   "v_stream": "exact",
+   "append_cycles": 7.5,
+   "append_label": "analytical",
+   "qk_softmax_av_cycles": "128.0/327.7/128.0",
+   "report_sha256": "5e42b8a49d7302f0f311d7809436c605bb887e41c3073530817d2befb724c4b5",
+   "run_dir": "attn_b1_l2048_mosaic_blocking",
+   "helper_stream_cycles": 8370.9375,
+   "helper_stream_kind": "exact"
+  }
+ ]
+}

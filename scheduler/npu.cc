@@ -1960,7 +1960,13 @@ void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
         kv_stream_cost_t cost;
         // One sequential stream of m_bytes: device/link makespans overlap packet-level
         // (max), the busiest bank's row activations serialize on top.
-        auto read_stream = [&](size_t m_bytes, double *m_energy) {
+        // With a MOSAIC DRAM selected the stream's TIME is the backend's instead (a complete read on
+        // a fresh device, dram_t::mosaic_read_stream): it replaces the analytical makespan INCLUDING
+        // the row-activation time -- never both. K and V are two fresh, independent streams: no
+        // DRAM state carries from the K pass to the V pass (a modeling choice of the two-pass
+        // schedule, not a bound). Energy, link beats and row-activation counts stay the analytical
+        // [dram] bookkeeping; they are not Ramulator counters.
+        auto read_stream = [&](size_t m_bytes, double *m_energy, bool *m_extrapolated) {
             const size_t bits = m_bytes*8;
             const size_t accesses = (bits + std::max(1u, dram->line_size[T]) - 1)/
                                     std::max(1u, dram->line_size[T]);
@@ -1978,6 +1984,11 @@ void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
                 cycle += static_cast<double>(rows.busiest_bank)*per_activation_cycle;
                 *m_energy += static_cast<double>(rows.activations)*dram->u_row_miss_energy;
             }
+            double backend_cycle = 0.0;
+            if(dram->mosaic_read_stream(m_bytes, &backend_cycle, m_extrapolated)) {
+                cost.read_backend = true;
+                cycle = backend_cycle;
+            }
             return cycle;
         };
         // K and V passes fetch the COMPRESSED halves; the decoder reconstitutes dense at
@@ -1985,10 +1996,14 @@ void npu_t::apply_kv_cache_read(unsigned m_stats_index) {
         const size_t comp_half = kvcache->compressed_read_bytes()/2;
         const double decoder_half =
             kvcache->decoder_cycles(kvcache->dense_read_bytes())/2.0;
-        cost.k_supply_cycle = read_stream(comp_half, &cost.dram_energy) + decoder_half;
-        cost.v_supply_cycle = read_stream(comp_half, &cost.dram_energy) + decoder_half;
+        cost.k_dram_read_cycle = read_stream(comp_half, &cost.dram_energy, &cost.k_extrapolated);
+        cost.v_dram_read_cycle = read_stream(comp_half, &cost.dram_energy, &cost.v_extrapolated);
+        cost.read_stream_bytes = comp_half;
+        cost.k_supply_cycle = cost.k_dram_read_cycle + decoder_half;
+        cost.v_supply_cycle = cost.v_dram_read_cycle + decoder_half;
         // Cache append: the current token's K/V, stored at the cache's compression. One
         // token is far below a DRAM row, so no row-activation charge for the append.
+        // Analytical also with a MOSAIC DRAM selected (reported as such).
         const size_t dense_w = kvcache->kv_write_bytes();
         const size_t write_b = kvcache->bypassed() ? dense_w
             : std::max<size_t>(1, static_cast<size_t>(
