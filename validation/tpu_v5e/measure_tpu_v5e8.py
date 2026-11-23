@@ -104,7 +104,7 @@ def bench(f, sets, tag):
         out = call()
     jax.block_until_ready(out)
     res = {"wall_us": (time.perf_counter() - t) / n * 1e6, "device_us": None, "ops": None, "iters": n,
-           "sets": len(sets)}
+           "sets": len(sets), "module_us": None}
     d = os.path.join(ARGS.out, "traces", tag)
     try:
         with jax.profiler.trace(d, create_perfetto_trace=True):
@@ -115,6 +115,7 @@ def bench(f, sets, tag):
         if parsed and parsed[0]:
             mods, ops = parsed
             res["device_us"] = statistics.median(mods[-n:])
+            res["module_us"] = list(mods[-n:])                # the per-invocation durations behind the median
             res["ops"] = {k: v / len(mods) for k, v in sorted(ops.items(), key=lambda kv: -kv[1])}
     except Exception as e:  # profiler unavailable: wall time only
         print(f"  [{tag}] profiler: {type(e).__name__}: {e}")
