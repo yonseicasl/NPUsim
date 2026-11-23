@@ -1,0 +1,14 @@
+{
+ "point": "gemm_m32__hbdram_p32__mxu8",
+ "feasibility": {
+  "mapping": true,
+  "vmem_share": true,
+  "whole_strips": true,
+  "dram_capacity": true
+ },
+ "mapping_products_KBC": [
+  4096,
+  32,
+  4096
+ ]
+}

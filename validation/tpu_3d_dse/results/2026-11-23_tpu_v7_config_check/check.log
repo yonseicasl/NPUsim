@@ -1,0 +1,3 @@
+512x4096x4096: NPUsim     8.46 us | roofline compute    7.45 us, memory    5.68 us -> x1.136 of the larger | MACs ok True | DRAM payload [4194304, 33554432, 4194304] expect [4194304, 33554432, 4194304] | busy DRAM 67.8%, compute 90.6% | bottleneck PE (compute+LB)
+32x8192x8192: NPUsim    18.80 us | roofline compute    1.86 us, memory   18.33 us -> x1.026 of the larger | MACs ok True | DRAM payload [524288, 134217728, 524288] expect [524288, 134217728, 524288] | busy DRAM 98.4%, compute 11.1% | bottleneck DRAM
+128x4096x4096: NPUsim     5.24 us | roofline compute    1.86 us, memory    4.83 us -> x1.085 of the larger | MACs ok True | DRAM payload [1048576, 33554432, 1048576] expect [1048576, 33554432, 1048576] | busy DRAM 93.1%, compute 39.7% | bottleneck DRAM

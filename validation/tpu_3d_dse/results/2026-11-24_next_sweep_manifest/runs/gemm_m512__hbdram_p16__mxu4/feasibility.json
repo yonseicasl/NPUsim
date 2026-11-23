@@ -1,0 +1,14 @@
+{
+ "point": "gemm_m512__hbdram_p16__mxu4",
+ "feasibility": {
+  "mapping": true,
+  "vmem_share": true,
+  "whole_strips": true,
+  "dram_capacity": true
+ },
+ "mapping_products_KBC": [
+  4096,
+  512,
+  4096
+ ]
+}

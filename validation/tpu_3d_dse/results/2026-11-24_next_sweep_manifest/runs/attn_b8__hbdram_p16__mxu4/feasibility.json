@@ -1,0 +1,12 @@
+{
+ "point": "attn_b8__hbdram_p16__mxu4",
+ "feasibility": {
+  "dram_capacity": true,
+  "kv_stream_exact": true
+ },
+ "mapping_products_KBC": [
+  512,
+  8,
+  128
+ ]
+}

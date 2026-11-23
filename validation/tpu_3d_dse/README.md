@@ -21,8 +21,17 @@ given, and NPUsim's energy numbers are unpriced.
   - `hbdram_example` -- hybrid-bonded DRAM on logic: the repository's EXISTING example profile
     (`configs/architecture/dram/thermal_sweep/hb3d_example.yaml`). An existing model scenario, not a validated
     device, and nothing about its technology is added here.
-  - Not prepared: HBM stack / channel expansion (needs a new yaml and a statement of what is scaled). Which of
-    the two the exploration targets is an open question to the user.
+  - **Target architecture (user, 2026-11-23, confirmed 2026-11-24): one DRAM die bonded directly on the xPU
+    logic die -- 1-high.** HBM stack / channel expansion and 2 / 4 / 8-high stacks are out of scope; HBM2e stays
+    only as the measured-against baseline. Channels, banks and DQ are organisation WITHIN the one die -- a channel
+    count is not a number of dies. Capacity is what the selected organisation gives and is never multiplied by a
+    layer count. No die area is known here, so no preset (including the example's 8 GiB) is shown to fit above
+    the logic footprint: every point carries `footprint_checked = no`.
+  - **1-high thermal scenario: prepared, not run** (`thermal_1high/dram_models_1high.yaml`, for MOSAIC's
+    `tests/thermal_dram_sweep.py`). MOSAIC's examples start at 2 dies and are not results for this structure.
+    Geometry = the script's defaults written out; `dram_power` 1.33 W/core is an ASSUMPTION (the repository's
+    linear-with-depth rule), to be replaced by a justified power model before any thermal feasibility is claimed;
+    the script's base chip is MOSAIC's 16-core flat-MAC chip, not the NPUsim model used here.
 - **Stack depth is not a performance axis yet.** MOSAIC's `tests/thermal_dram_sweep.py` varies 2 / 4 / 8 stacked
   dies in the thermal model only; all three share one performance yaml. No stack-depth performance effect can be
   claimed until organisation / capacity / channels are tied to the depth. That sweep also uses MOSAIC's 16-core
@@ -71,14 +80,26 @@ its DRAM timing model, the two memories give different DRAM time for every workl
 analytical-DRAM preflight run (the backend processes GEMM and KV reads); MACs = M x K x N, DRAM payload = input +
 weights once and no output, mapping products = N, M, K; reported KV read / append bytes = geometry, K / V read
 exact (32 MiB, no extrapolation); compute busy, payload and QK / softmax / AV identical across the two memories.
-Buffers: input, one weight strip and one output strip against the declared GLB -- fits; the weight strip (4 MiB)
-equals the declared 4 MiB, so K > 4096 or more MXUs per strip needs a look at that buffer before it is run.
-(Conservative arithmetic on declared sizes; the simulator does not enforce buffer capacity.)
+Buffers: the live tensors fit the declared VMEM share. CORRECTED 2026-11-24: the pilot's check compared a whole
+4-MXU weight strip (4 MiB) with the `[separate]` sizes, which the accelerator config declares PER MXU; per MXU
+the live set is the activation (M x K x 2 B), one 128-column weight tile (K x 128 x 2 B = 1 MiB at K 4096, of
+4 MiB) and one tile of fp32 accumulators (M x 128 x 4 B) -- independent of the MXU count (`dse_pilot.live_set`).
+The earlier "weight strip equals the declared 4 MiB" flag is withdrawn; the saved pilot record keeps the
+conservative numbers it was run with. (Arithmetic on declared sizes; the simulator does not enforce capacity.)
 Numerical preflight for the HBDRAM profile (`stream_diag_hbdram_example/`): the long-stream rule predicts 64 MiB
 to -0.18% (acceptance 1%); not used in the pilot (all streams exact).
 Cost: 6 - 40 s per point, 9 min for M 512 (front-end load), 1.3 GB; two at a time.
 
-## Next sweep: generated, not run (`dse_manifest.py` -> `results/2026-11-23_next_sweep_manifest/`)
+## Next sweep: generated, not run (`dse_manifest.py` -> `results/2026-11-24_next_sweep_manifest/`)
+
+(`results/2026-11-23_next_sweep_manifest/` is the first version, kept: points only, no run directories.) The
+2026-11-24 version records the 1-high architecture and the compute baseline (`tpu_v5e` for every point; the
+unmeasured `tpu_v7.cfg` is a separate configuration, not in this grid) and holds all 36 run directories with the
+mapping REGENERATED per point (`mxu8`: 8 x 128 = 1024-column strips, CHIPS_Y 8) and a `feasibility.json` each:
+mapping products = N, M, K; whole strips; per-MXU VMEM share; the workload's tensors within the DRAM capacity; KV
+stream within the exact range. All 36 pass. One 8-MXU point was simulated in a scratch copy to see that the
+generated inputs run (memory-bound GEMM: latency as with 4 MXUs, compute busy 12.4% -> 6.4%); that is a smoke
+test of the driver, not a sweep result. The grid itself is not started.
 
 12 hardware points x the 3 workloads (36 simulations if run), every memory point an existing MOSAIC yaml with its
 coupled quantities derived:
@@ -89,7 +110,7 @@ coupled quantities derived:
 - TPU side: `mxu4` (as is), `mxu8` (2 x MXUs), `mxu8_glb2` (and 2 x GLB SRAM) -- RESOURCE-INCREASING; accelerator
   configs generated, workloads to be remapped per point (the mapping generator takes the MXU count).
 Not generated, with the reason in `manifest.json`: 256 x 256 arrays, HBM expansion, stack depth, DVFS.
-Before any of it runs: the long-stream check per new yaml, and the 8-MXU weight strip against the GLB.
+Before any of it runs: the long-stream check per new yaml (only `hbm2e_refsb` and `hbdram_p16` are checked).
 
 ## Limits carried from the closed fidelity phase
 
@@ -106,3 +127,24 @@ Before any of it runs: the long-stream check per new yaml, and the 8-MXU weight 
   assumptions. Those are a later filter on a shortlist, with explicit cooling, geometry and limits.
 - On a final shortlist only: repeat with the alternate documented supply assumptions (stream length, one vs two
   KV streams). A rank reversal is reported as inconclusive; the model is not tuned to produce a winner.
+
+## TPU v7 (Ironwood) configuration (2026-11-23; no measurement behind it)
+
+`configs/accelerators/tpu_v7.cfg` -- `tpu_v5e.cfg` re-parameterised from published figures; its header separates
+what is published, what is derived and what is carried over. In short: clock 2200 MHz derived from the peak
+(4 x 512^2 x 2 x f = 4614 TFLOPS fp8; bf16 at half that rate = 2307 TFLOPS), the chip modeled as 8 NPUsim arrays
+of 256 x 256 (two per published "128K MAC/cycle" MXU), HBM3E 192 GiB at 7380 GB/s on the analytical DRAM model,
+VMEM partitions x4, links scaled to the 256-wide array, and the two v5e-measured setup TIMES kept (an assumption;
+set to 0 to drop it). Mappings need `palm.DIM = 256`, `palm.MXUS = 8`.
+
+Parameterisation check (`check_tpu_v7.py` -> `results/2026-11-23_tpu_v7_config_check/`), bf16 GEMMs, isolated
+scope, against the published rooflines -- a sanity check, not fidelity:
+
+| GEMM | NPUsim | compute roofline | memory roofline | NPUsim / larger roofline | bottleneck |
+|---|---|---|---|---|---|
+| 512 x 4096 x 4096 | 8.46 us | 7.45 us | 5.68 us | x1.136 | compute |
+| 128 x 4096 x 4096 | 5.24 us | 1.86 us | 4.83 us | x1.085 | DRAM |
+| 32 x 8192 x 8192 | 18.80 us | 1.86 us | 18.33 us | x1.026 | DRAM |
+
+MAC counts and DRAM payload are exact in all three. Open: no MOSAIC yaml of this HBM (the analytical model is
+used), fp8 mode, the real MXU microarchitecture, and whether the v5e setup times apply.
