@@ -110,3 +110,24 @@ Before any of it runs: the long-stream check per new yaml, and the 8-MXU weight 
   assumptions. Those are a later filter on a shortlist, with explicit cooling, geometry and limits.
 - On a final shortlist only: repeat with the alternate documented supply assumptions (stream length, one vs two
   KV streams). A rank reversal is reported as inconclusive; the model is not tuned to produce a winner.
+
+## TPU v7 (Ironwood) configuration (2026-11-23; no measurement behind it)
+
+`configs/accelerators/tpu_v7.cfg` -- `tpu_v5e.cfg` re-parameterised from published figures; its header separates
+what is published, what is derived and what is carried over. In short: clock 2200 MHz derived from the peak
+(4 x 512^2 x 2 x f = 4614 TFLOPS fp8; bf16 at half that rate = 2307 TFLOPS), the chip modeled as 8 NPUsim arrays
+of 256 x 256 (two per published "128K MAC/cycle" MXU), HBM3E 192 GiB at 7380 GB/s on the analytical DRAM model,
+VMEM partitions x4, links scaled to the 256-wide array, and the two v5e-measured setup TIMES kept (an assumption;
+set to 0 to drop it). Mappings need `palm.DIM = 256`, `palm.MXUS = 8`.
+
+Parameterisation check (`check_tpu_v7.py` -> `results/2026-11-23_tpu_v7_config_check/`), bf16 GEMMs, isolated
+scope, against the published rooflines -- a sanity check, not fidelity:
+
+| GEMM | NPUsim | compute roofline | memory roofline | NPUsim / larger roofline | bottleneck |
+|---|---|---|---|---|---|
+| 512 x 4096 x 4096 | 8.46 us | 7.45 us | 5.68 us | x1.136 | compute |
+| 128 x 4096 x 4096 | 5.24 us | 1.86 us | 4.83 us | x1.085 | DRAM |
+| 32 x 8192 x 8192 | 18.80 us | 1.86 us | 18.33 us | x1.026 | DRAM |
+
+MAC counts and DRAM payload are exact in all three. Open: no MOSAIC yaml of this HBM (the analytical model is
+used), fp8 mode, the real MXU microarchitecture, and whether the v5e setup times apply.
