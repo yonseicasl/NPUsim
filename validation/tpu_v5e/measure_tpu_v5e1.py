@@ -106,7 +106,7 @@ def bench(f, sets, tag):
         out = call()
     jax.block_until_ready(out)
     res = {"wall_us": (time.perf_counter() - t) / n * 1e6, "device_us": None, "ops": None, "iters": n,
-           "sets": len(sets)}
+           "sets": len(sets), "module_us": None}
     d = os.path.join(ARGS.out, "traces", tag)
     try:
         with jax.profiler.trace(d, create_perfetto_trace=True):
@@ -117,6 +117,7 @@ def bench(f, sets, tag):
         if parsed and parsed[0]:
             mods, ops = parsed
             res["device_us"] = statistics.median(mods[-n:])
+            res["module_us"] = list(mods[-n:])                # the per-invocation durations behind the median
             res["ops"] = {k: v / len(mods) for k, v in sorted(ops.items(), key=lambda kv: -kv[1])}
     except Exception as e:  # profiler unavailable: wall time only
         print(f"  [{tag}] profiler: {type(e).__name__}: {e}")
@@ -798,10 +799,22 @@ def chainprobe():
     K x K weights, the three shapes both stored runs share, n = 1, 2, 4, 8, 16:
       args     the n weights as n separate arguments          (smallk's oddchain)
       stacked  one [n, K, K] argument, ws[i] sliced, unrolled (loopk's unrolled)
-    chainprobe.csv, per program: wall_us; device_us (median module duration of the trace); ops (per-op mean us of
-    the trace, JSON) and copy_us (its copy-start / copy-done part); hlo_facts (the compiler's static choices);
-    sha256 of the HLO text and of every trace file. No slope is fitted here and nothing is inferred about
-    staging. Needs a TPU; --quick on another backend is a functional check only (its times mean nothing)."""
+    chainprobe.csv, per program, each number with its scope:
+      wall_mean_us          host wall time of ONE timed batch of `iters` calls / iters (no per-call samples exist)
+      module_us             the per-invocation module durations of the trace (JSON list); device_us their median
+      ops_mean_us           per op name, the mean over invocations of that op's summed event durations (JSON)
+      copy_ops_mean_sum_us  the copy-start / copy-done entries of ops_mean_us, summed -- event durations, NOT a
+                            share of the module's latency (events may overlap other work)
+      trace_selected, modules_traced, conv_events_per_module, trace_check
+                            the capture the numbers come from. Trace-derived values are given only if exactly one
+                            capture exists, it holds `iters` timed module events, and every convolution event lies
+                            inside exactly one of them with the same count in each; otherwise they are empty and
+                            trace_check says why. The count itself is recorded, not assumed: n matmuls need not be
+                            n convolution events (XLA may fuse pairs).
+      hlo_facts, hlo_sha256, trace_sha256   the compiler's static choices; hashes of the HLO text and trace files
+    chainprobe.json is written BEFORE the first program (script hash, argv, backend, plan) and completed at the
+    end, so a partial run keeps its provenance. No slope is fitted and nothing is inferred about staging or a
+    mechanism. Needs a TPU; --quick on another backend is a functional check only (its times mean nothing)."""
     chainprobe_refuse_existing(ARGS.out)          # also checked in main() before env.json is written
     if jax.default_backend() != "tpu" and not ARGS.quick:
         raise SystemExit("chainprobe: no TPU (backend " + jax.default_backend() + "); --quick runs a functional check")
@@ -811,6 +824,14 @@ def chainprobe():
     shapes = [(8, 128)] if ARGS.quick else [(100, 1000), (128, 1024), (256, 2048)]
     ns = (1, 2) if ARGS.quick else (1, 2, 4, 8, 16)
     os.makedirs(os.path.join(ARGS.out, "hlo"), exist_ok=True)
+    prov = dict(script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(),
+                argv=sys.argv, quick=ARGS.quick, backend=jax.default_backend(), jax=jax.__version__,
+                devices=[str(d) for d in jax.devices()], shapes=shapes, n=list(ns), rotate_mb=ARGS.rotate_mb,
+                max_iters=ARGS.max_iters, device_match=ARGS.device_match,
+                scope="per program: one timed wall batch, per-invocation module durations, per-op means; "
+                      "no slope, no staging or mechanism claim", status="started", programs_done=0)
+    save = lambda: json.dump(prov, open(os.path.join(ARGS.out, "chainprobe.json"), "w"), indent=1)
+    save()                                        # before any program: a partial run keeps its provenance
 
     def args_chain(x, *ws):
         for w in ws:
@@ -839,21 +860,36 @@ def chainprobe():
                 r = bench(f, sets, tag)
                 d = os.path.join(ARGS.out, "traces", tag)
                 files = sorted(p for p in glob.glob(os.path.join(d, "**", "*"), recursive=True) if os.path.isfile(p))
+                ev = op_events(d, None)           # the count per module is recorded below, not assumed
+                counts = ev["per_module_counts"] if ev else []
+                why = [w for w in ev["why"] if not w.startswith("modules with a convolution-event count")] if ev \
+                    else ["no device trace captured"]
+                if ev and ev["trace"] and ev["modules"] != r["iters"]:
+                    why.append(f"{ev['modules']} module events for {r['iters']} traced calls")
+                if ev and ev["trace"] and len(set(counts)) > 1:
+                    why.append(f"convolution-event count differs between invocations: {sorted(set(counts))}")
+                if not why and r["module_us"] is None:
+                    why.append("no module durations parsed")
+                ok = not why                      # else every trace-derived value is left empty
                 rows.append(dict(
                     kind=kind, M=M, K=K, N=K, n=n, weight_bytes=2 * n * K * K, sets=r["sets"], iters=r["iters"],
-                    backend=jax.default_backend(), wall_us=round(r["wall_us"], 3),
-                    device_us=r["device_us"] and round(r["device_us"], 3),
-                    ops=r["ops"] and json.dumps({k: round(v, 3) for k, v in r["ops"].items()}),
-                    copy_us=r["ops"] and round(sum(v for k, v in r["ops"].items() if "copy-" in k), 3),
+                    backend=jax.default_backend(), wall_mean_us=round(r["wall_us"], 3),
+                    device_us=round(r["device_us"], 3) if ok else None,
+                    module_us=json.dumps([round(v, 3) for v in r["module_us"]]) if ok else None,
+                    ops_mean_us=json.dumps({k: round(v, 3) for k, v in r["ops"].items()}) if ok else None,
+                    copy_ops_mean_sum_us=round(sum(v for k, v in r["ops"].items() if "copy-" in k), 3) if ok else None,
+                    trace_selected=ev and ev["trace"], modules_traced=ev and ev["modules"],
+                    conv_events_per_module=json.dumps(sorted(set(counts))) if ev and ev["trace"] else None,
+                    trace_check="consistent" if ok else "; ".join(why),
                     hlo_facts=json.dumps(hlo_facts(text)), hlo_sha256=hashlib.sha256(text.encode()).hexdigest(),
                     trace_sha256=json.dumps({os.path.relpath(p, d): hashlib.sha256(open(p, "rb").read()).hexdigest()
                                              for p in files})))
-                print(f"chainprobe {kind:7s} {M:4d} x {K:5d} n={n:2d}  {fmt(r)}  copy {rows[-1]['copy_us']}")
+                print(f"chainprobe {kind:7s} {M:4d} x {K:5d} n={n:2d}  {fmt(r)}  trace: {rows[-1]['trace_check']}")
                 write("chainprobe.csv", rows)     # rewritten per program: a later failure keeps the earlier rows
-    json.dump(dict(script_sha256=hashlib.sha256(open(os.path.abspath(__file__), "rb").read()).hexdigest(),
-                   argv=sys.argv, quick=ARGS.quick, backend=jax.default_backend(), jax=jax.__version__,
-                   scope="per program: raw wall, median module duration, per-op means; no slope, no staging claim"),
-              open(os.path.join(ARGS.out, "chainprobe.json"), "w"), indent=1)
+                prov["programs_done"] = len(rows)
+                save()
+    prov["status"] = "completed"
+    save()
 
 
 def run(experiments, default_only, out_name, argv=None):

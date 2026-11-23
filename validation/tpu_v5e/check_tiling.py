@@ -5,10 +5,11 @@ compare_v5e.py simulates one <= 512-row tile at 2 and 4 weight strips (the first
 the others without) and scales; here the same GEMM is simulated whole -- every strip as a DRAM iteration, row
 tiles as the DRAM-level batch factor -- on the same config with program_setup_cycle 0.
 
-KNOWN LIMITS (README "Row tiling, M > 512: whole runs with exact traffic"; use row_tile_repro.py instead):
-with >= 2 row tiles AND >= 2 strips this whole run fetches input and weights once per (strip, row tile), i.e.
-more than once -- its traffic is exact only for M <= 512 or N <= 512; and M > 1024 crashes in the front-end
-(models/datasets/gemm/test.lst has 1024 lines).
+KNOWN LIMITS (README "Row tiling, M > 512: three mappings and their traffic"; see row_tile_repro.py):
+with >= 2 row tiles AND >= 2 strips this whole run loads input and weights once per (strip, row tile) -- other
+traffic than the split it is compared with, so the difference is not a row-summation error; every tensor moves
+once only for M <= 512 or N <= 512. M > 1024 crashes in the front-end (models/datasets/gemm/test.lst has 1024
+lines and the read is not bounds-checked).
 
 Usage: python3 validation/tpu_v5e/check_tiling.py [M,K,N ...] [-j 4]   (needs models/model)
 """
