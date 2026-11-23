@@ -1,8 +1,12 @@
 # Item 5, step 2: K / V read of the attention consumer on the MOSAIC DRAM backend -- small gate (2026-11-23)
 
 Source: `kv-integration`, this commit (the gate ran on a8e39fc + `core.diff`, which this commit contains
-unchanged; `gate/kv_backend_probe.json` has the sha256 of the binary, libnpusim / libnebula / libramulator /
-libdramsim3, the yaml, `tpu_v5e.cfg` and the scripts before and after the runs: equal). Reviewed scope:
+unchanged; `gate/kv_backend_probe.json` has the sha256 of `models/model`, libramulator, the yaml, `tpu_v5e.cfg`
+and the scripts before and after the runs: equal. CORRECTION 2026-11-23 (found by Codex): libnpusim and libnebula
+were NOT hashed in that gate -- the resolver only matched `name => path` lines of `ldd`, and those two are listed
+by absolute path; libdramsim3 is not linked at all. An earlier version of this note claimed they were. The
+resolver is fixed for later runs (every loaded shared object, unresolved = error); nothing is asserted
+retroactively about this gate's library hashes). Reviewed scope:
 Codex, 2026-11-23, "GO WITH CHANGES". No TPU data is used; nothing here is a fidelity result. The full
 attention / decode cohort is NOT run.
 

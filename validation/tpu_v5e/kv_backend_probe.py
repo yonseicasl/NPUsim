@@ -39,8 +39,13 @@ MIB = 1 << 20
 def frozen(yaml):
     """sha256 of everything a run executes or reads."""
     model = os.path.join(ca.ROOT, "models", "model")
-    libs = subprocess.run(["ldd", model], capture_output=True, text=True).stdout
-    libs = sorted(set(re.findall(r"=> (\S*(?:npusim|nebula|ramulator|dramsim3)\S*)", libs)))
+    # Every shared object the binary loads, resolved under THIS environment (the runs inherit it): `name => path`
+    # lines and the ones listed by absolute path (libnpusim, libnebula). An unresolved dependency is an error.
+    ldd = subprocess.run(["ldd", model], capture_output=True, text=True).stdout
+    if "not found" in ldd:
+        raise SystemExit("unresolved libraries of models/model under this LD_LIBRARY_PATH:\n" + ldd)
+    libs = sorted(set(re.findall(r"(?m)^\s*(?:\S+ => )?(/\S+) \(0x", ldd)))
+    assert any("libnpusim" in l for l in libs) and any("libramulator" in l for l in libs), libs
     files = [model, yaml, os.path.join(ca.ROOT, "configs", "accelerators", f"{ca.ACCEL}.cfg"), os.path.abspath(__file__),
              os.path.join(HERE, "compare_attention.py"), os.path.join(HERE, "..", "palm", "palm_decode.py")] + libs
     return {os.path.relpath(f, ca.ROOT) if f.startswith(ca.ROOT) else f: sha(f) for f in files}
