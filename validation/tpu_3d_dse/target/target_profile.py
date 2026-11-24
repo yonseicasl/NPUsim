@@ -27,6 +27,7 @@ def main():
     p = json.load(open(os.path.join(HERE, "target_profile.json")))
     die, n = p["dram_die"], p["topology"]["dram_dies"]
     ch, banks = die["channels"], die["banks_per_channel"]
+    dq = die["dq_bits_per_channel"]
     cap_b, bw = die["capacity"]["value"] * 1e9, die["nominal_peak_bandwidth"]["value"] * 1e12       # decimal, as stated
     fx, fy = die["footprint"]["x"], die["footprint"]["y"]
     lx, ly = p["logic_die"]["footprint"]["x"], p["logic_die"]["footprint"]["y"]
@@ -45,12 +46,15 @@ def main():
               ("aggregate capacity as stated = dies x per die", agg["capacity_GB"] * 1e9 == n * cap_b),
               ("aggregate nominal bandwidth as stated = dies x per die", agg["nominal_peak_bandwidth_TB_per_s"] * 1e12 == n * bw),
               ("2 x 2 envelope fits the logic footprint (no gaps assumed)", d["geometry"]["envelope_fits_logic"])]
-    # What DQ x rate would give the stated per-channel rate -- candidates, NOT facts (both are unknown)
+    # Fixed per-channel DQ; data rate is implied by the nominal peak, not a supplied clock.
     per_ch_bits = bw * 8 / ch
-    d["interface_candidates_not_facts"] = [
-        dict(dq=dq, rate_mbps=per_ch_bits / dq / 1e6, note=note) for dq, note in
-        ((256, ""), (500, ""), (512, "512 DQ at the repository's HBDRAM_500Mbps timing gives 8.192 TB/s per die, 2.4% above the stated 8"),
-         (1024, ""))]
+    d["interface_fixed_dq"] = dict(
+        dq_bits_per_channel=dq,
+        derived_required_rate_mbps_per_dq=per_ch_bits / dq / 1e6,
+        data_dq_bits_per_die=ch * dq,
+        data_dq_bits_aggregate=n * ch * dq,
+        note="Data-interface width only, not total bond count. Rate derived from theoretical bandwidth; "
+             "signaling mode/clock, protocol overhead and sustained efficiency remain unspecified.")
     # Representability in MOSAIC's HBDRAM model (python spec = source of the generated C++)
     spec = open(os.path.join(root, "simulator/src/dram/ramulator2/python/ramulator/dram/hbdram.py")).read()
     presets = {m.group(1): json.loads(m.group(2)) for m in re.finditer(r'"(HBDRAM_\w+)":\s*(\{"density"[^}]*\})', spec)}
@@ -104,7 +108,7 @@ def main():
              f"   bit density {pd['bit_density_Gb_per_mm2']:.3f} Gb/mm^2; whole die read at the nominal peak in {pd['seconds_to_read_whole_die_at_nominal'] * 1e3:g} ms",
              f"aggregate (4 dies, 2 x 2, one tier): {ag['channels']} channels, {ag['banks']} banks, {ag['capacity_bytes'] / 1e9:g} GB, {ag['nominal_peak_bytes_per_s'] / 1e12:g} TB/s nominal peak, {ag['dram_footprint_mm2']} mm^2 of DRAM",
              f"geometry: logic {lx} x {ly} mm = {ge['logic_footprint_mm2']} mm^2; 2 x 2 envelope {ge['envelope_2x2_mm'][0]} x {ge['envelope_2x2_mm'][1]} mm (slack {ge['slack_mm'][0]} x {ge['slack_mm'][1]} mm, no gaps assumed); DRAM over {100 * ge['dram_over_logic_area_ratio']:.1f}% of the logic footprint",
-             "interface candidates for the stated per-channel rate (NOT facts): " + "; ".join(f"{c['dq']} DQ x {c['rate_mbps']:.1f} Mbps" for c in d["interface_candidates_not_facts"]),
+             f"fixed interface: {dq} bits DQ/channel; derived required rate {d['interface_fixed_dq']['derived_required_rate_mbps_per_dq']:.4f} Mb/s per DQ (not a clock specification)",
              "representability in MOSAIC's HBDRAM model: " + ", ".join(f"{k} {'yes' if v['representable'] else 'NO'}" for k, v in rep.items())]
     lines += [f"   stand-in {q['standin']}: runs {q['runs']}, {q['runtime_channels']} channels, tx {q['transaction_bytes']} B, nominal {q['nominal_bytes_per_s'] / 1e12:.3f} TB/s"
               + (f", sequential read {q['sequential_read_GB_per_s_64MiB_64tx_requests']:.0f} GB/s" if q.get("sequential_read_GB_per_s_64MiB_64tx_requests") else "")
