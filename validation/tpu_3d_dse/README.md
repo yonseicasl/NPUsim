@@ -1,12 +1,12 @@
-# TPU x 3D-stacked DRAM: design-space exploration brief (first phase, 2026-11-23)
+# TPU x directly bonded DRAM: decode DSE plan (updated 2026-11-24)
 
-> **SCOPE AS OF 2026-11-24 (user): the memory is FIXED; the exploration is of the TPU LOGIC, for DECODE LATENCY.**
-> Target: four DRAM dies bonded directly on one logic die, 2 x 2 side by side, one vertical tier. Per die 256
-> channels, 4 banks per channel, 6 GB, 8 TB/s theoretical-maximum bandwidth, 14 x 11 mm; in aggregate 1024
-> channels, 24 GB, 32 TB/s; logic die 33 x 26 mm. See **"Fixed target and logic screening"** at the end
-> (`target/`). Everything between here and that section is the earlier, generic model study: the six-run pilot
-> stays valid as such but is NOT the target design, and the memory-channel sweep manifests are obsolete
-> exploratory material that will not be run.
+> **CURRENT PLAN:** [Fixed-memory decode DSE](#current-execution-plan-fixed-memory-decode-dse-updated-2026-11-24).
+> Fixed four-die, 2 x 2, one-tier DRAM-on-logic target; decode latency first.
+> Per die: 256 channels, **256-bit DQ per channel**, 4 banks/channel, 6 GB, 8 TB/s theoretical peak,
+> 14 x 11 mm; aggregate 24 GB / 32 TB/s; logic 33 x 26 mm.
+> The current plan adds DeepSeek-V4-Flash and Kimi K3 kernel/block workloads.
+> Earlier pilot results and manifests below are historical; neither the 36-point memory grid nor the
+> 40-point logic grid is the current execution plan. No expanded sweep has started.
 
 Branch `tpu-3d-dse` (on the reviewed KV revision `kv-integration` 2ab9084). The TPU-fidelity phase is closed
 here: no further measurement-comparison cohorts, probes or fitted-window experiments. Its unresolved limits
@@ -17,7 +17,193 @@ logic die offers, and where does the limit move between memory, compute and on-c
 performance / resource trade-offs. It does not name a physical optimum: no area, power or cooling budget has been
 given, and NPUsim's energy numbers are unpriced.
 
-## What is being compared
+## Current execution plan: fixed-memory decode DSE (updated 2026-11-24)
+
+This section is the current plan. It supersedes the earlier workload selection and run proposals below,
+including the 36-point memory sweep and the generated 40-point logic manifest. Those artifacts remain
+historical records, not an execution queue. Status: **planning; no expanded workload sweep has started**.
+
+### 1. Objective and fixed hardware contract
+
+Minimize batch-1 decode service latency on one TPU-style logic die with four directly bonded DRAM dies.
+Throughput and small batches are secondary. Report kernel, block and explicitly defined multi-block-window
+latency; full-model token latency requires a complete, capacity-feasible model and system definition.
+
+| Fixed quantity | Per DRAM die | Four dies |
+|---|---|---|
+| Arrangement | one vertical tier | lateral 2 x 2 above one logic die |
+| Channels / banks | 256 channels, 4 banks/channel | 1024 channels, 4096 banks |
+| DQ width | **256 bits per channel** | same per-channel width |
+| Capacity | 6 GB | 24 GB |
+| Theoretical peak bandwidth | 8 TB/s | 32 TB/s |
+| Footprint | 14 x 11 mm | 28 x 22 mm envelope before gaps |
+
+Logic footprint: 33 x 26 mm. GB and TB use decimal arithmetic. The latest user statement "DQ is 256bit"
+is interpreted in the preceding per-channel interface context; it is not a 256-bit bus shared by the whole die.
+The implied data rate is 8e12 * 8 / (256 * 256) = **976.5625 Mb/s per DQ**, or 0.9765625 Gb/s.
+This is derived from the stated peak, not a measured signaling rate or a clock specification.
+At 1 Gb/s per DQ the peak would be 8.192 TB/s/die, so that rounded rate must not silently replace 8 TB/s.
+
+The 512-DQ stand-ins below are historical infrastructure probes and no longer candidate target interfaces.
+DRAM timings, burst/address organization, refresh, read/write sharing, bonding overhead and actual operating
+clock remain unresolved. Geometry fitting does not establish routing, area-budget or thermal feasibility.
+
+For early screening, propose an explicitly idealized supply model capped at exactly 32e12 B/s aggregate;
+later use four local domains capped at 8e12 B/s each, with finite cross-domain routes. Sustained efficiency
+and timing uncertainty are sensitivity scenarios, not memory design axes. Exact 24 GB / 6 GB capacity
+constraints are required even before a detailed DRAM organization is available.
+
+### 2. Architecture-based workload suite
+
+Keep the existing dense projection / conventional KV-attention microkernels as controls.
+Add **DeepSeek-V4-Flash** and **Kimi K3** at their published dimensions; V4-Pro is a later shape sensitivity.
+V4.1 and K3.1 are separate versions and are not automatic replacements. This is selection of architecture
+workloads, not a claim that the full original models fit this chip.
+
+| Workload family | Kernel scope | Design question |
+|---|---|---|
+| V4 local attention | shared K=V cache, local-window attention, partial RoPE, output projections | local-cache layout and matrix/vector feed |
+| V4 CSA | compressor update, indexer, top-k, gather, local + compressed attention | sparse access, selection throughput, channel/bank utilization |
+| V4 HCA | compressor update, attention over heavily compressed pool + local branch | compression overhead versus reduced traffic |
+| V4 MoE + mHC | hash/learned routing, selected and shared experts, SwiGLU, combine, residual-stream mixing | expert placement, small matrix work, vector normalization, live buffers |
+| K3 KDA | single-token recurrent update, projections, short convolution, gates, state read/write | persistent-state SRAM capacity, ports and spill cost |
+| K3 gated MLA | latent-KV update/read, attention, projections and output gate | context-sensitive cache traffic and projection cost |
+| K3 LatentMoE + AttnRes | latent down/up projection, routing, experts, SiTU-GLU, combination and depth-history access | expert parallelism, cross-domain traffic and activation storage |
+
+Configuration anchors (official sources below; freeze exact revisions before runnable workloads):
+
+- V4-Flash: hidden 4096; 43 decoder layers; 64 attention heads, head dimension 512; one shared KV head;
+  local window 128; compression ratios 4 / 128 for CSA / HCA; index top-k 512; 256 routed experts,
+  top-6 plus one shared expert, expert intermediate 2048; first three hash-routing layers;
+  mHC multiplier 4. The compression schedule has an extra entry associated with model structure:
+  confirm decoder versus next-token-prediction indexing in source before building the graph.
+- K3: hidden 7168; 93 layers (69 KDA and 24 gated MLA); KDA 96 heads of dimension 128, short-convolution
+  kernel 4; MLA KV rank 512; latent expert input dimension 3584 and intermediate 3072;
+  896 routed experts, top-16 plus two shared experts; first layer dense.
+  AttnRes block-size configuration is 12; infer its exact sublayer/boundary meaning from implementation,
+  not from a guessed twelve-decoder-layer window.
+
+KDA must use its recurrent decode path, not dense full-context QK/AV. V4 attention must not be substituted
+with V3 MLA. LatentMoE must preserve latent projections instead of becoming a conventional hidden-size FFN.
+Shared K=V storage is counted once; actual reads depend on scheduling and reuse.
+
+### 3. Evaluation levels and scenarios
+
+1. **Kernels:** actual tensor shapes, operation counts, payload versus physical traffic, padding, scratch,
+   synchronization and allowed overlap. A selected-expert kernel may be evaluated conditionally, with its
+   residency and route stated.
+2. **Complete decode blocks:** five primary attention variants: V4 local / CSA / HCA and K3 KDA / gated MLA.
+   Include the matching normalization, projections, MoE, mHC or AttnRes and state updates.
+   Record layer ID and hash/dense/routed exceptions. Missing operations cannot have zero cost.
+3. **Consecutive-layer windows:** preserve the actual attention/routing schedule and cross-layer state.
+   Choose boundaries using the implementation, especially AttnRes. Supply and account for prior KV,
+   recurrent and depth-history states; do not assume free initial loads or independent block execution.
+
+Primary batch = 1; contexts = 2048 / 8192 / 32768. Use batch 4 / 8 and context 131072 only on shortlisted,
+capacity-feasible cases. A KDA core's bounded recurrent state does not make the entire K3 context-independent:
+its MLA layers still depend on context length.
+
+For V4, sample ordinary tokens and positions before/on/after relevant compressor emission boundaries,
+including cache rollover. Report periodic worst-phase and steady-state latency separately; these are not
+empirical p99 statistics. For K3, compare resident versus spilled recurrent/depth state and measure the
+corresponding transfer costs. Prefill is outside the timed scope, but initialized state and its footprint are not.
+
+### 4. Precision and capacity contract
+
+Use both explicit BF16 architectural controls and model-native mixed precision where supported.
+V4 uses expert FP4 with other FP8 parameters; K3 publishes MXFP4 weights and MXFP8 activation QAT.
+The K3 checkpoint configuration excludes several modules from weight quantization. Resolve precision per
+operator from the pinned configuration/inference implementation; a top-level BF16 dtype or training
+precision is not proof of every serving operator's execution format.
+
+Count packed weights, scale metadata, padding, unpack/dequantization, accumulator and KV/state formats,
+conversion throughput and scratch storage. INT8 is an optional separate sensitivity, not a proxy for FP4.
+Unsupported formats receive an analytical-bound or unavailable label, not an assumed fourfold speedup.
+
+Every complete block/window must fit:
+resident weights + all KV/recurrent/depth state + activations + workspace + reserved memory <= 24 GB,
+and <= 6 GB in each assigned DRAM domain. Record the reserved amount explicitly.
+Apply corresponding peak live-set constraints to SRAM as well.
+
+The original full models do not fit 24 GB. Even one K3 BF16 block containing its full routed-expert bank
+can exceed 24 GB. Active parameters are not resident capacity. A selected-expert microbenchmark must not
+stand in for arbitrary routing with free inactive experts. Native low-bit blocks are evaluated only after
+their full capacity check; otherwise report infeasible. Reduced-size architecture proxies must have separate
+names. Offload or multi-device execution requires a separate system model and is outside this plan.
+
+### 5. Logic design space and implementation prerequisites
+
+Explore at comparable total resources before increasing them:
+
+- MXU array shape, count and partitioning across four memory domains; a GEMV/vector-oriented alternative
+  needs an actual execution/dataflow model.
+- Total SRAM and its allocation to weights, activations, recurrent state and depth history; banking,
+  ports and feed bandwidth. Hold total SRAM fixed in one comparison: per-MXU VMEM otherwise grows with count.
+- Staging/NoC bandwidth, DMA request size/concurrency, gather/scatter, top-k and vector/SFU capacity.
+- Low-bit unpack/scale/conversion hardware and intermediate representations.
+- Weight/expert/KV placement, local versus striped access, return/reduction traffic and synchronization.
+  Copies count against capacity. Synthetic uniform, skewed and local expert routes are sensitivity cases,
+  not measured routing traces. Batch size is not automatically tokens per expert.
+
+Keep the clock fixed initially. Report compute, SRAM, vector, interface and interconnect resources together.
+Process and component costs are missing, so do not turn the 858 mm^2 footprint into an invented area budget.
+
+| Capability | Planning status / required action |
+|---|---|
+| Existing projection and KV-step paths | reuse after shape/mapping, batch-1 padding and live-set checks |
+| V4 CSA/HCA, index/gather, mHC | operator and dependency coverage audit required; no verified full-block path yet |
+| K3 recurrent KDA, gated MLA, LatentMoE, AttnRes | operator/state coverage audit required; no verified full-block path yet |
+| Native low-bit mixed precision | audit storage and execution separately; unsupported costs must be explicit |
+| Four local memory domains / cross-domain contention | model extension required; current aggregate endpoint is idealized |
+| Exact four-bank DRAM scheduling / target timing | unsupported or unknown; preserve metadata without claiming fidelity |
+
+### 6. Staged work and completion gates
+
+| Stage | Work | Completion gate / deliverable |
+|---|---|---|
+| A. Workload specification | pin sources; extract shapes, layer schedules, precision and state; build operator DAGs | workload manifest, capacity feasibility, support-gap table |
+| B. Minimal model coverage | add only operators/interfaces needed for the selected cases, ordered by bottleneck relevance | functional/traffic/state invariants and explicit model assumptions; no broad TPU calibration |
+| C. Kernel screening | supported representative kernels across the existing five logic configurations; limited HBM anchors | identify compute, feed, vector, state or locality bottlenecks; mapping and padding checked |
+| D. Block and window DSE | five block variants and selected consecutive windows; four-domain placement; shortlist 8-12 feasible logic candidates | critical-path latency and resources per scenario, with missing coverage visibly excluded |
+| E. Robustness | 3-5 candidates: context, precision, batch, routing/locality, memory efficiency and periodic state updates | conditional ranking / rank reversals and 2-3 architecture families |
+
+The previous estimate of approximately 24 initial runs and 24-36 block evaluations is superseded by the
+expanded suite. After stage A, emit a bounded manifest listing every workload, candidate and scenario;
+do not multiply all axes into a Cartesian sweep. Use concurrency <= 2 for the first execution batch.
+The old 36- and 40-point manifests remain unstarted. This document update itself launches no simulations.
+
+Latency follows the operator dependency graph with explicit compute/load/communication/serial-vector
+terms and overlap rules. Do not blindly sum kernels or take their maximum. No full-model ITL, queueing
+or p99 claims without the required model/system/arrival definition.
+
+Stop exploring an axis when it does not materially change latency or rankings. Report rank reversals as
+conditional results, without fitting simulator constants to force a winner. Physical power/thermal filtering
+comes after process, energy, cooling and placement inputs; the stale full-footprint thermal scenario is unsuitable.
+
+### 7. Reproducibility and deliverables
+
+The workload manifest will record model ID, repository revision, configuration/source hashes, layer IDs,
+operator shapes and dependencies, token position, batch/context, routing scenario, precision by tensor,
+initial/final state, memory placement, peak live sets, traffic and support classification.
+Use separate labels: **simulated**, **analytical estimate/bound**, **unsupported**, **capacity-infeasible**.
+A schema requirement is not a claim that these new manifests or operators already exist.
+
+First deliverables: pinned workload specifications and support-gap/feasibility matrix.
+Final deliverables: per-kernel/block/window latency breakdown, utilization and traffic, resource tradeoffs,
+capacity checks and a conditional shortlist. Broader simulator fidelity work stays closed.
+
+Official sources checked 2026-11-24 (links are currently mutable; revision pinning is stage A):
+
+- [DeepSeek-V4-Flash model card](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash)
+- [DeepSeek-V4-Flash configuration](https://huggingface.co/deepseek-ai/DeepSeek-V4-Flash/raw/main/config.json)
+- [Transformers V4 architecture implementation documentation](https://huggingface.co/docs/transformers/main/en/model_doc/deepseek_v4)
+- [Kimi K3 official repository](https://github.com/MoonshotAI/Kimi-K3)
+- [Kimi K3 configuration](https://huggingface.co/moonshotai/Kimi-K3/raw/main/config.json)
+- [Kimi K3 technical blog](https://www.kimi.com/en/blog/kimi-k3)
+
+---
+
+## Historical pilot: what was compared
 
 - **Chip (fixed in the pilot):** NPUsim `configs/accelerators/tpu_v5e.cfg` -- four 128 x 128 MXUs at 1.5 GHz with
   its declared buffers and the mappings of `validation/palm/palm_decode.py`. The `[dram]` clock equals the
@@ -98,7 +284,7 @@ Numerical preflight for the HBDRAM profile (`stream_diag_hbdram_example/`): the 
 to -0.18% (acceptance 1%); not used in the pilot (all streams exact).
 Cost: 6 - 40 s per point, 9 min for M 512 (front-end load), 1.3 GB; two at a time.
 
-## Next sweep: generated, not run (`dse_manifest.py` -> `results/2026-11-24_next_sweep_manifest/`)
+## Historical memory sweep: superseded, generated and not run (`dse_manifest.py` -> `results/2026-11-24_next_sweep_manifest/`)
 
 (`results/2026-11-23_next_sweep_manifest/` is the first version, kept: points only, no run directories.) The
 2026-11-24 version records the 1-high architecture and the compute baseline (`tpu_v5e` for every point; the
@@ -165,20 +351,23 @@ used), fp8 mode, the real MXU microarchitecture, and whether the v5e setup times
 |---|---|---|
 | channels | 256 | 1024 |
 | banks | 4 per channel = 1024 | 4096 |
+| DQ width | 256 bits per channel | 256 bits per channel |
 | capacity | 6 GB | 24 GB |
 | bandwidth, theoretical maximum | 8 TB/s | 32 TB/s |
 | footprint | 14 x 11 mm = 154 mm^2 | 616 mm^2, envelope 28 x 22 mm |
 
 Logic die 33 x 26 mm = 858 mm^2. Objective: decode latency first (batch-1 token latency as the first screen), over
-prefill and over throughput; no model, precision or context is selected. Not given, and not invented: DQ width and
-signalling rate per channel, row / column organisation, timings and refresh, read / write sharing, die coordinates
+prefill and over throughput. V4-Flash and Kimi K3 architecture workloads are now selected in the current plan;
+a deployed full model is not selected. DQ is now 256 bits per channel. Not given, and not invented: actual signaling clock/mode,
+row / column organisation, timings and refresh, read / write sharing, die coordinates
 and gaps, which logic attaches to which die, process node, area / power / cooling budgets.
 
 **Derived** (`target/target_profile.py` -> `target/2026-11-24_consistency/`): per channel 187.5 Mb and 31.25 GB/s
 (250 Gb/s) nominal; per bank 46.875 Mb; 0.312 Gb/mm^2; a whole die read at the nominal peak in 0.75 ms. The 2 x 2
 envelope fits the logic footprint with 5 x 4 mm of slack before any gap or keep-out (71.8% of the logic area) --
-a geometric statement only. The stated aggregates equal 4 x the per-die values. 512 DQ at 500 Mbps would give
-8.192 TB/s per die (2.4% above the stated 8) -- a consistent candidate, not a fact.
+a geometric statement only. The stated aggregates equal 4 x the per-die values. With the now-fixed 256-bit DQ, the stated 8 TB/s implies 976.5625 Mb/s per DQ.
+The earlier 512-DQ / 500-Mb/s candidate is superseded. The original consistency reports are historical;
+the updated generator reports the fixed width and derived rate.
 
 **Can the performance model represent it? Partly.**
 
@@ -190,16 +379,17 @@ a geometric statement only. The stated aggregates equal 4 x the per-die values. 
 | target timings | NO | unknown; the repository's 500 / 400 Mbps presets are not the target's |
 | four interface domains | NO | NPUsim has one `[dram]` endpoint and one staging link |
 
-So no run can be labelled "the target memory". Until the organisation is added to MOSAIC's DRAM model, the only
-memory scenarios are the validated HBM2e reference and an IDEALIZED aggregate endpoint (one 1024-channel stand-in:
-right interface rate to 2.4%, wrong capacity, no locality or contention between dies).
+These probes do not establish a faithful target-memory model. The historical 1024-channel stand-in has
+512-bit DQ, a peak 2.4% above target, wrong capacity and no inter-domain locality/contending routes.
+The current plan instead requires exact target capacity checks and proposes a separately labeled idealized
+supply abstraction capped at 32e12 B/s before detailed four-domain timing is available.
 
 **Decision variables (logic side):** MXU count and array shape; VMEM allocation, partition, banking, ports and
 bandwidth; the on-chip feed from the DRAM interface to the MXUs; DMA request size and concurrency; mapping and
 dataflow. Clock stays fixed until a power / thermal and clock-domain model exists. MXUs, SRAM, feed and interface
 logic share one logic-area budget and no area model exists: every resource-changing point is exploratory.
 
-**Screening manifest, generated and not run** (`target/logic_manifest.py` -> `target/2026-11-24_logic_manifest/`):
+**Historical screening manifest, generated and not run; superseded by the current plan** (`target/logic_manifest.py` -> `target/2026-11-24_logic_manifest/`):
 5 logic points (MXUs 4 / 8 / 16, feed 1 / 4 / 32 KB per cycle) x 2 memory scenarios x 4 workload scenarios
 (batch-1 matrix-vector 4096 x 4096 and 4096 x 14336, a batch-8 sensitivity, a batch-1 KV attention step) = 40
 points, with accelerator configs and the first-order rates each configuration implies. Compute baseline

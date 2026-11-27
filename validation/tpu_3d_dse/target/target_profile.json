@@ -10,6 +10,8 @@
  },
  "dram_die": {
   "channels": 256,
+  "dq_bits_per_channel": 256,
+  "dq_source_note": "User: DQ is 256bit (2026-11-24); interpreted per channel in the preceding interface discussion. Signaling rate is derived, not separately supplied.",
   "banks_per_channel": 4,
   "capacity": {"value": 6, "unit": "GB", "unit_note": "GB as supplied by the user; not converted to GiB and not rounded to a preset"},
   "nominal_peak_bandwidth": {"value": 8, "unit": "TB/s", "meaning": "theoretical maximum of the interface, not a sustained or measured rate"},
@@ -21,18 +23,18 @@
  "aggregate_as_stated_by_user": {"channels": 1024, "capacity_GB": 24, "nominal_peak_bandwidth_TB_per_s": 32},
  "objective": {
   "priority": "decode latency (over prefill, and latency over throughput)",
-  "first_screen": "batch-1 token latency; small batch, context and precision as separately labelled sensitivities",
-  "workload": "not selected -- any model shape used is a labelled scenario"
+  "first_screen": "batch-1 kernel/block latency; small batch, context and precision as separately labelled sensitivities; no full-model latency without feasible complete-model scope",
+  "workload": "DeepSeek-V4-Flash and Kimi K3 architecture-derived kernels/blocks; generic dense controls. Full deployed model not selected; see README current execution plan."
  },
  "unknown_do_not_invent": [
-  "DQ / bond interface width per channel and signalling rate",
+  "actual DQ signaling clock/mode and interface overhead (256 bits/channel fixed; required data rate derived from nominal peak)",
   "bank-group, row and column organisation; transaction / burst granularity",
   "DRAM timings and refresh",
   "read / write sharing of the nominal bandwidth",
   "die coordinates, gaps, keep-outs, bonding arrangement",
   "which logic resources attach to which DRAM die (the four memory-interface domains) and the cross-domain routes",
   "logic process node, usable area budget, power budget, cooling",
-  "target model, precision, batch and context"
+  "deployed full model and serving policy; architecture workload scenarios and precision-resolution rules are specified in README"
  ],
  "memory_interface_domains": [
   {"domain": 0, "die_position": "row 0, col 0", "channels": 256, "attached_logic": "unknown", "cross_domain_route": "unknown"},
@@ -45,6 +47,7 @@
   "SRAM (VMEM) allocation, partition, banking, ports and bandwidth",
   "on-chip feed: staging / NoC link width from the DRAM interface to the MXUs",
   "DMA issue: request size and concurrency",
+  "vector/SFU, gather/top-k, low-bit conversion, persistent-state SRAM and expert placement",
   "mapping, tiling and dataflow",
   "clock only inside an explicit power / thermal and clock-domain model (none yet: fixed)"
  ],
